@@ -124,9 +124,7 @@ PanelWindow {
             : mruSorted;
 
         if (sphereModel.length > 0 && !sphereModel[0].isPlaceholder) {
-            console.log("[hyprsphere MRU] finishOpenSwitcher: appMru=" + JSON.stringify(appMru) + " selectedAppIndex_logic=" + ((appMru.length >= 2) ? 1 : 0));
             selectedAppIndex = (appMru.length >= 2) ? 1 : 0;
-            console.log("[hyprsphere MRU] finishOpenSwitcher: selectedAppIndex=" + selectedAppIndex + " selectedAppId=" + sphereModel[selectedAppIndex].appId);
             if (selectedAppIndex < sphereModel.length) {
                 centerOnApp(selectedAppIndex);
             }
@@ -160,8 +158,8 @@ PanelWindow {
         rebuildScheduled = true;
         Qt.callLater(function() {
             rebuildScheduled = false;
-            if (!window.visible) return;
-
+            // Run regardless of visibility — sphere data is cheap to rebuild
+            // and may be needed when overlay reappears after visible toggle.
             var raw = buildLayer0();
 
             if (window.layer === 1 && window.drilledAppId) {
@@ -314,11 +312,9 @@ PanelWindow {
         if (closeSequence.running) return;
 
         var node = sphereModel[selectedAppIndex];
-        console.log("[hyprsphere KEY] closeSelection: idx=" + selectedAppIndex + " node=" + (node ? node.appId : "null") + " isPlaceholder=" + (node ? node.isPlaceholder : "n/a") + " isWhitelist=" + (node ? node.isWhitelistPlaceholder : "n/a") + " layer=" + layer);
         if (!node || node.isPlaceholder || node.isWhitelistPlaceholder) return;
 
         if (window.layer === 0) {
-            // Layer 0: close ALL windows of the selected app group
             for (var w = 0; w < node.windows.length; w++) {
                 var a = node.windows[w].address;
                 var p = a.indexOf("0x") === 0 ? "" : "0x";
@@ -326,15 +322,10 @@ PanelWindow {
                     'hl.dsp.window.close({window="address:' + p + a + '"})']);
             }
         } else {
-            // Layer 1: close the specific selected window
             var p = node.address.indexOf("0x") === 0 ? "" : "0x";
             Quickshell.execDetached(["hyprctl", "dispatch",
                 'hl.dsp.window.close({window="address:' + p + node.address + '"})']);
         }
-        // Sphere refreshes via closewindow>> event → scheduleRebuild()
-        // Re-grab keyboard focus on next tick — Hyprland moves cursor/focus
-        // to the next window after a close, which can steal focus from the overlay.
-        Qt.callLater(function() { focusGrabber.forceActiveFocus(); });
     }
 
     function rebuildToLayer0(raw) {
@@ -354,26 +345,33 @@ PanelWindow {
         function onActiveToplevelChanged() {
             var t = Hyprland.activeToplevel;
             if (!t) return;
-            var wlAppId = t.wayland ? t.wayland.appId : null;
-            // Skip unresolved appIds — openwindow>> event handles tracking for new windows.
-            if (!wlAppId) return;
-            console.log("[hyprsphere MRU] onActiveToplevelChanged: appId=" + wlAppId + " addr=" + t.address);
+            var appId = (t.wayland && t.wayland.appId) ? t.wayland.appId : "unknown";
+
             var addr = t.address || "";
+
+            // When a real appId resolves, clean up any stale "unknown" entry
+            if (appId !== "unknown") {
+                var cleaned = [];
+                for (var ci = 0; ci < appMru.length; ci++) {
+                    if (appMru[ci] !== "unknown") cleaned.push(appMru[ci]);
+                }
+                appMru = cleaned;
+            }
 
             // Move app to front of app-level MRU
             var filtered = [];
             for (var i = 0; i < appMru.length; i++) {
-                if (appMru[i] !== wlAppId) filtered.push(appMru[i]);
+                if (appMru[i] !== appId) filtered.push(appMru[i]);
             }
-            appMru = [wlAppId].concat(filtered);
+            appMru = [appId].concat(filtered);
 
             // Move window to front of this app's per-app window MRU
-            var winList = appWindowMru[wlAppId] || [];
+            var winList = appWindowMru[appId] || [];
             var winFiltered = [];
             for (var j = 0; j < winList.length; j++) {
                 if (winList[j] !== addr) winFiltered.push(winList[j]);
             }
-            appWindowMru[wlAppId] = [addr].concat(winFiltered);
+            appWindowMru[appId] = [addr].concat(winFiltered);
         }
     }
 
@@ -383,7 +381,6 @@ PanelWindow {
             // Handle openwindow: track new windows in MRU immediately
             if (event.name === "openwindow") {
                 var parts = (event.data || "").split(",");
-                console.log("[hyprsphere MRU] openwindow: " + event.data);
                 if (parts.length >= 3) {
                     var addr = parts[0];
                     if (addr.indexOf("0x") !== 0) addr = "0x" + addr;
@@ -395,7 +392,6 @@ PanelWindow {
                     }
                     appMru = [appId].concat(filtered);
                     appWindowMru[appId] = [addr].concat(appWindowMru[appId] || []);
-                    console.log("[hyprsphere MRU] openwindow: appMru=" + JSON.stringify(appMru));
                 }
                 return;
             }
@@ -429,17 +425,13 @@ PanelWindow {
                 }
             }
             if (window.visible) {
-                // Close confirmed — explicitly tell Hyprland to focus the overlay
-                // by its process PID (QML forceActiveFocus doesn't activate
-                // Wayland surfaces). Also toggle focusable to re-negotiate.
-                var myPid = Qt.application ? Qt.application.applicationPid : -1;
-                if (myPid > 0) {
-                    Quickshell.execDetached(["hyprctl", "dispatch",
-                        'focuswindow pid:' + myPid]);
-                }
-                window.focusable = false;
-                window.focusable = true;
-                focusGrabber.forceActiveFocus();
+                // Unmap and remap overlay to force compositor to re-grant
+                // keyboard focus to the exclusive layer surface.
+                window.visible = false;
+                Qt.callLater(function() {
+                    window.visible = true;
+                    // onVisibleChanged fires → forceActiveFocus
+                });
                 scheduleRebuild();
             }
         }
@@ -663,12 +655,10 @@ PanelWindow {
     Connections {
         target: window
         function onVisibleChanged() {
-            console.log("[hyprsphere FOCUS] onVisibleChanged: visible=" + window.visible);
             if (window.visible) {
                 window.sphereZoom   = 1.0;
                 introPhaseAnim.restart();
                 focusGrabber.forceActiveFocus();
-                console.log("[hyprsphere FOCUS] onVisibleChanged: forceActiveFocus done");
             }
         }
     }
@@ -696,7 +686,6 @@ PanelWindow {
         Keys.priority: Keys.BeforeItem
 
         Keys.onPressed: (event) => {
-            console.log("[hyprsphere KEY] anyKey: " + event.key + " mods=" + event.modifiers + " activeFocus=" + focusGrabber.activeFocus + " overlayActive=" + window.overlayActive);
             if (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab) {
                 if (event.modifiers & Qt.ShiftModifier || event.key === Qt.Key_Backtab) window.advance(-1);
                 else window.advance(1);
@@ -708,7 +697,6 @@ PanelWindow {
                 window.closeSelection();
                 event.accepted = true;
             } else if (event.key === Qt.Key_Escape) {
-                console.log("[hyprsphere KEY] Escape pressed, overlayActive=" + window.overlayActive + " closeSeqRunning=" + closeSequence.running);
                 window.cancelSwitch();
                 event.accepted = true;
             }
