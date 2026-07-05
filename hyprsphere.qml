@@ -124,7 +124,9 @@ PanelWindow {
             : mruSorted;
 
         if (sphereModel.length > 0 && !sphereModel[0].isPlaceholder) {
+            console.log("[hyprsphere MRU] finishOpenSwitcher: appMru=" + JSON.stringify(appMru) + " selectedAppIndex_logic=" + ((appMru.length >= 2) ? 1 : 0));
             selectedAppIndex = (appMru.length >= 2) ? 1 : 0;
+            console.log("[hyprsphere MRU] finishOpenSwitcher: selectedAppIndex=" + selectedAppIndex + " selectedAppId=" + sphereModel[selectedAppIndex].appId);
             if (selectedAppIndex < sphereModel.length) {
                 centerOnApp(selectedAppIndex);
             }
@@ -349,29 +351,52 @@ PanelWindow {
         function onActiveToplevelChanged() {
             var t = Hyprland.activeToplevel;
             if (!t) return;
-            var appId = (t.wayland && t.wayland.appId) ? t.wayland.appId : "unknown";
+            var wlAppId = t.wayland ? t.wayland.appId : null;
+            // Skip unresolved appIds — openwindow>> event handles tracking for new windows.
+            if (!wlAppId) return;
+            console.log("[hyprsphere MRU] onActiveToplevelChanged: appId=" + wlAppId + " addr=" + t.address);
             var addr = t.address || "";
 
             // Move app to front of app-level MRU
             var filtered = [];
             for (var i = 0; i < appMru.length; i++) {
-                if (appMru[i] !== appId) filtered.push(appMru[i]);
+                if (appMru[i] !== wlAppId) filtered.push(appMru[i]);
             }
-            appMru = [appId].concat(filtered);
+            appMru = [wlAppId].concat(filtered);
 
             // Move window to front of this app's per-app window MRU
-            var winList = appWindowMru[appId] || [];
+            var winList = appWindowMru[wlAppId] || [];
             var winFiltered = [];
             for (var j = 0; j < winList.length; j++) {
                 if (winList[j] !== addr) winFiltered.push(winList[j]);
             }
-            appWindowMru[appId] = [addr].concat(winFiltered);
+            appWindowMru[wlAppId] = [addr].concat(winFiltered);
         }
     }
 
     Connections {
         target: Hyprland
         function onRawEvent(event) {
+            // Handle openwindow: track new windows in MRU immediately
+            if (event.name === "openwindow") {
+                var parts = (event.data || "").split(",");
+                console.log("[hyprsphere MRU] openwindow: " + event.data);
+                if (parts.length >= 3) {
+                    var addr = parts[0];
+                    if (addr.indexOf("0x") !== 0) addr = "0x" + addr;
+                    var appId = parts[2];
+                    if (!appId) return;
+                    var filtered = [];
+                    for (var i = 0; i < appMru.length; i++) {
+                        if (appMru[i] !== appId) filtered.push(appMru[i]);
+                    }
+                    appMru = [appId].concat(filtered);
+                    appWindowMru[appId] = [addr].concat(appWindowMru[appId] || []);
+                    console.log("[hyprsphere MRU] openwindow: appMru=" + JSON.stringify(appMru));
+                }
+                return;
+            }
+
             if (event.name !== "closewindow") return;
             var addr = event.data || "";
             if (!addr) return;
