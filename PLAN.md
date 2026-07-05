@@ -444,16 +444,28 @@ remains consistent after close (no stale nodes, correct layer fallback).
 
 ---
 
-## Phase 6 — Search bar decision
+## Phase 6 — Search bar with fuzzy filtering (layer 2) ✅ IN PROGRESS
 
-The launcher's `TextField` search doesn't map cleanly onto a quick
-glance-and-release interaction, and it competes for keyboard focus with
-Tab/Shift+Tab. Recommendation: **cut it for v1.**
+**Status:** Implemented and needs testing. Adds a search bar at bottom-center
+of the overlay. Typing any letter/digit enters **layer 2** — the sphere
+rebuilds with fuzzy-filtered results from Fuse.js, ordered: matching running
+apps → matching whitelisted apps → matching windows.
 
-If you want it back later as an optional power-user filter (type while
-holding Alt to jump straight to a window by title), it can return in
-Phase 8 as a stretch goal, wired through its own `IpcHandler` function
-rather than requiring `TextField` focus — but ship without it first.
+**Key design:**
+- Search bar is a readOnly TextField (text set programmatically) — no
+  keyboard focus conflict with Tab cycling
+- Fuse.js v7.0.0 (from polysphere/lib/) — proven working, QML-compatible
+- Backspace when empty returns to layer 0; Escape always closes overlay
+- `;` on an app node at layer 2 drills into that app's windows (layer 1);
+  `;` again restores the search results
+- Commit at layer 2: MRU-most for apps, direct address for window nodes
+- All search/Fuse options configurable in hyprsphere.json under `search` block
+
+See `PHASE_6.md` for full implementation details.
+
+**Next:** Testing — ensure no regressions on layers 0/1, verify drill-down
+round-trip from layer 2, verify Fuse results are correctly ordered, verify
+search bar appearance/behavior.
 
 ---
 

@@ -8,6 +8,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
 import Quickshell.Hyprland._Ipc
+import "lib/fuse.js" as FuseJs
 
 PanelWindow {
     id: window
@@ -61,6 +62,15 @@ PanelWindow {
     property var appMru: []
     property var appWindowMru: ({})
 
+    // ── Phase 6: Search / Layer 2 ──
+    property string searchQuery: ""
+    property var fuseIndex: null
+    property var searchDatabase: []
+    property var searchTimer: null
+    property var savedLayer2Model: []
+    property string savedLayer2Query: ""
+    property bool searchFocused: false
+
     function buildLayer0() {
         var groups = {};
         var tls = Hyprland.toplevels;
@@ -94,6 +104,9 @@ PanelWindow {
 
         window.layer = 0;
         window.drilledAppId = "";
+        window.searchQuery = "";
+        window.savedLayer2Model = [];
+        window.savedLayer2Query = "";
 
         window.focusable = true;
         window.overlayActive = true;
@@ -133,6 +146,9 @@ PanelWindow {
         projDirty = true;
         rebuildProjCache();
 
+        // Initialize Fuse index for search
+        initFuseIndex();
+
         // Refresh on next tick to catch pending appId resolutions.
         Qt.callLater(function() { scheduleRebuild(); });
     }
@@ -153,6 +169,183 @@ PanelWindow {
         return sorted;
     }
 
+    // ── Phase 6: Search / Layer 2 ──
+    function buildSearchDatabase() {
+        var db = [];
+        var tls = Hyprland.toplevels;
+        var arr = (tls && tls.values) || [];
+        var seenApps = {};
+
+        // Collect running apps grouped
+        for (var i = 0; i < arr.length; i++) {
+            var t = arr[i];
+            if (!t) continue;
+            var ws = t.workspace;
+            if (ws && String(ws.name || "").startsWith("special:")) continue;
+            var wl = t.wayland;
+            var appId = (wl && wl.appId) ? wl.appId : "unknown";
+            if (!seenApps[appId]) {
+                seenApps[appId] = true;
+                db.push({ type: "running-app", appId: appId, label: appId, icon: appId, windows: [] });
+            }
+            for (var d = 0; d < db.length; d++) {
+                if (db[d].appId === appId && db[d].type === "running-app") {
+                    db[d].windows.push({ address: t.address, title: t.title });
+                    break;
+                }
+            }
+        }
+
+        // Add window-level entries for title search
+        for (var i2 = 0; i2 < arr.length; i2++) {
+            var t2 = arr[i2];
+            if (!t2) continue;
+            var ws2 = t2.workspace;
+            if (ws2 && String(ws2.name || "").startsWith("special:")) continue;
+            var wl2 = t2.wayland;
+            var appId2 = (wl2 && wl2.appId) ? wl2.appId : "unknown";
+            db.push({
+                type: "window", appId: appId2, label: appId2, icon: appId2,
+                address: t2.address, title: t2.title || appId2
+            });
+        }
+
+        // Add whitelisted placeholder apps (not already running)
+        var whitelist = cfg.whitelist || [];
+        for (var e = 0; e < whitelist.length; e++) {
+            var entry = whitelist[e];
+            if (seenApps[entry.appId]) continue;
+            db.push({
+                type: "whitelisted-app", appId: entry.appId, label: entry.label,
+                icon: entry.icon, exec: entry.exec, windows: [], windowCount: 0
+            });
+        }
+
+        return db;
+    }
+
+    function initFuseIndex() {
+        var db = buildSearchDatabase();
+        searchDatabase = db;
+        try {
+            fuseIndex = new FuseJs.Fuse(db, {
+                keys: [
+                    { name: "label", weight: 0.5 },
+                    { name: "title", weight: 0.4 },
+                    { name: "appId", weight: 0.1 }
+                ],
+                threshold: cfg.search?.fuseThreshold ?? 0.4,
+                minMatchCharLength: cfg.search?.fuseMinMatchCharLength ?? 1,
+                includeScore: true,
+                shouldSort: true
+            });
+        } catch (e) {
+            console.log("[hyprsphere] Fuse init error:", String(e));
+            fuseIndex = null;
+        }
+    }
+
+    function _handleSearchInput(text) {
+        searchQuery = text;
+
+        if (searchQuery === "" && window.layer === 2) {
+            cancelSearch();
+            return;
+        }
+
+        if (searchTimer) searchTimer.running = false;
+        searchTimer = Qt.createQmlObject(
+            'import QtQuick; Timer { interval: ' + (cfg.search?.delayMs ?? 150)
+            + '; running: true; repeat: false; onTriggered: window._executeSearch(); }',
+            window
+        );
+    }
+
+    function _executeSearch() {
+        if (searchQuery === "") return;
+        if (!fuseIndex) {
+            initFuseIndex();
+            if (!fuseIndex) return;
+        }
+
+        var results = fuseIndex.search(searchQuery);
+        var maxResults = cfg.search?.maxResults ?? 30;
+        var top = results.slice(0, maxResults);
+
+        var runApps = [];
+        var whitelistApps = [];
+        var winNodes = [];
+
+        for (var i = 0; i < top.length; i++) {
+            var item = top[i].item;
+            if (item.type === "running-app") {
+                runApps.push(item);
+            } else if (item.type === "whitelisted-app") {
+                whitelistApps.push(item);
+            } else if (item.type === "window") {
+                winNodes.push(item);
+            }
+        }
+
+        // Build layer 2 model: running apps → whitelisted apps → windows
+        var layer2Model = [];
+
+        for (var r = 0; r < runApps.length; r++) {
+            var ra = runApps[r];
+            layer2Model.push({
+                appId: ra.appId, label: ra.label, icon: ra.icon,
+                windows: ra.windows, windowCount: ra.windows.length,
+                isSearchResult: true
+            });
+        }
+
+        for (var w = 0; w < whitelistApps.length; w++) {
+            var wa = whitelistApps[w];
+            layer2Model.push({
+                appId: wa.appId, label: wa.label, icon: wa.icon,
+                exec: wa.exec, windows: [], windowCount: 0,
+                isWhitelistPlaceholder: true, isSearchResult: true
+            });
+        }
+
+        for (var w2 = 0; w2 < winNodes.length; w2++) {
+            var wn = winNodes[w2];
+            layer2Model.push({
+                appId: wn.appId, label: wn.label, icon: wn.icon,
+                address: wn.address, title: wn.title,
+                isWindowNode: true, isSearchResult: true
+            });
+        }
+
+        window.layer = 2;
+        sphereModel = layer2Model.length === 0
+            ? [{ label: "No results", icon: "", appId: "", isPlaceholder: true }]
+            : layer2Model;
+        selectedAppIndex = 0;
+        projDirty = true;
+        rebuildProjCache();
+        centerOnApp(0);
+        sphereZoom = cfg.search?.layer2Zoom ?? 1.5;
+    }
+
+    function cancelSearch() {
+        searchQuery = "";
+        savedLayer2Model = [];
+        savedLayer2Query = "";
+        var raw = buildLayer0();
+        window.layer = 0;
+        sphereModel = raw.length === 0
+            ? [{ label: "No windows", icon: "", appId: "", windows: [], isPlaceholder: true }]
+            : sortByMru(raw);
+        sphereZoom = 1.0;
+        projDirty = true;
+        rebuildProjCache();
+        if (sphereModel.length > 0 && !sphereModel[0].isPlaceholder) {
+            selectedAppIndex = Math.min(sphereModel.length - 1, selectedAppIndex);
+            centerOnApp(selectedAppIndex);
+        }
+    }
+
     function scheduleRebuild() {
         if (rebuildScheduled) return;
         rebuildScheduled = true;
@@ -161,6 +354,13 @@ PanelWindow {
             // Run regardless of visibility — sphere data is cheap to rebuild
             // and may be needed when overlay reappears after visible toggle.
             var raw = buildLayer0();
+
+            if (window.layer === 2 && window.searchQuery !== "") {
+                // Layer 2 active: re-init Fuse index and re-run search
+                initFuseIndex();
+                _executeSearch();
+                return;
+            }
 
             if (window.layer === 1 && window.drilledAppId) {
                 var prevAddress = sphereModel[selectedAppIndex]
@@ -212,6 +412,7 @@ PanelWindow {
 
     function drillDown() {
         if (window.layer === 0) {
+            // Layer 0 → Layer 1 (existing behavior)
             var app = sphereModel[selectedAppIndex];
             if (!app || app.isPlaceholder || app.isWhitelistPlaceholder) return;
             if (app.windowCount === 0) return;
@@ -238,22 +439,78 @@ PanelWindow {
             projDirty = true;
             rebuildProjCache();
             centerOnApp(0);
-        } else {
-            window.layer = 0;
-            var raw = buildLayer0();
-            sphereModel = raw.length === 0
-                ? [{ label: "No windows", icon: "", appId: "", windows: [], isPlaceholder: true }]
-                : sortByMru(raw);
+        } else if (window.layer === 2) {
+            // Layer 2 → drill into app → Layer 1
+            var node = sphereModel[selectedAppIndex];
+            if (!node || node.isPlaceholder || node.isWhitelistPlaceholder) return;
+            if (node.isWindowNode) return;  // no-op on window nodes
+            if (!node.windows || node.windowCount === 0) return;
+
+            // Save layer 2 state for restoration
+            savedLayer2Model = sphereModel.slice();
+            savedLayer2Query = searchQuery;
+
+            window.layer = 1;
+            window.drilledAppId = node.appId;
+
+            var winMru = appWindowMru[node.appId] || [];
+            sphereModel = node.windows.slice().map(function(w) {
+                return {
+                    address: w.address,
+                    title:   w.title,
+                    icon:    node.icon,
+                    label:   node.label,
+                    appId:   node.appId,
+                };
+            }).sort(function(a, b) {
+                var ia = winMru.indexOf(a.address);
+                var ib = winMru.indexOf(b.address);
+                return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
+            });
+
+            selectedAppIndex = 0;
             projDirty = true;
             rebuildProjCache();
+            centerOnApp(0);
+            sphereZoom = 1.0;
+        } else {
+            // Layer 1 → back to previous layer
+            if (savedLayer2Model.length > 0) {
+                // Return to layer 2 (search results preserved)
+                window.layer = 2;
+                searchQuery = savedLayer2Query;
+                sphereModel = savedLayer2Model;
+                savedLayer2Model = [];
+                savedLayer2Query = "";
+                projDirty = true;
+                rebuildProjCache();
 
-            var prevIdx = -1;
-            for (var i = 0; i < sphereModel.length; i++) {
-                if (sphereModel[i].appId === window.drilledAppId) { prevIdx = i; break; }
+                var prevIdx = -1;
+                for (var i = 0; i < sphereModel.length; i++) {
+                    if (sphereModel[i].appId === window.drilledAppId) { prevIdx = i; break; }
+                }
+                selectedAppIndex = prevIdx >= 0 ? prevIdx : 0;
+                centerOnApp(selectedAppIndex);
+                window.drilledAppId = "";
+                sphereZoom = cfg.search?.layer2Zoom ?? 1.5;
+            } else {
+                // Normal layer 1 → layer 0
+                window.layer = 0;
+                var raw = buildLayer0();
+                sphereModel = raw.length === 0
+                    ? [{ label: "No windows", icon: "", appId: "", windows: [], isPlaceholder: true }]
+                    : sortByMru(raw);
+                projDirty = true;
+                rebuildProjCache();
+
+                var prevIdx = -1;
+                for (var i = 0; i < sphereModel.length; i++) {
+                    if (sphereModel[i].appId === window.drilledAppId) { prevIdx = i; break; }
+                }
+                selectedAppIndex = prevIdx >= 0 ? prevIdx : 0;
+                centerOnApp(selectedAppIndex);
+                window.drilledAppId = "";
             }
-            selectedAppIndex = prevIdx >= 0 ? prevIdx : 0;
-            centerOnApp(selectedAppIndex);
-            window.drilledAppId = "";
         }
     }
 
@@ -281,7 +538,8 @@ PanelWindow {
         }
 
         var addr;
-        if (window.layer === 0) {
+        if (window.layer === 0 || (window.layer === 2 && !node.isWindowNode)) {
+            // Layer 0 or layer 2 app node: focus MRU-most window
             var winMru = appWindowMru[node.appId] || [];
             var best = null;
             for (var m = 0; m < winMru.length; m++) {
@@ -295,6 +553,7 @@ PanelWindow {
             }
             addr = best || node.windows[0].address;
         } else {
+            // Layer 1 or layer 2 window node: focus specific address
             addr = node.address;
         }
 
@@ -314,7 +573,8 @@ PanelWindow {
         var node = sphereModel[selectedAppIndex];
         if (!node || node.isPlaceholder || node.isWhitelistPlaceholder) return;
 
-        if (window.layer === 0) {
+        if (window.layer === 0 || (window.layer === 2 && !node.isWindowNode)) {
+            // Layer 0 or layer 2 app node: close all windows of this app
             for (var w = 0; w < node.windows.length; w++) {
                 var a = node.windows[w].address;
                 var p = a.indexOf("0x") === 0 ? "" : "0x";
@@ -322,6 +582,7 @@ PanelWindow {
                     'hl.dsp.window.close({window="address:' + p + a + '"})']);
             }
         } else {
+            // Layer 1 or layer 2 window node: close specific window
             var p = node.address.indexOf("0x") === 0 ? "" : "0x";
             Quickshell.execDetached(["hyprctl", "dispatch",
                 'hl.dsp.window.close({window="address:' + p + node.address + '"})']);
@@ -674,6 +935,9 @@ PanelWindow {
     function cancelSwitch() {
         window.layer = 0;
         window.drilledAppId = "";
+        window.searchQuery = "";
+        window.savedLayer2Model = [];
+        window.savedLayer2Query = "";
         window.overlayActive = false;
         closeSequence.start();
     }
@@ -695,6 +959,15 @@ PanelWindow {
                 event.accepted = true;
             } else if (event.key === Qt.Key_C && (event.modifiers & Qt.ControlModifier)) {
                 window.closeSelection();
+                event.accepted = true;
+            } else if (event.key === Qt.Key_Backspace && !event.isAutoRepeat) {
+                if (window.searchQuery.length > 0) {
+                    window._handleSearchInput(window.searchQuery.slice(0, -1));
+                }
+                event.accepted = true;
+            } else if (!event.isAutoRepeat && event.text.length > 0
+                       && event.text.match(/[a-zA-Z0-9 _.-]/)) {
+                window._handleSearchInput(window.searchQuery + event.text);
                 event.accepted = true;
             } else if (event.key === Qt.Key_Escape) {
                 window.cancelSwitch();
@@ -864,7 +1137,7 @@ PanelWindow {
                                     anchors.fill: parent
                                     anchors.leftMargin:  window._s3
                                     anchors.rightMargin: window._s3
-                                    text: window.layer === 1 && model.title ? model.title : (model.label || "")
+                                    text: model.title ? model.title : (model.label || "")
                                     font.family: "JetBrains Mono"
                                     font.pixelSize: window._s11
                                     font.weight: Font.DemiBold
@@ -1005,7 +1278,7 @@ PanelWindow {
                                                 text: {
                                                     var n = window.sphereModel[window.selectedAppIndex];
                                                     if (!n) return "";
-                                                    return window.layer === 1 && n.title ? n.title : (n.label || "");
+                                                    return n && n.title ? n.title : (n && n.label || "");
                                                 }
                                                 font.family: "JetBrains Mono"
                                                 font.pixelSize: window._sat_fontSize
@@ -1099,5 +1372,58 @@ PanelWindow {
         }
     }
 
+    // ── Phase 6: Search bar ──
+    Rectangle {
+        id: searchContainer
+        visible: window.overlayActive
+        width:  window.s(cfg.searchBar?.width ?? 560)
+        height: window.s(cfg.searchBar?.height ?? 56)
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: window.s(cfg.searchBar?.bottomMargin ?? 63)
+        anchors.horizontalCenter: parent.horizontalCenter
+        radius: window.s(cfg.searchBar?.borderRadius ?? 28)
+        color: Qt.rgba(window.mantle.r, window.mantle.g, window.mantle.b,
+                       cfg.searchBar?.backgroundOpacity ?? 0.92)
+        border.color: window.searchQuery.length > 0 ? window.mauve : window.surface1
+        border.width: window.s(cfg.searchBar?.borderWidth ?? 1.5)
+        opacity: window.introPhase
+        transform: Translate { y: (1 - window.introPhase) * window._s40 }
+        layer.enabled: window.introPhase > 0.01
+        layer.effect: MultiEffect {
+            shadowEnabled: true; shadowColor: "#000000"
+            shadowOpacity: cfg.searchBar?.shadowOpacity ?? 0.4
+            shadowBlur: cfg.searchBar?.shadowBlur ?? 1.5
+            shadowVerticalOffset: window._s4
+        }
 
+        RowLayout {
+            anchors.fill: parent
+            anchors.leftMargin: window._s20
+            anchors.rightMargin: window._s20
+            spacing: window._s12
+
+            TextField {
+                id: searchInput
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                background: Item {}
+                color: window.text
+                font.family: "JetBrains Mono"
+                font.pixelSize: window._s15
+                font.weight: Font.Medium
+                selectByMouse: true
+                readOnly: true
+                text: window.searchQuery
+                placeholderText: cfg.searchBar?.placeholderText ?? "Search apps and windows..."
+                placeholderTextColor: cfg.searchBar?.placeholderColor
+                    ? Qt.rgba(
+                        (parseInt(cfg.searchBar.placeholderColor.substring(1,3),16)/255),
+                        (parseInt(cfg.searchBar.placeholderColor.substring(3,5),16)/255),
+                        (parseInt(cfg.searchBar.placeholderColor.substring(5,7),16)/255),
+                        1.0)
+                    : window.overlay0
+                verticalAlignment: TextInput.AlignVCenter
+            }
+        }
+    }
 }

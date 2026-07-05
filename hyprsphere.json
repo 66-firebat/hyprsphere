@@ -47,7 +47,6 @@
   "sphere": {
     "baseRadius": 368,
     "initialZoom": 1.0,
-    "searchZoom": 1.65,
     "zoomDurationMs": 400,
     "zoomEasing": "OutCubic",
     "initialRotX": -0.2,
@@ -79,10 +78,23 @@
 
   "searchBar": {
     "width": 560,
+    "height": 56,
+    "borderRadius": 28,
+    "bottomMargin": 63,
     "borderWidth": 1.5,
     "backgroundOpacity": 0.92,
     "shadowOpacity": 0.4,
-    "shadowBlur": 1.5
+    "shadowBlur": 1.5,
+    "placeholderText": "Search apps and windows...",
+    "placeholderColor": "#6c7086"
+  },
+
+  "search": {
+    "delayMs": 150,
+    "maxResults": 30,
+    "fuseThreshold": 0.4,
+    "fuseMinMatchCharLength": 1,
+    "layer2Zoom": 1.5
   },
 
   "appCard": {

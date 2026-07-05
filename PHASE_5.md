@@ -1,9 +1,14 @@
-# PHASE_5 — Ctrl+C close windows
+# PHASE_5 — Ctrl+C close windows ✅ COMPLETE
 
 **Deliverable:** Ctrl+C at layer 0 closes all windows of the selected app,
 moves selection to the next MRU app. Ctrl+C at layer 1 closes the selected
 window, moves selection to the next MRU window (index 0). Overlay stays
 open throughout. Whitelist placeholder entries are no-ops.
+
+**Status:** Implemented and tested. Fixed focus-lost-after-close by
+unmap/remap visible toggle. Fixed MRU ordering by handling `openwindow`
+events and cleaning stale `"unknown"` appId entries. Fixed SHIFT+Tab
+selecting same-as-current app.
 
 ---
 
