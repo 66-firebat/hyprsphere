@@ -52,14 +52,14 @@
     "zoomEasing": "OutCubic",
     "initialRotX": -0.2,
     "initialRotY": 0,
-    "maxRotationX": 1.45,
+    "maxRotationX": 2.5,
     "maxRotationY": 1.45,
     "zoomFactorWeight": 0.45,
     "normalizationConstant": 310.5
   },
 
   "animations": {
-    "searchRotateDurationMs": 700,
+    "searchRotateDurationMs": 250,
     "sphereAutoRotateIntervalMs": 16,
     "sphereRotateSpeed": 0.002,
     "cardFadeDurationMs": 200,

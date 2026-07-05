@@ -174,23 +174,12 @@ function advance(dir) {
 }
 ```
 
-### 7. Wire via IpcHandler for Phase 3 readiness
+### 7. Set up IpcHandler
 
-Add advance/drill/commit/cancel stubs to the IpcHandler (no-op bodies
-for now, wired when Phase 3 delivers key handling):
-
-```qml
-IpcHandler {
-    target: "hyprsphere"
-    function toggle(): void { openSwitcher() }
-    function advance(): void {}
-    function drilldown(): void {}
-    function commit(): void {}
-    function cancel(): void { closeSequence.start() }
-}
-```
-
-Cancel is wired now since Escape works in Phase 1.
+The IpcHandler only needs the `toggle()` entry point for Hyprland.
+All other interaction (Tab cycling, Escape, Alt release) goes through
+`Keys.onPressed`/`Keys.onReleased` on the focused overlay directly —
+no per-keystroke IPC round-trip needed. See Phase 3.
 
 ---
 

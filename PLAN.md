@@ -589,3 +589,15 @@ hardcoded is the right starting point for v1.
 - Text search / fuzzy filtering while switching.
 - More than two layers (e.g. grouping by workspace *and* app) — the
   app→window two-layer model is the full scope for v1.
+- **Late-appId resolution rebuild** (`scheduleRebuild()`). When a window
+  first opens, its `wayland.appId` can be `null` for a brief window
+  (Wayland handshake not yet complete). If the overlay is opened during
+  that window, the toplevel appears as `"unknown"` until the next
+  `openSwitcher()` call. The current code has a debounced
+  `scheduleRebuild()` function but no trigger wired to fire it — the
+  detection mechanism (connecting to per-toplevel `wayland` property
+  changes or parsing `rawEvent` for `openwindow>>`) is underspecified.
+  In practice this is a near-zero-occurrence race (windows resolve
+  their `appId` within milliseconds of appearing), but if it does bite
+  during Phases 3–7, revisit by wiring `Hyprland.rawEvent` or toplevel
+  property-change signals to call `scheduleRebuild()`.

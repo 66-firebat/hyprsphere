@@ -179,7 +179,15 @@ function scheduleRebuild() {
 }
 ```
 
-Connect to `Hyprland.rawEvent` and watch for toplevel property changes
-that indicate an `appId` resolved. The exact signal depends on what
-Quickshell exposes — start with `rawEvent` and filter for `openwindow`
-events, then cross-reference against existing `"unknown"` entries.
+### Late addition (added during Phase 2): Refresh on open
+
+During testing, windows that opened shortly before `openSwitcher()` ran
+sometimes had `wayland.appId === null`, lumping them into an `"unknown"`
+group. The fix: call `Hyprland.refreshToplevels()` at the start of
+`openSwitcher()`, then defer the sphere build to a `Qt.callLater()`
+callback (one event-loop tick, ~16ms). This gives Quickshell's IPC
+connection time to resolve pending `appId` values before we read them.
+
+The overlay is shown immediately (intro animation starts playing) so
+the user never sees a delay — the sphere populates ~16ms later with
+correct app names, well before the 800ms intro animation finishes.

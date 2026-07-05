@@ -87,26 +87,36 @@ PanelWindow {
 
     function openSwitcher() {
         console.log("[hyprsphere] openSwitcher called");
-        var raw = buildLayer0();
-        console.log("[hyprsphere] buildLayer0 returned " + raw.length + " groups");
 
-        var mruSorted = sortByMru(raw);
-        sphereModel = mruSorted.length === 0
-            ? [{ label: "No windows", icon: "", appId: "", windows: [], isPlaceholder: true }]
-            : mruSorted;
-
-        // Pre-select index 1 (previous app) if MRU has enough history
-        if (sphereModel.length > 0 && !sphereModel[0].isPlaceholder) {
-            selectedAppIndex = (appMru.length >= 2) ? 1 : 0;
-            if (selectedAppIndex < sphereModel.length) {
-                centerOnApp(selectedAppIndex);
-            }
-        }
-
-        projDirty = true;
-        rebuildProjCache();
+        // Show overlay immediately (intro animation plays while data loads)
+        window.overlayActive = true;
         window.visible = true;
         introPhaseAnim.restart();
+
+        // Refresh toplevel data from Hyprland IPC then rebuild on next tick.
+        // This gives the IPC time to resolve pending wayland.appId values
+        // (e.g. a window that just opened and hasn't reported its appId yet),
+        // avoiding "unknown" entries in the sphere.
+        Hyprland.refreshToplevels();
+        Qt.callLater(function() {
+            var raw = buildLayer0();
+            console.log("[hyprsphere] buildLayer0 returned " + raw.length + " groups");
+
+            var mruSorted = sortByMru(raw);
+            sphereModel = mruSorted.length === 0
+                ? [{ label: "No windows", icon: "", appId: "", windows: [], isPlaceholder: true }]
+                : mruSorted;
+
+            if (sphereModel.length > 0 && !sphereModel[0].isPlaceholder) {
+                selectedAppIndex = (appMru.length >= 2) ? 1 : 0;
+                if (selectedAppIndex < sphereModel.length) {
+                    centerOnApp(selectedAppIndex);
+                }
+            }
+
+            projDirty = true;
+            rebuildProjCache();
+        });
     }
 
     function sortByMru(raw) {
@@ -170,9 +180,9 @@ PanelWindow {
     Connections {
         target: Hyprland
         function onRawEvent(event) {
-            var text = event.name || "";
-            if (!text.startsWith("closewindow>>")) return;
-            var addr = text.substring("closewindow>>".length);
+            if (event.name !== "closewindow") return;
+            var addr = event.data || "";
+            if (!addr) return;
 
             for (var appId in appWindowMru) {
                 var list = appWindowMru[appId];
@@ -214,16 +224,20 @@ PanelWindow {
         centerOnApp(next);
     }
 
+    property bool overlayActive: false
+
     IpcHandler {
         target: "hyprsphere"
         function toggle(): void {
+            if (window.overlayActive) {
+                // Hyprland consumed the Tab key (ALT+Tab bind), so focusGrabber
+                // never saw it. Advance via IPC instead.
+                window.advance(1);
+                return;
+            }
             console.log("[hyprsphere] IPC toggle() called");
             openSwitcher();
         }
-        function advance(): void {}
-        function drilldown(): void {}
-        function commit(): void {}
-        function cancel(): void { closeSequence.start() }
     }
 
     Component.onCompleted: {
@@ -392,8 +406,7 @@ PanelWindow {
         if (diff >  Math.PI) diff -= Math.PI * 2;
         if (diff < -Math.PI) diff += Math.PI * 2;
 
-        let maxRX = cfg.sphere?.maxRotationX ?? 1.45;
-        searchRotXAnim.to = Math.max(-maxRX, Math.min(maxRX, targetRotX));
+        searchRotXAnim.to = targetRotX;
         searchRotYAnim.to = window.rotY + diff;
 
         searchRotXAnim.restart();
@@ -416,21 +429,47 @@ PanelWindow {
         }
     }
 
-    Shortcut {
-        sequence: "Escape"
-        onActivated: closeSequence.start()
-    }
+
 
     SequentialAnimation {
         id: closeSequence
         NumberAnimation { target: window; property: "introPhase"; to: 0.0; duration: cfg.animations?.exitFadeDurationMs ?? 400; easing.type: Easing.OutQuint }
-        ScriptAction { script: window.visible = false; }
+        ScriptAction { script: { window.overlayActive = false; window.visible = false; } }
     }
 
+    function cancelSwitch() {
+        window.overlayActive = false;
+        closeSequence.start();
+    }
 
+    // ── Phase 3: key handling ──
+    Item {
+        id: focusGrabber
+        anchors.fill: parent
+        focus: true
+        Keys.priority: Keys.BeforeItem
 
+        Keys.onPressed: (event) => {
+            if (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab) {
+                if (event.modifiers & Qt.ShiftModifier || event.key === Qt.Key_Backtab) window.advance(-1);
+                else window.advance(1);
+                event.accepted = true;
+            } else if (event.key === Qt.Key_Semicolon) {
+                window.drillDown();
+                event.accepted = true;
+            } else if (event.key === Qt.Key_Escape) {
+                window.cancelSwitch();
+                event.accepted = true;
+            }
+        }
 
-
+        Keys.onReleased: (event) => {
+            if (event.key === Qt.Key_Alt) {
+                window.commitSelection();
+                event.accepted = true;
+            }
+        }
+    }
 
     Item {
         anchors.fill: parent
@@ -475,8 +514,7 @@ PanelWindow {
                 let dragSens = cfg.mouse?.dragSensitivity ?? 0.005;
                 window.rotY += dx * dragSens;
                 let newRotX = window.rotX - dy * dragSens;
-                let maxRX = cfg.sphere?.maxRotationX ?? 1.45;
-                window.rotX = Math.max(-maxRX, Math.min(maxRX, newRotX));
+                window.rotX = newRotX;
                 lastX = mouse.x;
                 lastY = mouse.y;
             }
