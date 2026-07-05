@@ -105,7 +105,5 @@
     "opacityMax": 0.12
   },
 
-  "misc": {
-    "appFetchChunkSize": 40
-  }
+  "misc": {}
 }

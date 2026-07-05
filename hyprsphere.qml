@@ -53,6 +53,10 @@ PanelWindow {
     property var rebuildScheduled: false
     property int selectedAppIndex: -1
 
+    // ── Phase 4: two-layer state machine ──
+    property int layer: 0
+    property string drilledAppId: ""
+
     // ── Phase 2: MRU tracking ──
     property var appMru: []
     property var appWindowMru: ({})
@@ -87,6 +91,9 @@ PanelWindow {
 
     function openSwitcher() {
         console.log("[hyprsphere] openSwitcher called");
+
+        window.layer = 0;
+        window.drilledAppId = "";
 
         // Show overlay immediately (intro animation plays while data loads)
         window.overlayActive = true;
@@ -140,15 +147,152 @@ PanelWindow {
         rebuildScheduled = true;
         Qt.callLater(function() {
             rebuildScheduled = false;
-            if (window.visible) {
-                var raw = buildLayer0();
-                sphereModel = raw.length === 0
-                    ? [{ label: "No windows", icon: "", appId: "", windows: [], isPlaceholder: true }]
-                    : sortByMru(raw);
-                projDirty = true;
-                rebuildProjCache();
+            if (!window.visible) return;
+
+            var raw = buildLayer0();
+
+            if (window.layer === 1 && window.drilledAppId) {
+                var prevAddress = sphereModel[selectedAppIndex]
+                    ? sphereModel[selectedAppIndex].address
+                    : null;
+
+                var app = null;
+                for (var i = 0; i < raw.length; i++) {
+                    if (raw[i].appId === window.drilledAppId) { app = raw[i]; break; }
+                }
+
+                if (app && app.windowCount >= 1) {
+                    var winMru = appWindowMru[app.appId] || [];
+                    sphereModel = app.windows.slice().map(function(w) {
+                        return {
+                            address: w.address,
+                            title:   w.title,
+                            icon:    app.icon,
+                            label:   app.label,
+                            appId:   app.appId,
+                        };
+                    }).sort(function(a, b) {
+                        var ia = winMru.indexOf(a.address);
+                        var ib = winMru.indexOf(b.address);
+                        return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
+                    });
+
+                    var restoredIdx = -1;
+                    for (var si = 0; si < sphereModel.length; si++) {
+                        if (sphereModel[si].address === prevAddress) { restoredIdx = si; break; }
+                    }
+                    selectedAppIndex = restoredIdx >= 0 ? restoredIdx : 0;
+                    centerOnApp(selectedAppIndex);
+                } else {
+                    window.layer = 0;
+                    window.drilledAppId = "";
+                    rebuildToLayer0(raw);
+                }
+            } else {
+                rebuildToLayer0(raw);
             }
+
+            projDirty = true;
+            rebuildProjCache();
         });
+    }
+
+    function drillDown() {
+        if (window.layer === 0) {
+            var app = sphereModel[selectedAppIndex];
+            if (!app || app.isPlaceholder || app.isWhitelistPlaceholder) return;
+            if (app.windowCount === 0) return;
+
+            window.layer = 1;
+            window.drilledAppId = app.appId;
+
+            var winMru = appWindowMru[app.appId] || [];
+            sphereModel = app.windows.slice().map(function(w) {
+                return {
+                    address: w.address,
+                    title:   w.title,
+                    icon:    app.icon,
+                    label:   app.label,
+                    appId:   app.appId,
+                };
+            }).sort(function(a, b) {
+                var ia = winMru.indexOf(a.address);
+                var ib = winMru.indexOf(b.address);
+                return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
+            });
+
+            selectedAppIndex = 0;
+            projDirty = true;
+            rebuildProjCache();
+            centerOnApp(0);
+        } else {
+            window.layer = 0;
+            var raw = buildLayer0();
+            sphereModel = raw.length === 0
+                ? [{ label: "No windows", icon: "", appId: "", windows: [], isPlaceholder: true }]
+                : sortByMru(raw);
+            projDirty = true;
+            rebuildProjCache();
+
+            var prevIdx = -1;
+            for (var i = 0; i < sphereModel.length; i++) {
+                if (sphereModel[i].appId === window.drilledAppId) { prevIdx = i; break; }
+            }
+            selectedAppIndex = prevIdx >= 0 ? prevIdx : 0;
+            centerOnApp(selectedAppIndex);
+            window.drilledAppId = "";
+        }
+    }
+
+    function commitSelection() {
+        if (closeSequence.running) return;
+
+        var node = sphereModel[selectedAppIndex];
+        if (!node || node.isPlaceholder) {
+            window.overlayActive = false;
+            closeSequence.start();
+            return;
+        }
+
+        if (node.isWhitelistPlaceholder) {
+            Hyprland.dispatch("exec " + node.exec);
+            window.overlayActive = false;
+            closeSequence.start();
+            return;
+        }
+
+        var addr;
+        if (window.layer === 0) {
+            var winMru = appWindowMru[node.appId] || [];
+            var best = null;
+            for (var m = 0; m < winMru.length; m++) {
+                for (var w = 0; w < node.windows.length; w++) {
+                    if (node.windows[w].address === winMru[m]) {
+                        best = winMru[m];
+                        break;
+                    }
+                }
+                if (best) break;
+            }
+            addr = best || node.windows[0].address;
+        } else {
+            addr = node.address;
+        }
+
+        Hyprland.dispatch("focuswindow address:" + addr);
+        window.overlayActive = false;
+        closeSequence.start();
+    }
+
+    function rebuildToLayer0(raw) {
+        if (raw.length === 0) {
+            sphereModel = [{ label: "No windows", icon: "", appId: "", windows: [], isPlaceholder: true }];
+            selectedAppIndex = 0;
+            return;
+        }
+        sphereModel = sortByMru(raw);
+        selectedAppIndex = Math.min(sphereModel.length - 1, selectedAppIndex);
+        centerOnApp(selectedAppIndex);
     }
 
     // ── Phase 2: MRU tracking ──
@@ -208,11 +352,15 @@ PanelWindow {
                     break;
                 }
             }
+            if (window.visible) {
+                scheduleRebuild();
+            }
         }
     }
 
     function advance(dir) {
         if (sphereModel.length === 0) return;
+        if (sphereModel[0].isPlaceholder) return;
         var count = sphereModel.length;
         var next = selectedAppIndex + dir;
         if (next < 0) {
@@ -425,6 +573,7 @@ PanelWindow {
             if (window.visible) {
                 window.sphereZoom   = 1.0;
                 introPhaseAnim.restart();
+                focusGrabber.forceActiveFocus();
             }
         }
     }
@@ -438,6 +587,8 @@ PanelWindow {
     }
 
     function cancelSwitch() {
+        window.layer = 0;
+        window.drilledAppId = "";
         window.overlayActive = false;
         closeSequence.start();
     }
@@ -625,7 +776,7 @@ PanelWindow {
                                     anchors.fill: parent
                                     anchors.leftMargin:  window._s3
                                     anchors.rightMargin: window._s3
-                                    text: model.label
+                                    text: window.layer === 1 && model.title ? model.title : (model.label || "")
                                     font.family: "JetBrains Mono"
                                     font.pixelSize: window._s11
                                     font.weight: Font.DemiBold
@@ -763,7 +914,11 @@ PanelWindow {
                                             Text {
                                                 Layout.alignment: Qt.AlignHCenter
                                                 Layout.fillWidth: true
-                                                text: window.sphereModel[window.selectedAppIndex]?.label || ""
+                                                text: {
+                                                    var n = window.sphereModel[window.selectedAppIndex];
+                                                    if (!n) return "";
+                                                    return window.layer === 1 && n.title ? n.title : (n.label || "");
+                                                }
                                                 font.family: "JetBrains Mono"
                                                 font.pixelSize: window._sat_fontSize
                                                 font.weight: Font.Bold
@@ -841,6 +996,15 @@ PanelWindow {
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
 
+                        onClicked: {
+                            window.selectedAppIndex = index;
+                            window.centerOnApp(index);
+                        }
+
+                        onDoubleClicked: {
+                            window.selectedAppIndex = index;
+                            window.commitSelection();
+                        }
                     }
                 }
             }

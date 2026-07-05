@@ -390,118 +390,61 @@ themselves don't change, only what calls them.
 
 ## Phase 4 — Selection & commit logic (two-layer state machine)
 
-**Goal:** replace `handleSearch`/arrow-key logic and `launchApp` with a
-small layer-aware state machine. These functions are the same
-regardless of what calls them, but per Phase 3 they're now invoked from
-`Keys.onPressed`/`Keys.onReleased` on the focused overlay, not from
-`IpcHandler` functions (only `openSwitcher()` is still reached via IPC,
-since that's the one call that has to originate from Hyprland).
+**Goal:** add a layer-aware state machine (`layer`, `drilledAppId`) with
+`drillDown()` and `commitSelection()`, plus click-to-select / double-click-
+to-commit on sphere nodes. Window titles shown at layer 1. See
+`PHASE_4.md` for the full implementation plan and `PHASE_4_TESTS.md` for
+the test suite.
 
-- `property int layer: 0` — `0` = apps, `1` = windows of one app.
-- `property var sphereModel: []` — whatever the sphere `Repeater` is
-  currently bound to; reassigned wholesale on layer transitions.
-- `openSwitcher()`: `layer = 0`; build from `buildLayer0()` — if it
-  returns an empty array (no toplevels at all, e.g. right after a
-  Quickshell restart with nothing open), `sphereModel` gets a single
-  placeholder node instead of an empty sphere:
-  ```qml
-  function openSwitcher() {
-      window.layer = 0;
-      let raw = buildLayer0();
-      sphereModel = raw.length === 0
-          ? [{ label: "No windows", icon: "", appId: "", windows: [], isPlaceholder: true }]
-          : raw.sort(byAppMru);
-      selectedAppIndex = Math.min(1, sphereModel.length - 1);
-      if (!sphereModel[0].isPlaceholder) centerOnApp(selectedAppIndex);
-      window.visible = true;
-      focusGrabber.forceActiveFocus();
-  }
-  ```
-  Without this, `centerOnApp` would run against an empty array on a
-  fresh Quickshell restart with nothing open yet — worth guarding even
-  though it's an edge case that won't come up often in daily use.
-- `advance(dir)`: unchanged regardless of layer —
-  `selectedAppIndex = (selectedAppIndex + dir + count) % count`,
-  `centerOnApp(selectedAppIndex)`. Operates on whatever `sphereModel`
-  currently is; layer 0 vs. 1 is invisible to this function. No-op if
-  the current node `isPlaceholder`.
-- `drillDown()`:
-  ```qml
-  function drillDown() {
-      if (window.layer === 0) {
-          let app = sphereModel[selectedAppIndex];
-          if (app.isPlaceholder || app.windows.length <= 1) return;
-          window.layer = 1;
-          window.drilledAppId = app.appId;
-          let winMru = appWindowMru[app.appId] || [];
-          sphereModel = app.windows
-              .slice()
-              .sort((a, b) => winMru.indexOf(a.address) - winMru.indexOf(b.address));
-          selectedAppIndex = 0;
-          centerOnApp(0);
-      } else {
-          // toggle back out to layer 0
-          window.layer = 0;
-          sphereModel = buildLayer0().sort(byAppMru);
-          selectedAppIndex = sphereModel.findIndex(a => a.appId === window.drilledAppId);
-          centerOnApp(Math.max(0, selectedAppIndex));
-      }
-  }
-  ```
-  Single-window apps skip the drill-down (nothing meaningful to show at
-  layer 1) — `;` is a no-op in that case rather than opening a
-  one-node sphere.
-- `commitSelection()` — behavior depends on layer:
-  ```qml
-  function commitSelection() {
-      // Guard: if Escape already started the close animation, don't
-      // commit on an Alt release that arrives during the fade.
-      if (closeSequence.running) return;
-
-      let node = sphereModel[selectedAppIndex];
-      if (!node || node.isPlaceholder) { closeSequence.start(); return; }
-
-      // Whitelist placeholder — not running, launch it
-      if (node.isWhitelistPlaceholder) {
-          Hyprland.dispatch("exec " + node.exec);
-          closeSequence.start();
-          return;
-      }
-
-      let addr;
-      if (window.layer === 0) {
-          let winMru = appWindowMru[node.appId] || [];
-          addr = node.windows
-              .slice()
-              .sort((a, b) => winMru.indexOf(a.address) - winMru.indexOf(b.address))[0].address;
-      } else {
-          addr = node.address;
-      }
-      Hyprland.dispatch("focuswindow address:" + addr);
-      closeSequence.start();
-  }
-  ```
-  The `closeSequence.running` guard fixes the Escape-then-release-Alt
-  race: Escape is on `Keys.onPressed` and starts the exit animation
-  immediately, but the window stays focused during the fade. If Alt is
-  released during that window, `Keys.onReleased` fires and would call
-  `commitSelection()` again — the guard returns early instead.
-- `cancelSwitch()`: just `closeSequence.start()` without dispatching —
-  leaves focus wherever it currently is. Reset `layer = 0` here too, so
-  the next open always starts fresh at layer 0 regardless of where the
-  previous session left off.
-- Delete `launchApp`, `searchQuery`, `selectedAppName/Icon/Exec` string
-  duplication (keep one canonical selected-object reference instead of
-  three separate mirrored properties — the launcher's redundancy here is
-  worth cleaning up while we're in this code anyway).
+**Summary of deliverables:**
+- `property int layer: 0` / `property string drilledAppId: ""`
+- `drillDown()` — toggles between app groups (layer 0) and per-app window
+  list (layer 1), enriched node shape (icon+label carried from parent app).
+  Always allowed — even single-window apps drill in (shows window title).
+- `commitSelection()` — `closeSequence.running` guard, layer-aware address
+  resolution (with existence check against `node.windows` rather than
+  blindly trusting MRU order), whitelist exec launch, `overlayActive` reset,
+  `Hyprland.dispatch("focuswindow address:...")`
+- `cancelSwitch()` resets layer + drilledAppId
+- `openSwitcher()` initialises layer = 0, calls `forceActiveFocus()`
+- `scheduleRebuild()` is layer-aware (rebuilds window list at layer 1,
+  falls back to layer 0 if drilled app is gone)
+- `advance()` no-op on "No windows" placeholder
+- Satellite + normal card text shows `title` at layer 1, `label` at layer 0
+- `onClicked` selects node + `centerOnApp`; `onDoubleClicked` commits
+- `closewindow` pruning triggers `scheduleRebuild()` for stale nodes
 
 **Exit criteria:** full press→hold→cycle→(optional `;` drill)→cycle→
-release→focus loop works at both layers, driven entirely by the focused
-overlay's own key handlers with no per-keystroke IPC round-trip.
+release→focus loop works at both layers; mouse click/double-click works;
+window titles are visible at layer 1; Escape+Alt release race is guarded.
 
 ---
 
-## Phase 5 — Search bar decision
+## Phase 5 — Ctrl+C close windows
+
+**Goal:** add a `Ctrl+C` keybind to close the selected window (or all
+windows of an app at layer 0) via `Hyprland.dispatch("closewindow address:...")`.
+
+- `Keys.onPressed` handler for `Qt.Key_C` with `Qt.ControlModifier` in
+  `focusGrabber`.
+- At **layer 0**: close **all windows** of the selected app group. The
+  app disappears from the sphere if all its windows close.
+- At **layer 1**: close only the **specific selected window**.
+- Handle edge cases:
+  - Last window of an app closes → app removed from `appMru` and `sphereModel`
+  - If that was the only app left → fall through to "No windows" placeholder
+  - If closing a window at layer 1 leaves only 1 window → return to layer 0
+- `closeSequence.running` guard: if already closing, no-op.
+- Test that the overlay remains usable after a close (window removed from
+  sphere, correct node selected next).
+
+**Exit criteria:** Ctrl+C at layer 0 closes all windows of the selected
+app; Ctrl+C at layer 1 closes only the selected window; overlay state
+remains consistent after close (no stale nodes, correct layer fallback).
+
+---
+
+## Phase 6 — Search bar decision
 
 The launcher's `TextField` search doesn't map cleanly onto a quick
 glance-and-release interaction, and it competes for keyboard focus with
@@ -509,12 +452,12 @@ Tab/Shift+Tab. Recommendation: **cut it for v1.**
 
 If you want it back later as an optional power-user filter (type while
 holding Alt to jump straight to a window by title), it can return in
-Phase 7 as a stretch goal, wired through its own `IpcHandler` function
+Phase 8 as a stretch goal, wired through its own `IpcHandler` function
 rather than requiring `TextField` focus — but ship without it first.
 
 ---
 
-## Phase 6 — Icon resolution (no daemon, one-shot)
+## Phase 7 — Icon resolution (no daemon, one-shot)
 
 Windows don't carry an icon path, so `appId` needs mapping to an icon
 name. Since layer 0 is grouped by app, this is now naturally a
@@ -538,7 +481,7 @@ variance isn't a thing worth chasing for v1).
 
 ---
 
-## Phase 7 — Visual/UX carryover and cleanup
+## Phase 8 — Visual/UX carryover and cleanup
 
 - Sphere projection math (`rebuildProjCache`, `project3D`, Fibonacci
   lattice), drag-to-rotate, auto-rotate timer, intro/exit animation,
@@ -599,5 +542,5 @@ hardcoded is the right starting point for v1.
   changes or parsing `rawEvent` for `openwindow>>`) is underspecified.
   In practice this is a near-zero-occurrence race (windows resolve
   their `appId` within milliseconds of appearing), but if it does bite
-  during Phases 3–7, revisit by wiring `Hyprland.rawEvent` or toplevel
+  during Phases 3–8, revisit by wiring `Hyprland.rawEvent` or toplevel
   property-change signals to call `scheduleRebuild()`.
