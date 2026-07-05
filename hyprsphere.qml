@@ -305,6 +305,33 @@ PanelWindow {
         Quickshell.execDetached(["hyprctl", "dispatch", 'hl.dsp.focus({window="address:' + prefix + addr + '"})']);
     }
 
+    // ── Phase 5: Ctrl+C close ──
+    function closeSelection() {
+        if (closeSequence.running) return;
+
+        var node = sphereModel[selectedAppIndex];
+        if (!node || node.isPlaceholder || node.isWhitelistPlaceholder) return;
+
+        if (window.layer === 0) {
+            // Layer 0: close ALL windows of the selected app group
+            for (var w = 0; w < node.windows.length; w++) {
+                var a = node.windows[w].address;
+                var p = a.indexOf("0x") === 0 ? "" : "0x";
+                Quickshell.execDetached(["hyprctl", "dispatch",
+                    'hl.dsp.window.close({window="address:' + p + a + '"})']);
+            }
+        } else {
+            // Layer 1: close the specific selected window
+            var p = node.address.indexOf("0x") === 0 ? "" : "0x";
+            Quickshell.execDetached(["hyprctl", "dispatch",
+                'hl.dsp.window.close({window="address:' + p + node.address + '"})']);
+        }
+        // Sphere refreshes via closewindow>> event → scheduleRebuild()
+        // Re-grab keyboard focus on next tick — Hyprland moves cursor/focus
+        // to the next window after a close, which can steal focus from the overlay.
+        Qt.callLater(function() { focusGrabber.forceActiveFocus(); });
+    }
+
     function rebuildToLayer0(raw) {
         if (raw.length === 0) {
             sphereModel = [{ label: "No windows", icon: "", appId: "", windows: [], isPlaceholder: true }];
@@ -634,6 +661,9 @@ PanelWindow {
                 event.accepted = true;
             } else if (event.key === Qt.Key_Semicolon) {
                 window.drillDown();
+                event.accepted = true;
+            } else if (event.key === Qt.Key_C && (event.modifiers & Qt.ControlModifier)) {
+                window.closeSelection();
                 event.accepted = true;
             } else if (event.key === Qt.Key_Escape) {
                 window.cancelSwitch();
