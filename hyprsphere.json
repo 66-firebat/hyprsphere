@@ -1,0 +1,111 @@
+{
+  "colors": {
+    "base":      "#1e1e2e",
+    "mantle":    "#181825",
+    "crust":     "#11111b",
+    "surface0":  "#313244",
+    "surface1":  "#45475a",
+    "surface2":  "#585b70",
+    "text":      "#cdd6f4",
+    "subtext0":  "#a6adc8",
+    "blue":      "#89b4fa",
+    "mauve":     "#cba6f7",
+    "teal":      "#94e2d5",
+    "overlay0":  "#6c7086",
+    "peach":     "#fab387",
+    "yellow":    "#f9e2af",
+    "sapphire":  "#74c7ec"
+  },
+
+  "scaler": {
+    "referenceWidth": 1920,
+    "minRatio": 0.5,
+    "maxRatio": 2.0
+  },
+
+  "sizes": {
+    "s2": 2, "s3": 3, "s4": 4, "s5": 5, "s8": 8,
+    "s11": 11, "s12": 12, "s15": 15, "s16": 16, "s18": 18,
+    "s20": 20, "s28": 28, "s40": 40, "s50": 50, "s55": 55,
+    "s56": 56, "s63": 63, "s74": 74, "s104": 104
+  },
+
+  "satellite": {
+    "hullWidth": 216, "hullHeight": 148,
+    "panelWidth": 64, "panelHeight": 51,
+    "strutWidth": 10, "strutHeight": 4,
+    "antennaHeight": 16, "thrusterHeight": 11,
+    "radius12": 10, "radius8": 7, "radius4": 3,
+    "antBall": 6, "antStick": 2, "antOffX": 14,
+    "screenMargin": 8, "innerMargin": 10,
+    "iconSize": 40, "fontSize": 10,
+    "thrusterBase": 16, "spacing": 5,
+    "extraHeight": 11,
+    "hullBorderWidth": 1.5
+  },
+
+  "sphere": {
+    "baseRadius": 368,
+    "initialZoom": 1.0,
+    "searchZoom": 1.65,
+    "zoomDurationMs": 400,
+    "zoomEasing": "OutCubic",
+    "initialRotX": -0.2,
+    "initialRotY": 0,
+    "maxRotationX": 1.45,
+    "maxRotationY": 1.45,
+    "zoomFactorWeight": 0.45,
+    "normalizationConstant": 310.5
+  },
+
+  "animations": {
+    "searchRotateDurationMs": 700,
+    "sphereAutoRotateIntervalMs": 16,
+    "sphereRotateSpeed": 0.002,
+    "cardFadeDurationMs": 200,
+    "cardScaleDurationMs": 200,
+    "satelliteFadeDurationMs": 400,
+    "satelliteScaleDurationMs": 450,
+    "satelliteInitialScale": 0.4,
+    "satelliteTargetScale": 1.5,
+    "entranceFadeDurationMs": 800,
+    "exitFadeDurationMs": 400,
+    "borderColorDurationMs": 150
+  },
+
+  "mouse": {
+    "dragSensitivity": 0.005
+  },
+
+  "searchBar": {
+    "width": 560,
+    "borderWidth": 1.5,
+    "backgroundOpacity": 0.92,
+    "shadowOpacity": 0.4,
+    "shadowBlur": 1.5
+  },
+
+  "appCard": {
+    "labelBgOpacity": 0.60
+  },
+
+  "cardTilt": {
+    "maxAngleX": 45,
+    "maxAngleY": 35,
+    "baseScaleAtEdge": 0.78,
+    "scaleIncreaseTowardCenter": 0.22,
+    "hoverScaleMultiplier": 1.12,
+    "depthOpacityMultiplier": 4.0,
+    "nonMatchOpacity": 0.15
+  },
+
+  "stars": {
+    "count": 50,
+    "opacityMin": 0.08,
+    "opacityMax": 0.12
+  },
+
+  "misc": {
+    "appFetchChunkSize": 40
+  }
+}
