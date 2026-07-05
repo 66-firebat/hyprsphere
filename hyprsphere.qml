@@ -207,6 +207,8 @@ PanelWindow {
 
             projDirty = true;
             rebuildProjCache();
+            // After any sphere rebuild, ensure overlay still has keyboard focus
+            focusGrabber.forceActiveFocus();
         });
     }
 
@@ -312,6 +314,7 @@ PanelWindow {
         if (closeSequence.running) return;
 
         var node = sphereModel[selectedAppIndex];
+        console.log("[hyprsphere KEY] closeSelection: idx=" + selectedAppIndex + " node=" + (node ? node.appId : "null") + " isPlaceholder=" + (node ? node.isPlaceholder : "n/a") + " isWhitelist=" + (node ? node.isWhitelistPlaceholder : "n/a") + " layer=" + layer);
         if (!node || node.isPlaceholder || node.isWhitelistPlaceholder) return;
 
         if (window.layer === 0) {
@@ -426,6 +429,17 @@ PanelWindow {
                 }
             }
             if (window.visible) {
+                // Close confirmed — explicitly tell Hyprland to focus the overlay
+                // by its process PID (QML forceActiveFocus doesn't activate
+                // Wayland surfaces). Also toggle focusable to re-negotiate.
+                var myPid = Qt.application ? Qt.application.applicationPid : -1;
+                if (myPid > 0) {
+                    Quickshell.execDetached(["hyprctl", "dispatch",
+                        'focuswindow pid:' + myPid]);
+                }
+                window.focusable = false;
+                window.focusable = true;
+                focusGrabber.forceActiveFocus();
                 scheduleRebuild();
             }
         }
@@ -649,10 +663,12 @@ PanelWindow {
     Connections {
         target: window
         function onVisibleChanged() {
+            console.log("[hyprsphere FOCUS] onVisibleChanged: visible=" + window.visible);
             if (window.visible) {
                 window.sphereZoom   = 1.0;
                 introPhaseAnim.restart();
                 focusGrabber.forceActiveFocus();
+                console.log("[hyprsphere FOCUS] onVisibleChanged: forceActiveFocus done");
             }
         }
     }
@@ -680,6 +696,7 @@ PanelWindow {
         Keys.priority: Keys.BeforeItem
 
         Keys.onPressed: (event) => {
+            console.log("[hyprsphere KEY] anyKey: " + event.key + " mods=" + event.modifiers + " activeFocus=" + focusGrabber.activeFocus + " overlayActive=" + window.overlayActive);
             if (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab) {
                 if (event.modifiers & Qt.ShiftModifier || event.key === Qt.Key_Backtab) window.advance(-1);
                 else window.advance(1);
@@ -691,6 +708,7 @@ PanelWindow {
                 window.closeSelection();
                 event.accepted = true;
             } else if (event.key === Qt.Key_Escape) {
+                console.log("[hyprsphere KEY] Escape pressed, overlayActive=" + window.overlayActive + " closeSeqRunning=" + closeSequence.running);
                 window.cancelSwitch();
                 event.accepted = true;
             }
