@@ -460,5 +460,114 @@ if (window.visible) {
 13. **"No windows" placeholder** prevents Tab cycling, drill-down, and commit
 14. **Window close** while overlay is open triggers `scheduleRebuild()` to
     refresh the visible sphere correctly at whichever layer
-15. **Whitelist placeholder** app commits via `Hyprland.dispatch("exec ...")`
+15. **Whitelist placeholder** app launches via `Quickshell.execDetached`
     at layer 0 (no windows yet, launch instead of focus)
+
+---
+
+## Implementation notes (discovered during coding)
+
+### Bug 1: `Hyprland.dispatch()` fails on modern Hyprland (Lua dispatch)
+
+`Hyprland.dispatch("focuswindow address:0x...")` sends the string directly
+into Hyprland's Lua dispatch system, producing:
+```lua
+hl.dispatch(focuswindow address:0x...)
+```
+The colon in `address:` is interpreted as Lua syntax (goto label), causing
+a parse error.
+
+**Fix:** Use `Quickshell.execDetached` with the explicit Lua dispatch format:
+```qml
+Quickshell.execDetached(["hyprctl", "dispatch",
+  'hl.dsp.focus({window="address:' + prefix + addr + '"})']);
+```
+
+### Bug 2: Overlay steals focus back after dispatch
+
+If `visible = false` is set *after* the focus dispatch, the overlay (still
+on the Overlay layer with `focusable: true`) immediately re-asserts keyboard
+focus, undoing the dispatch.
+
+**Fix:** Set `window.visible = false` **before** calling the focus dispatch.
+
+### Bug 3: Toplevel IPC data not available synchronously
+
+`Hyprland.toplevels` data arrives asynchronously after `refreshToplevels()`.
+Confirmed in Phase 1 testing: 2 event-loop ticks needed after refresh for
+`count > 0`. Building the sphere synchronously in `openSwitcher()` produces
+an empty model.
+
+**Fix:** Use `Qt.callLater` with a retry loop (`finishOpenSwitcher()`) to
+keep trying until data arrives. Set `overlayActive = true` immediately so
+Alt release at least closes the overlay gracefully (even if no dispatch
+happens yet).
+
+### Bug 4: `Keys.onReleased` for Alt does fire (contrary to earlier diagnosis)
+
+Qt receives key release events for keys that were pressed before the surface
+existed, because Wayland's `wl_keyboard.enter` delivers the current modifier
+state. The `Keys.onReleased` handler for Alt DOES work — the original
+diagnosis was incorrect.
+
+### Bug 5: Whitelist placeholder app launches but doesn't get focus
+
+The whitelist placeholder path kept `focusable: true` during the fade
+animation, so the overlay stole focus back from the newly launched app.
+Whether the app got focus depended on the app's own behavior (kicad
+auto-focused, sioyek didn't).
+
+**Fix:** Set `window.focusable = false` before starting the fade
+animation. The overlay stops accepting keyboard focus (`WlrLayershell.
+keyboardFocus = None`), so the launched app keeps it. Reset to `true`
+in `openSwitcher()` for next use. Also dispatch focus by class after a
+brief delay to ensure focus even for apps that don't self-focus:
+```qml
+if (node.isWhitelistPlaceholder) {
+    window.focusable = false;
+    window.overlayActive = false;
+    var sh = node.exec + ' & sleep 0.3 && hyprctl dispatch ' +
+        "'hl.dsp.focus({window=\\\"class:" + node.appId + "\\\"})'" + ' &';
+    Quickshell.execDetached(["bash", "-c", sh]);
+    closeSequence.start();
+    return;
+}
+```
+And in `openSwitcher()`:
+```qml
+window.focusable = true;
+```
+
+### Bug 6: Address format — `0x` prefix
+
+`HyprlandToplevel.address` may or may not include the `0x` prefix depending
+on the Quickshell version. The dispatch always needs `0x` for Hyprland.
+
+**Fix:** Check for `0x` prefix and add it if missing.
+
+### Design change: Close animation on commit
+
+For real windows (layer 0 app or layer 1 window), the overlay hides
+instantly before dispatching focus — the fade animation is skipped to
+prevent focus steal-back.
+
+For whitelist placeholders (launching a new app), the fade animation
+is kept for visual polish. The overlay can't steal focus because
+`window.focusable` is set to `false` before the animation starts.
+
+The fade is also kept for `cancelSwitch()` (Escape).
+
+### Design change: Separate IPC handler for commit
+
+Quickshell's IpcHandler exposes each function by name via IPC. `qs ipc call
+hyprsphere toggle` calls `toggle()`, and `qs ipc call hyprsphere commit`
+calls `commit()`. Both functions live on the same `IpcHandler` block with
+target `"hyprsphere"`.
+
+### Hyprland bind (in keymaps.lua)
+
+No changes needed to the existing Hyprland binds:
+```lua
+hl.bind(mainMod .. " + Tab", hl.dsp.exec_cmd("qs ipc call hyprsphere toggle"))
+hl.bind("ALT + Alt_L", hl.dsp.exec_cmd("qs ipc call hyprsphere commit"), { release = true })
+```

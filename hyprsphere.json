@@ -105,5 +105,26 @@
     "opacityMax": 0.12
   },
 
+  "whitelist": [
+    {
+      "appId": "blender",
+      "label": "Blender",
+      "icon": "blender",
+      "exec": "blender"
+    },
+    {
+      "appId": "kicad",
+      "label": "KiCad",
+      "icon": "kicad",
+      "exec": "kicad"
+    },
+    {
+      "appId": "sioyek",
+      "label": "Sioyek",
+      "icon": "sioyek",
+      "exec": "sioyek"
+    }
+  ],
+
   "misc": {}
 }

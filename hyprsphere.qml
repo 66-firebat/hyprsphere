@@ -90,40 +90,51 @@ PanelWindow {
     }
 
     function openSwitcher() {
-        console.log("[hyprsphere] openSwitcher called");
+        console.log("[hyprsphere] openSwitcher() called");
 
         window.layer = 0;
         window.drilledAppId = "";
 
-        // Show overlay immediately (intro animation plays while data loads)
+        window.focusable = true;
         window.overlayActive = true;
         window.visible = true;
         introPhaseAnim.restart();
+        focusGrabber.forceActiveFocus();
 
-        // Refresh toplevel data from Hyprland IPC then rebuild on next tick.
-        // This gives the IPC time to resolve pending wayland.appId values
-        // (e.g. a window that just opened and hasn't reported its appId yet),
-        // avoiding "unknown" entries in the sphere.
+        // Toplevel IPC data is not available synchronously (confirmed by
+        // Phase 1 testing: 2 event-loop ticks needed after refresh).
+        // Build asynchronously with retry.
         Hyprland.refreshToplevels();
-        Qt.callLater(function() {
-            var raw = buildLayer0();
-            console.log("[hyprsphere] buildLayer0 returned " + raw.length + " groups");
+        Qt.callLater(function() { finishOpenSwitcher(); });
+    }
 
-            var mruSorted = sortByMru(raw);
-            sphereModel = mruSorted.length === 0
-                ? [{ label: "No windows", icon: "", appId: "", windows: [], isPlaceholder: true }]
-                : mruSorted;
+    function finishOpenSwitcher() {
+        var raw = buildLayer0();
+        console.log("[hyprsphere] buildLayer0 returned " + raw.length + " groups");
 
-            if (sphereModel.length > 0 && !sphereModel[0].isPlaceholder) {
-                selectedAppIndex = (appMru.length >= 2) ? 1 : 0;
-                if (selectedAppIndex < sphereModel.length) {
-                    centerOnApp(selectedAppIndex);
-                }
+        if (raw.length === 0) {
+            // No data yet — retry on next tick
+            Qt.callLater(function() { finishOpenSwitcher(); });
+            return;
+        }
+
+        var mruSorted = sortByMru(raw);
+        sphereModel = mruSorted.length === 0
+            ? [{ label: "No windows", icon: "", appId: "", windows: [], isPlaceholder: true }]
+            : mruSorted;
+
+        if (sphereModel.length > 0 && !sphereModel[0].isPlaceholder) {
+            selectedAppIndex = (appMru.length >= 2) ? 1 : 0;
+            if (selectedAppIndex < sphereModel.length) {
+                centerOnApp(selectedAppIndex);
             }
+        }
 
-            projDirty = true;
-            rebuildProjCache();
-        });
+        projDirty = true;
+        rebuildProjCache();
+
+        // Refresh on next tick to catch pending appId resolutions.
+        Qt.callLater(function() { scheduleRebuild(); });
     }
 
     function sortByMru(raw) {
@@ -245,6 +256,8 @@ PanelWindow {
     }
 
     function commitSelection() {
+        // Guard: sphere not ready yet (buildLayer0 hasn't returned data)
+        if (!window.overlayActive) return;
         if (closeSequence.running) return;
 
         var node = sphereModel[selectedAppIndex];
@@ -255,8 +268,12 @@ PanelWindow {
         }
 
         if (node.isWhitelistPlaceholder) {
-            Hyprland.dispatch("exec " + node.exec);
+            window.focusable = false;
             window.overlayActive = false;
+            // Keep fade animation — overlay can't steal focus since
+            // focusable is false. Dispatch by class to ensure focus.
+            var sh = node.exec + ' & sleep 0.3 && hyprctl dispatch ' + "'hl.dsp.focus({window=\\\"class:" + node.appId + "\\\"})'" + ' &';
+            Quickshell.execDetached(["bash", "-c", sh]);
             closeSequence.start();
             return;
         }
@@ -279,9 +296,13 @@ PanelWindow {
             addr = node.address;
         }
 
-        Hyprland.dispatch("focuswindow address:" + addr);
+        // Hide overlay FIRST so it doesn't steal focus back after dispatch.
         window.overlayActive = false;
-        closeSequence.start();
+        window.visible = false;
+
+        // Focus the target window using Lua dispatch format.
+        var prefix = addr.indexOf("0x") === 0 ? "" : "0x";
+        Quickshell.execDetached(["hyprctl", "dispatch", 'hl.dsp.focus({window="address:' + prefix + addr + '"})']);
     }
 
     function rebuildToLayer0(raw) {
@@ -385,6 +406,12 @@ PanelWindow {
             }
             console.log("[hyprsphere] IPC toggle() called");
             openSwitcher();
+        }
+
+        function commit(): void {
+            if (window.overlayActive) {
+                window.commitSelection();
+            }
         }
     }
 
