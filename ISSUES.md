@@ -4,9 +4,14 @@ Known bugs, edge cases, and limitations of hyprsphere.
 
 ---
 
-## Issue 1: Overlay loses keyboard focus after window close
+## Issue 1: ~~Overlay loses keyboard focus after window close~~ **(RESOLVED)**
 
-**Severity:** High — breaks all keyboard interaction after Ctrl+C when overlay is open.
+**Fix:** Brief `visible = false; Qt.callLater(function() { visible = true; })`
+toggle in the `closewindow` event handler unmaps and remaps the overlay
+surface, forcing the compositor to re-grant keyboard focus to the exclusive
+layer surface. Flicker is imperceptible (both changes within one frame).
+
+~~**Severity:** High — breaks all keyboard interaction after Ctrl+C when overlay is open.~~
 
 ### The problem
 
