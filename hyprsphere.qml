@@ -7,6 +7,7 @@ import QtQuick.Controls
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
+import Quickshell.Hyprland._Ipc
 
 PanelWindow {
     id: window
@@ -27,20 +28,15 @@ PanelWindow {
     implicitWidth: Screen.width
     implicitHeight: Screen.height
 
-    // Paths helper — set these to match your system, or override via env vars
-    Item {
-        id: paths
-        visible: false
-        property string qsDir:        "/home/fireshark/hyprsphere"
-        property string serpantinumDir: "/home/fireshark/hyprsphere"
-    }
+    // Config file path
+    property string configPath: "/home/fireshark/hyprsphere/hyprsphere.json"
 
     // Config loaded from hyprsphere.json
     property var cfg: ({})
 
     Process {
         id: configReader
-        command: ["cat", paths.qsDir + "/hyprsphere.json"]
+        command: ["cat", window.configPath]
         stdout: StdioCollector {
             onStreamFinished: {
                 var txt = this.text.trim();
@@ -52,7 +48,84 @@ PanelWindow {
         }
     }
 
-    Component.onCompleted: { configReader.running = true; }
+    // ── Phase 1: app grouping ──
+    property var sphereModel: []
+    property var rebuildScheduled: false
+    property int selectedAppIndex: -1
+
+    function buildLayer0() {
+        var groups = {};
+        var tls = Hyprland.toplevels;
+        var arr = (tls && tls.values) || [];
+        for (var idx = 0; idx < arr.length; idx++) {
+            var t = arr[idx];
+            if (!t) continue;
+            var ws = t.workspace;
+            // Special ws check by name only (ws.id is -1 in IPC mode)
+            if (ws && String(ws.name || "").startsWith("special:")) continue;
+            var wl = t.wayland;
+            var appId = (wl && wl.appId) ? wl.appId : "unknown";
+            if (!groups[appId]) groups[appId] = { appId: appId, label: appId, icon: appId, windows: [] };
+            groups[appId].windows.push({ address: t.address, title: t.title });
+            groups[appId].windowCount = groups[appId].windows.length;
+        }
+        var whitelist = cfg.whitelist || [];
+        for (var entry of whitelist) {
+            if (groups[entry.appId]) continue;
+            groups[entry.appId] = {
+                appId: entry.appId, label: entry.label, icon: entry.icon,
+                exec: entry.exec, windows: [], windowCount: 0,
+                isWhitelistPlaceholder: true,
+            };
+        }
+        return Object.values(groups);
+    }
+
+    function openSwitcher() {
+        console.log("[hyprsphere] openSwitcher called");
+        var raw = buildLayer0();
+        console.log("[hyprsphere] buildLayer0 returned " + raw.length + " groups");
+        sphereModel = raw.length === 0
+            ? [{ label: "No windows", icon: "", appId: "", windows: [], isPlaceholder: true }]
+            : raw;
+        selectedAppIndex = 0;
+        if (sphereModel.length > 0 && !sphereModel[0].isPlaceholder) {
+            centerOnApp(0);
+        }
+        projDirty = true;
+        rebuildProjCache();
+        window.visible = true;
+        introPhaseAnim.restart();
+    }
+
+    function scheduleRebuild() {
+        if (rebuildScheduled) return;
+        rebuildScheduled = true;
+        Qt.callLater(function() {
+            rebuildScheduled = false;
+            if (window.visible) {
+                var raw = buildLayer0();
+                sphereModel = raw.length === 0
+                    ? [{ label: "No windows", icon: "", appId: "", windows: [], isPlaceholder: true }]
+                    : raw;
+                projDirty = true;
+                rebuildProjCache();
+            }
+        });
+    }
+
+    IpcHandler {
+        target: "hyprsphere"
+        function toggle(): void {
+            console.log("[hyprsphere] IPC toggle() called");
+            openSwitcher();
+        }
+    }
+
+    Component.onCompleted: {
+        configReader.running = true;
+        Hyprland.refreshToplevels();
+    }
 
     // Responsive scaler — scales values proportionally to window width
     function s(val) {
@@ -144,7 +217,7 @@ PanelWindow {
         projDirty = false;
 
         let phi   = Math.PI * (3 - Math.sqrt(5));
-        let total = appModel.count;
+        let total = sphereModel.length;
         let rx    = window.rotX;
         let ry    = window.rotY;
         let cosRx = Math.cos(rx), sinRx = Math.sin(rx);
@@ -194,10 +267,10 @@ PanelWindow {
     }
 
     function centerOnApp(index) {
-        if (index < 0 || index >= appModel.count) return;
+        if (index < 0 || index >= sphereModel.length) return;
 
         let phi    = Math.PI * (3 - Math.sqrt(5));
-        let total  = appModel.count;
+        let total  = sphereModel.length;
         let b_y    = 1.0 - (index / Math.max(1, total - 1)) * 2.0;
         let b_radius = Math.sqrt(1.0 - b_y * b_y);
         let b_theta  = phi * index;
@@ -233,11 +306,7 @@ PanelWindow {
         target: window
         function onVisibleChanged() {
             if (window.visible) {
-                searchInput.text    = "";
-                window.searchQuery  = "";
-                window.selectedAppIndex = -1;
                 window.sphereZoom   = 1.0;
-                searchInput.forceActiveFocus();
                 introPhaseAnim.restart();
             }
         }
@@ -254,77 +323,11 @@ PanelWindow {
         ScriptAction { script: window.visible = false; }
     }
 
-    property var    allApps: []
-    property string searchQuery: ""
-    property int    selectedAppIndex: -1
 
-    property string selectedAppName: ""
-    property string selectedAppIcon: ""
-    property string selectedAppExec: ""
 
-    Process {
-        id: appFetcher
-        running: true
-        command: ["bash", "-c", "python3 " + paths.qsDir + "/applauncher/app_fetcher.py"]
-        stdout: StdioCollector {
-            onStreamFinished: {
-                try {
-                    if (this.text && this.text.trim().length > 0) {
-                        window.allApps = JSON.parse(this.text);
-                        // Batch-append in chunks to avoid a single long block on
-                        // the main thread that freezes the intro animation.
-                        let apps  = window.allApps;
-                        let chunk = cfg.misc?.appFetchChunkSize ?? 40;
-                        let idx   = 0;
-                        function appendChunk() {
-                            let end = Math.min(idx + chunk, apps.length);
-                            for (; idx < end; idx++) appModel.append(apps[idx]);
-                            if (idx < apps.length) Qt.callLater(appendChunk);
-                            else { window.projDirty = true; window.rebuildProjCache(); }
-                        }
-                        appendChunk();
-                    }
-                } catch(e) { console.log(e); }
-            }
-        }
-    }
 
-    ListModel { id: appModel }
 
-    function handleSearch(query) {
-        window.searchQuery = query.toLowerCase();
-        if (window.searchQuery === "") {
-            window.selectedAppIndex = -1;
-            window.selectedAppName  = "";
-            window.selectedAppIcon  = "";
-            window.selectedAppExec  = "";
-            window.sphereZoom       = 1.0;
-            return;
-        }
-        let found = false;
-        for (let i = 0; i < appModel.count; i++) {
-            if (appModel.get(i).name.toLowerCase().includes(window.searchQuery)) {
-                window.selectedAppIndex = i;
-                window.selectedAppName  = appModel.get(i).name;
-                window.selectedAppIcon  = appModel.get(i).icon || "";
-                window.selectedAppExec  = appModel.get(i).exec || "";
-                centerOnApp(i);
-                window.sphereZoom = cfg.sphere?.searchZoom ?? 1.65;
-                found = true;
-                break;
-            }
-        }
-        if (!found) {
-            window.selectedAppIndex = -1;
-            window.sphereZoom       = 1.0;
-        }
-    }
 
-    function launchApp(appName, execStr) {
-        Quickshell.execDetached(["python3", paths.qsDir + "/applauncher/app_fetcher.py", "--log", appName]);
-        Quickshell.execDetached(["bash", "-c", execStr]);
-        closeSequence.start();
-    }
     Item {
         anchors.fill: parent
         opacity: window.introPhase
@@ -373,7 +376,6 @@ PanelWindow {
                 lastX = mouse.x;
                 lastY = mouse.y;
             }
-            onClicked: searchInput.forceActiveFocus()
         }
 
         Item {
@@ -384,7 +386,7 @@ PanelWindow {
 
             Repeater {
                 id: appRepeater
-                model: appModel
+                model: sphereModel
 
                 delegate: Item {
                     id: appNode
@@ -405,12 +407,9 @@ PanelWindow {
 
                     z: Math.round(proj.z * 1000)
 
-                    property bool isMatch:    window.searchQuery === "" || model.name.toLowerCase().includes(window.searchQuery)
                     property bool isSelected: index === window.selectedAppIndex
-
-                    // Collapsed opacity expression — avoids redundant sub-property
                     property real _hz: Math.max(0.0, Math.min(1.0, proj.z * (cfg.cardTilt?.depthOpacityMultiplier ?? 4.0)))
-                    opacity: proj.z > 0.0 ? (isMatch ? _hz : _hz * (cfg.cardTilt?.nonMatchOpacity ?? 0.15)) : 0.0
+                    opacity: proj.z > 0.0 ? _hz : 0.0
                     Behavior on opacity { NumberAnimation { duration: cfg.animations?.cardFadeDurationMs ?? 200; easing.type: Easing.OutCubic } }
 
                     visible: opacity > 0.01
@@ -484,7 +483,7 @@ PanelWindow {
                                     anchors.fill: parent
                                     anchors.leftMargin:  window._s3
                                     anchors.rightMargin: window._s3
-                                    text: model.name
+                                    text: model.label
                                     font.family: "JetBrains Mono"
                                     font.pixelSize: window._s11
                                     font.weight: Font.DemiBold
@@ -609,11 +608,11 @@ PanelWindow {
                                                 Layout.alignment: Qt.AlignHCenter
                                                 Layout.preferredWidth:  window._sat_iconSz
                                                 Layout.preferredHeight: window._sat_iconSz
-                                                source: window.selectedAppIcon
-                                                    ? (window.selectedAppIcon.startsWith("/")
-                                                       ? "file://" + window.selectedAppIcon
-                                                       : "image://icon/" + window.selectedAppIcon)
-                                                    : "image://icon/application-x-executable"
+                                                source: {
+                                                    var node = window.sphereModel[window.selectedAppIndex];
+                                                    var ic = node ? node.icon : "";
+                                                    ic ? (ic.startsWith("/") ? "file://" + ic : "image://icon/" + ic) : "image://icon/application-x-executable";
+                                                }
                                                 fillMode: Image.PreserveAspectFit
                                                 smooth: true
                                                 cache: true
@@ -622,7 +621,7 @@ PanelWindow {
                                             Text {
                                                 Layout.alignment: Qt.AlignHCenter
                                                 Layout.fillWidth: true
-                                                text: window.selectedAppName
+                                                text: window.sphereModel[window.selectedAppIndex]?.label || ""
                                                 font.family: "JetBrains Mono"
                                                 font.pixelSize: window._sat_fontSize
                                                 font.weight: Font.Bold
@@ -699,130 +698,12 @@ PanelWindow {
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: window.launchApp(model.name, model.exec)
+
                     }
                 }
             }
         }
     }
 
-    Rectangle {
-        id: searchContainer
-        width:  window.s(cfg.searchBar?.width ?? 560)
-        height: window._s56
-        anchors.bottom: parent.bottom
-        anchors.bottomMargin: window._s63
-        anchors.horizontalCenter: parent.horizontalCenter
 
-        radius: window._s28
-        color: Qt.rgba(window.mantle.r, window.mantle.g, window.mantle.b, cfg.searchBar?.backgroundOpacity ?? 0.92)
-        border.color: searchInput.activeFocus ? window.mauve : window.surface1
-        border.width: window.s(cfg.searchBar?.borderWidth ?? 1.5)
-
-        opacity: window.introPhase
-        transform: Translate { y: (1 - window.introPhase) * window._s40 }
-        Behavior on border.color { ColorAnimation { duration: cfg.animations?.borderColorDurationMs ?? 150 } }
-
-        // layer.enabled only when the shadow actually matters (saves an FBO
-        // on every frame when the bar is offscreen / fading in).
-        layer.enabled: window.introPhase > 0.01
-        layer.effect: MultiEffect {
-            shadowEnabled: true
-            shadowColor: "#000000"
-            shadowOpacity: cfg.searchBar?.shadowOpacity ?? 0.4
-            shadowBlur: cfg.searchBar?.shadowBlur ?? 1.5
-            shadowVerticalOffset: window._s4
-        }
-
-        RowLayout {
-            anchors.fill: parent
-            anchors.leftMargin:  window._s20
-            anchors.rightMargin: window._s20
-            spacing: window._s12
-
-            Text {
-                text: ""
-                font.family: "Iosevka Nerd Font"
-                font.pixelSize: window._s18
-                color: searchInput.activeFocus ? window.mauve : window.subtext0
-                Behavior on color { ColorAnimation { duration: cfg.animations?.borderColorDurationMs ?? 150 } }
-            }
-
-            TextField {
-                id: searchInput
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                background: Item {}
-                color: window.text
-                font.family: "JetBrains Mono"
-                font.pixelSize: window._s15
-                font.weight: Font.Medium
-                selectByMouse: true
-
-                placeholderText: "Search applications..."
-                placeholderTextColor: window.overlay0
-                verticalAlignment: TextInput.AlignVCenter
-
-                onTextChanged: window.handleSearch(text)
-
-                Keys.onDownPressed: {
-                    for (let i = window.selectedAppIndex + 1; i < appModel.count; i++) {
-                        if (appModel.get(i).name.toLowerCase().includes(window.searchQuery)) {
-                            window.selectedAppIndex = i;
-                            window.selectedAppName  = appModel.get(i).name;
-                            window.selectedAppIcon  = appModel.get(i).icon || "";
-                            window.selectedAppExec  = appModel.get(i).exec || "";
-                            window.centerOnApp(i);
-                            window.sphereZoom = cfg.sphere?.searchZoom ?? 1.65;
-                            break;
-                        }
-                    }
-                    event.accepted = true;
-                }
-                Keys.onUpPressed: {
-                    for (let i = window.selectedAppIndex - 1; i >= 0; i--) {
-                        if (appModel.get(i).name.toLowerCase().includes(window.searchQuery)) {
-                            window.selectedAppIndex = i;
-                            window.selectedAppName  = appModel.get(i).name;
-                            window.selectedAppIcon  = appModel.get(i).icon || "";
-                            window.selectedAppExec  = appModel.get(i).exec || "";
-                            window.centerOnApp(i);
-                            window.sphereZoom = cfg.sphere?.searchZoom ?? 1.65;
-                            break;
-                        }
-                    }
-                    event.accepted = true;
-                }
-                Keys.onReturnPressed: {
-                    if (window.selectedAppIndex >= 0 && window.selectedAppIndex < appModel.count) {
-                        window.launchApp(
-                            appModel.get(window.selectedAppIndex).name,
-                            appModel.get(window.selectedAppIndex).exec
-                        );
-                    }
-                    event.accepted = true;
-                }
-                Keys.onEscapePressed: {
-                    closeSequence.start();
-                    event.accepted = true;
-                }
-            }
-
-            Text {
-                visible: searchInput.text.length > 0
-                text: ""
-                font.family: "Iosevka Nerd Font"
-                font.pixelSize: window._s16
-                color: window.subtext0
-                MouseArea {
-                    anchors.fill: parent
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: {
-                        searchInput.text = "";
-                        searchInput.forceActiveFocus();
-                    }
-                }
-            }
-        }
-    }
 }

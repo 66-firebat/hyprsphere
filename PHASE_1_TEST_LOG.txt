@@ -1,0 +1,65 @@
+=== PHASE 1 grouping tests (/home/fireshark/hyprsphere/phase1_test_grouping.py) ===
+Started: 2026-07-05 03:01:03.221404
+
+[PASS] two apps → two groups
+[PASS] firefox has 2 windows
+[PASS] emacs has 1 window
+[PASS] kitty excluded from special workspace
+[PASS] firefox still present on normal workspace
+[PASS] no groups when only window is on special workspace
+[PASS] code appears in groups
+[PASS] code has isWhitelistPlaceholder
+[PASS] code has 0 windows
+[PASS] firefox still in groups
+[PASS] firefox is NOT a placeholder (real windows exist)
+[PASS] only one group (no duplicate)
+[PASS] null wayland → 'unknown' group
+[PASS] unknown has 1 window
+[PASS] no toplevels + no whitelist → empty array
+[PASS] no toplevels + whitelist → 1 group
+[PASS] whitelist entry is placeholder
+
+Results: 17 passed, 0 failed, 17 total
+
+=== PHASE 1 grouping tests (/home/fireshark/hyprsphere/phase1_test_grouping.py) ===
+Started: 2026-07-05 03:01:03.221404
+
+[PASS] two apps → two groups
+[PASS] firefox has 2 windows
+[PASS] emacs has 1 window
+[PASS] kitty excluded from special workspace
+[PASS] firefox still present on normal workspace
+[PASS] no groups when only window is on special workspace
+[PASS] code appears in groups
+[PASS] code has isWhitelistPlaceholder
+[PASS] code has 0 windows
+[PASS] firefox still in groups
+[PASS] firefox is NOT a placeholder (real windows exist)
+[PASS] only one group (no duplicate)
+[PASS] null wayland → 'unknown' group
+[PASS] unknown has 1 window
+[PASS] no toplevels + no whitelist → empty array
+[PASS] no toplevels + whitelist → 1 group
+[PASS] whitelist entry is placeholder
+
+Results: 17 passed, 0 failed, 17 total
+
+
+=== LIVE TEST ===
+[34m DEBUG[97m qml[0m: === PHASE 1 LIVE TEST ===
+[34m DEBUG[97m qml[0m: [DEBUG] Hyprland = qs::hyprland::ipc::HyprlandIpcQml(0x78547dc6cde0)
+[34m DEBUG[97m qml[0m: [DEBUG] Hyprland.usingLua = false
+[34m DEBUG[97m qml[0m: [DEBUG] Hyprland.requestSocketPath = /run/user/1000/hypr/614671e4e3adde95097d544021a1253070bbc7cd_1783215685_1383434102/.socket.sock
+[34m DEBUG[97m qml[0m: [DEBUG] Hyprland.eventSocketPath = /run/user/1000/hypr/614671e4e3adde95097d544021a1253070bbc7cd_1783215685_1383434102/.socket2.sock
+[34m DEBUG[97m qml[0m: [DEBUG] Hyprland.activeToplevel = null
+[34m DEBUG[97m qml[0m: [DEBUG] tls.values length = 0
+[34m DEBUG[97m qml[0m: [INFO] toplevels empty initially — running refresh...
+[34m DEBUG[97m qml[0m: [INFO] after refresh, toplevels count = 0
+[34m DEBUG[97m qml[0m: [INFO] after 2nd delay, toplevels count = 3
+[34m DEBUG[97m qml[0m: [PASS] toplevels: count > 0 (3)
+[34m DEBUG[97m qml[0m: [PASS] toplevels: all appIds resolved
+[34m DEBUG[97m qml[0m: [INFO] buildLayer0 returned 2 groups
+[34m DEBUG[97m qml[0m: [PASS] all groups have valid label + icon + appId
+[34m DEBUG[97m qml[0m: [PASS] scheduleRebuild: ran without error
+[34m DEBUG[97m qml[0m: [PASS] scheduleRebuild: sphereModel rebuilt (callback fired)
+[34m DEBUG[97m qml[0m: === PHASE 1 LIVE TEST COMPLETE ===
