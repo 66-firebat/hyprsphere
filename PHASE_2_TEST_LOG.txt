@@ -1,0 +1,25 @@
+=== PHASE 2 TESTS Sun Jul  5 03:40:45 AM MDT 2026 ===
+=== PHASE 2 MRU tests (/home/fireshark/hyprsphere/phase2_test_mru.py) ===
+Started: 2026-07-05 03:40:45.559611
+
+[PASS] first focus → appId in MRU
+[PASS] first focus → address in window MRU
+[PASS] second focus → emacs first, firefox second
+[PASS] emacs window MRU created
+[PASS] re-focus firefox → firefox back to front
+[PASS] re-focus firefox → new address at front, old at back
+[PASS] same window twice → no duplicate address
+[PASS] close window 0x02 → removed from firefox MRU
+[PASS] emacs still in window MRU
+[PASS] close last firefox window → firefox removed from app MRU
+[PASS] close last firefox window → firefox removed from window MRU
+[PASS] only emacs remains in app MRU
+[PASS] close unknown address → MRU unchanged
+[PASS] close unknown address → window MRU unchanged
+[PASS] sort_by_mru: firefox, terminal, then emacs (not in MRU)
+[PASS] sort_by_mru: all groups preserved
+[PASS] pre-select index 1 when appMru length >= 2
+[PASS] pre-select index 0 when appMru length < 2
+
+Results: 18 passed, 0 failed, 18 total
+

@@ -53,6 +53,10 @@ PanelWindow {
     property var rebuildScheduled: false
     property int selectedAppIndex: -1
 
+    // ── Phase 2: MRU tracking ──
+    property var appMru: []
+    property var appWindowMru: ({})
+
     function buildLayer0() {
         var groups = {};
         var tls = Hyprland.toplevels;
@@ -85,17 +89,40 @@ PanelWindow {
         console.log("[hyprsphere] openSwitcher called");
         var raw = buildLayer0();
         console.log("[hyprsphere] buildLayer0 returned " + raw.length + " groups");
-        sphereModel = raw.length === 0
+
+        var mruSorted = sortByMru(raw);
+        sphereModel = mruSorted.length === 0
             ? [{ label: "No windows", icon: "", appId: "", windows: [], isPlaceholder: true }]
-            : raw;
-        selectedAppIndex = 0;
+            : mruSorted;
+
+        // Pre-select index 1 (previous app) if MRU has enough history
         if (sphereModel.length > 0 && !sphereModel[0].isPlaceholder) {
-            centerOnApp(0);
+            selectedAppIndex = (appMru.length >= 2) ? 1 : 0;
+            if (selectedAppIndex < sphereModel.length) {
+                centerOnApp(selectedAppIndex);
+            }
         }
+
         projDirty = true;
         rebuildProjCache();
         window.visible = true;
         introPhaseAnim.restart();
+    }
+
+    function sortByMru(raw) {
+        var sorted = [];
+        for (var m = 0; m < appMru.length; m++) {
+            for (var r = 0; r < raw.length; r++) {
+                if (raw[r].appId === appMru[m]) {
+                    sorted.push(raw[r]);
+                    break;
+                }
+            }
+        }
+        for (var r2 = 0; r2 < raw.length; r2++) {
+            if (sorted.indexOf(raw[r2]) === -1) sorted.push(raw[r2]);
+        }
+        return sorted;
     }
 
     function scheduleRebuild() {
@@ -107,11 +134,84 @@ PanelWindow {
                 var raw = buildLayer0();
                 sphereModel = raw.length === 0
                     ? [{ label: "No windows", icon: "", appId: "", windows: [], isPlaceholder: true }]
-                    : raw;
+                    : sortByMru(raw);
                 projDirty = true;
                 rebuildProjCache();
             }
         });
+    }
+
+    // ── Phase 2: MRU tracking ──
+    Connections {
+        target: Hyprland
+        function onActiveToplevelChanged() {
+            var t = Hyprland.activeToplevel;
+            if (!t) return;
+            var appId = (t.wayland && t.wayland.appId) ? t.wayland.appId : "unknown";
+            var addr = t.address || "";
+
+            // Move app to front of app-level MRU
+            var filtered = [];
+            for (var i = 0; i < appMru.length; i++) {
+                if (appMru[i] !== appId) filtered.push(appMru[i]);
+            }
+            appMru = [appId].concat(filtered);
+
+            // Move window to front of this app's per-app window MRU
+            var winList = appWindowMru[appId] || [];
+            var winFiltered = [];
+            for (var j = 0; j < winList.length; j++) {
+                if (winList[j] !== addr) winFiltered.push(winList[j]);
+            }
+            appWindowMru[appId] = [addr].concat(winFiltered);
+        }
+    }
+
+    Connections {
+        target: Hyprland
+        function onRawEvent(event) {
+            var text = event.name || "";
+            if (!text.startsWith("closewindow>>")) return;
+            var addr = text.substring("closewindow>>".length);
+
+            for (var appId in appWindowMru) {
+                var list = appWindowMru[appId];
+                var idx = -1;
+                for (var k = 0; k < list.length; k++) {
+                    if (list[k] === addr) { idx = k; break; }
+                }
+                if (idx !== -1) {
+                    var newList = [];
+                    for (var k2 = 0; k2 < list.length; k2++) {
+                        if (k2 !== idx) newList.push(list[k2]);
+                    }
+                    if (newList.length === 0) {
+                        delete appWindowMru[appId];
+                        var newMru = [];
+                        for (var m = 0; m < appMru.length; m++) {
+                            if (appMru[m] !== appId) newMru.push(appMru[m]);
+                        }
+                        appMru = newMru;
+                    } else {
+                        appWindowMru[appId] = newList;
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    function advance(dir) {
+        if (sphereModel.length === 0) return;
+        var count = sphereModel.length;
+        var next = selectedAppIndex + dir;
+        if (next < 0) {
+            next = cfg.cycling?.wrapAround !== false ? count - 1 : 0;
+        } else if (next >= count) {
+            next = cfg.cycling?.wrapAround !== false ? 0 : count - 1;
+        }
+        selectedAppIndex = next;
+        centerOnApp(next);
     }
 
     IpcHandler {
@@ -120,6 +220,10 @@ PanelWindow {
             console.log("[hyprsphere] IPC toggle() called");
             openSwitcher();
         }
+        function advance(): void {}
+        function drilldown(): void {}
+        function commit(): void {}
+        function cancel(): void { closeSequence.start() }
     }
 
     Component.onCompleted: {
