@@ -166,6 +166,20 @@ Per requirements:
 - New window appears in MRU lists naturally via existing `openwindow`
   handler which pushes to `appMru` and `appWindowMru`
 
+#### MRU focus consideration
+
+Which window receives focus on Alt release after spawning depends on
+where you spawned from:
+- **Spawning from the app group (layer 0):** The **original MRU-most**
+  window is focused on commit, not the newly spawned one. The new window
+  is added to the app's window list but does not become the active MRU
+  target.
+- **Spawning from a specific window (layer 1):** The **newly spawned**
+  window is focused on commit. Since you spawned while a specific window
+  was selected, the new window becomes the MRU-most for that app, and
+  layer-1 commits use `appWindowMru[appId][0]` to determine the focus
+  target.
+
 ### 8. Fallback selection
 
 If the layer-0 auto-selection fails to find a matching app node (edge

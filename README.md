@@ -615,3 +615,56 @@ After closing:
 - The overlay **stays open** so you can continue cycling
 - **Guard:** `closeSequence.running` prevents double-firing during the
   exit animation sequence
+
+---
+
+## Considerations
+
+### Ctrl+Enter MRU focus behavior
+
+When spawning a new window with Ctrl+Enter, which window gets focus on
+Alt release depends on where you spawned from:
+
+- **Spawning from the app group (layer 0):** The **original MRU-most**
+  window receives focus when you commit (Alt release). The newly spawned
+  window is added to the app's window list but is not set as the active
+  MRU target for that app.
+- **Spawning from a specific window (layer 1):** The **newly spawned**
+  window receives focus when you commit (Alt release). This is because
+  the new window becomes the most recent window in that app's MRU list,
+  and layer-1 commits use `appWindowMru[appId][0]` to determine focus
+  target.
+
+This is a natural consequence of how MRU tracking works — the act of
+selecting a specific window and spawning from it makes the new window
+the MRU-most, while spawning from the app group leaves the existing
+MRU order intact.
+
+### Whitelist entries and commit behavior
+
+Whitelisted apps that are NOT running have `isWhitelistPlaceholder: true`.
+Committing them (Alt release) launches the app via their configured
+`exec` command rather than focusing an existing window.
+
+### Desktop file multi-Exec lines
+
+Some applications (notably Firefox) have multiple `Exec=` lines in their
+.desktop file for different actions (normal launch, new window, private
+window, profile manager). The icon reader only captures the **first**
+`Exec=` line to avoid launching the wrong action.
+
+### Address format variance
+
+Window addresses from Hyprland may or may not include the `0x` hex prefix
+depending on the source (event data vs toplevel properties). All internal
+comparisons normalize addresses to include `0x` to prevent silent
+mismatches.
+
+### Layer-0 vs layer-1/2 auto-selection
+
+After any sphere rebuild, auto-selection uses different matching logic
+by layer:
+- **Layer 0** (app groups): matches by `appId` — app nodes don't have
+  an `.address` property
+- **Layers 1/2** (window nodes): matches by `address` — window nodes
+  have `.address` but comparison must handle `0x` prefix

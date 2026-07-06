@@ -1,8 +1,19 @@
 # Untested Scenarios
 
-Tests that were deferred during Phase 4 manual testing. These are edge cases
+Tests that were deferred during manual testing. These are edge cases
 that are rare enough to not block shipping, but should be revisited when making
 changes that touch the relevant code paths.
+
+## Phase 9
+
+### M7. No-op on unresolvable app
+
+Select an app with no `.desktop` file, no whitelist entry, and whose raw
+`appId` won't run as a shell command. Ctrl+Enter should silently do nothing.
+
+**Reason skipped:** Requires a running window whose appId has no desktop
+file entry. All common GUI apps have desktop files. Hard to reproduce in
+practice.
 
 ## Phase 4
 
