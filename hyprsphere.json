@@ -103,7 +103,7 @@
     "nonSelectedIconSize": 55,
     "windowCountBadge": {
       "satellite": true,
-      "nonSelected": true,
+      "nonSelected": false,
       "offsetY": 0,
       "offsetX": -60,
       "fontSize": 18,
