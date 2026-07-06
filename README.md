@@ -286,3 +286,139 @@ The submap is not being entered. Check:
 The submap wasn't reset. This was a known bug fixed by adding `hyprctl eval`
 calls in the QML commit paths. Make sure you're running the latest version
 of `hyprsphere.qml`.
+
+---
+
+## Fuzzy Searching Mechanism
+
+hyprsphere uses **Fuse.js v7.0.0** (bundled at `lib/fuse.js`) for
+client-side fuzzy matching. Fuse.js is a lightweight fuzzy-search library
+tuned for approximate string matching — it handles typos, partial matches,
+and out-of-order characters.
+
+### Import
+
+```qml
+import "lib/fuse.js" as FuseJs
+```
+
+This is QML's **script import** syntax. The `.pragma library` directive at
+the top of `fuse.js` tells the QML engine to load and cache the library
+once, sharing it across all imports rather than re-executing the 2000-line
+file on every access.
+
+#### Path resolution
+
+Quickshell resolves `lib/fuse.js` relative to the **symlink parent**
+(`~/.config/quickshell/`), not the actual file location. The chain is:
+
+```
+~/.config/quickshell/shell.qml  →  /path/to/hyprsphere/hyprsphere.qml
+~/.config/quickshell/lib        →  /path/to/hyprsphere/lib/
+                                         └── fuse.js  ← resolved here
+```
+
+### Index construction (once per overlay open)
+
+When the overlay opens, `initFuseIndex()` is called once:
+
+```qml
+function initFuseIndex() {
+    var db = buildSearchDatabase();
+    fuseIndex = new FuseJs.Fuse(db, {
+        keys: [
+            { name: "label", weight: 0.5 },
+            { name: "title", weight: 0.4 },
+            { name: "appId", weight: 0.1 }
+        ],
+        threshold: cfg.search?.fuseThreshold ?? 0.4,
+        minMatchCharLength: cfg.search?.fuseMinMatchCharLength ?? 1,
+        includeScore: true,
+        shouldSort: true
+    });
+}
+```
+
+`buildSearchDatabase()` builds a flat array of every searchable item:
+- Running apps (grouped by appId, one entry per app)
+- Individual windows (one entry per window, for title search)
+- Whitelisted apps (entries for apps not currently running)
+
+Each item has a `type` field (`"running-app"`, `"window"`, or
+`"whitelisted-app"`) which is used later for sorting results.
+
+The Fuse index is stored in the `fuseIndex` property and survives for the
+entire overlay session. It is only rebuilt when:
+- A window closes while the overlay is open and layer 2 is active
+  (`scheduleRebuild()` calls `initFuseIndex()` then re-runs the search)
+- The overlay is closed and reopened (`openSwitcher()` →
+  `finishOpenSwitcher()` → `initFuseIndex()`)
+
+### Per-keystroke query (no new Fuse object)
+
+Each keystroke calls `_executeSearch()` which runs:
+
+```qml
+function _executeSearch() {
+    if (!fuseIndex) {
+        initFuseIndex();  // safety net, usually skipped
+        if (!fuseIndex) return;
+    }
+    var results = fuseIndex.search(searchQuery);
+    // ... process results ...
+}
+```
+
+`fuseIndex.search()` is a lightweight in-memory fuzzy match against the
+already-built index. No new Fuse object is created per keystroke — typing
+"firefox" character-by-character runs 7 `.search()` calls on the same
+cached index.
+
+### Result processing pipeline
+
+```
+fuseIndex.search("fire")
+    │
+    ▼
+results: [{ item: {...}, score: 0.12 }, { item: {...}, score: 0.35 }, ...]
+    │  (Fuse result objects with .score metadata)
+    ▼
+top = results.slice(0, maxResults)      ← keep top 30
+    │
+    ▼
+Sort into buckets by item.type:
+    ├── runApps[]        (type === "running-app")
+    ├── whitelistApps[]  (type === "whitelisted-app")
+    └── winNodes[]       (type === "window")
+    │
+    ▼
+Build layer2Model[] = runApps + whitelistApps + winNodes  ← ordered
+    │
+    ▼
+sphereModel = layer2Model    ← assigned to Repeater model, sphere re-renders
+```
+
+Each result from Fuse contains `{ item, score }`. The `.score` metadata
+is discarded after sorting — only the raw `.item` data is preserved in the
+buckets. A new `layer2Model` array is built with cleaned-up node objects
+(the shape expected by the sphere's delegate) and assigned to
+`sphereModel`, which triggers a QML re-render.
+
+### Memory lifecycle per keystroke
+
+After `_executeSearch()` returns, everything goes out of scope:
+- `results` (Fuse result wrappers) → garbage collected
+- `top` (sliced copy) → garbage collected
+- `runApps`, `whitelistApps`, `winNodes` (temporary buckets) → garbage
+  collected
+- Previous `sphereModel` → garbage collected (replaced by new assignment)
+
+The only persistent memory is the new `sphereModel` — roughly 30 small
+node objects. On the next keystroke, a fresh pipeline runs and replaces
+it.
+
+### No server, no daemon, no IPC
+
+The entire search pipeline runs inside QML's JavaScript engine. No
+background process, no Unix socket, no subprocess spawn — every
+keystroke is evaluated in-process.
