@@ -133,7 +133,7 @@
     {
       "appId": "sioyek",
       "label": "Sioyek",
-      "icon": "sioyek",
+      "icon": "sioyek-icon-linux",
       "exec": "sioyek"
     }
   ],

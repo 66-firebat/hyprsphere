@@ -62,6 +62,61 @@ PanelWindow {
     property var appMru: []
     property var appWindowMru: ({})
 
+    // ── Phase 7: Icon resolution ──
+    property var iconMap: ({})
+
+    function resolveIcon(appId) {
+        if (!appId) return "application-x-executable";
+        return iconMap[appId] || "application-x-executable";
+    }
+
+    Process {
+        id: iconReader
+        command: ["bash", "-c",
+            "for f in /run/current-system/sw/share/applications/*.desktop " +
+            "$HOME/.local/share/applications/*.desktop; do " +
+            "[ -f \"$f\" ] || continue; " +
+            "echo \"[ID]$(basename \"$f\" .desktop)\"; " +
+            "grep -E '^(Icon=|StartupWMClass=)' \"$f\" 2>/dev/null; " +
+            "echo '---'; done"
+        ]
+        running: false
+        stdout: StdioCollector {
+            onStreamFinished: {
+                var txt = this.text.trim();
+                console.log("[hyprsphere] Icon reader finished, got " + txt.length + " chars");
+                if (txt.length > 0) window.parseIcons(txt);
+            }
+        }
+    }
+
+    function parseIcons(text) {
+        var map = {};
+        var blocks = text.split('---');
+        for (var b = 0; b < blocks.length; b++) {
+            var lines = blocks[b].trim().split('\n');
+            var id = null, icon = null, wmClass = null;
+            for (var i = 0; i < lines.length; i++) {
+                var line = lines[i].trim();
+                if (line.startsWith('[ID]')) {
+                    id = line.substring(4).trim();
+                } else if (line.startsWith('Icon=')) {
+                    icon = line.substring(5).trim();
+                } else if (line.startsWith('StartupWMClass=')) {
+                    wmClass = line.substring(15).trim();
+                }
+            }
+            if (id && icon) {
+                map[id] = icon;
+                if (wmClass) map[wmClass] = icon;
+            }
+        }
+        iconMap = map;
+        console.log("[hyprsphere] Icon map built: " + Object.keys(map).length + " entries");
+        // If overlay is already visible, refresh sphere with correct icons
+        if (window.visible) scheduleRebuild();
+    }
+
     // ── Phase 6: Search / Layer 2 ──
     property string searchQuery: ""
     property var fuseIndex: null
@@ -83,7 +138,7 @@ PanelWindow {
             if (ws && String(ws.name || "").startsWith("special:")) continue;
             var wl = t.wayland;
             var appId = (wl && wl.appId) ? wl.appId : "unknown";
-            if (!groups[appId]) groups[appId] = { appId: appId, label: appId, icon: appId, windows: [] };
+            if (!groups[appId]) groups[appId] = { appId: appId, label: appId, icon: window.resolveIcon(appId), windows: [] };
             groups[appId].windows.push({ address: t.address, title: t.title });
             groups[appId].windowCount = groups[appId].windows.length;
         }
@@ -126,6 +181,14 @@ PanelWindow {
     }
 
     function finishOpenSwitcher() {
+        // Wait for icon map to be built before building sphere
+        // (iconReader Process runs async at startup)
+        var iconReady = Object.keys(iconMap).length > 0;
+        if (!iconReady) {
+            Qt.callLater(function() { finishOpenSwitcher(); });
+            return;
+        }
+
         var raw = buildLayer0();
         console.log("[hyprsphere] buildLayer0 returned " + raw.length + " groups");
 
@@ -190,7 +253,7 @@ PanelWindow {
             var appId = (wl && wl.appId) ? wl.appId : "unknown";
             if (!seenApps[appId]) {
                 seenApps[appId] = true;
-                db.push({ type: "running-app", appId: appId, label: appId, icon: appId, windows: [] });
+                db.push({ type: "running-app", appId: appId, label: appId, icon: window.resolveIcon(appId), windows: [] });
             }
             for (var d = 0; d < db.length; d++) {
                 if (db[d].appId === appId && db[d].type === "running-app") {
@@ -209,7 +272,7 @@ PanelWindow {
             var wl2 = t2.wayland;
             var appId2 = (wl2 && wl2.appId) ? wl2.appId : "unknown";
             db.push({
-                type: "window", appId: appId2, label: appId2, icon: appId2,
+                type: "window", appId: appId2, label: appId2, icon: window.resolveIcon(appId2),
                 address: t2.address, title: t2.title || appId2
             });
         }
@@ -754,6 +817,7 @@ PanelWindow {
 
     Component.onCompleted: {
         configReader.running = true;
+        iconReader.running = true;
         Hyprland.refreshToplevels();
     }
 
@@ -1137,14 +1201,12 @@ PanelWindow {
                                 Layout.alignment: Qt.AlignHCenter
                                 Layout.preferredWidth:  window._s55
                                 Layout.preferredHeight: window._s55
-                                source: model.icon
-                                    ? (model.icon.startsWith("/") ? "file://" + model.icon : "image://icon/" + model.icon)
-                                    : "image://icon/application-x-executable"
+                                source: {
+                                    var ic = window.sphereModel[index] ? window.sphereModel[index].icon : "";
+                                    return ic ? (ic.startsWith("/") ? "file://" + ic : "image://icon/" + ic) : "image://icon/application-x-executable";
+                                }
                                 fillMode: Image.PreserveAspectFit
-                                asynchronous: true
                                 smooth: true
-                                // Cache decoded images — avoids re-decode on every
-                                // Repeater recycle pass.
                                 cache: true
                             }
 
