@@ -980,6 +980,17 @@ PanelWindow {
         if (!projDirty) return;
         projDirty = false;
 
+        // Auto-adjust sphere radius based on node count
+        var auto = cfg.sphere?.autoRadius;
+        if (auto && auto.enabled !== false) {
+            var minR = auto.minRadius ?? 160;
+            var maxN = auto.maxNodeCount ?? 20;
+            var t = Math.min(1, sphereModel.length / maxN);
+            window.sphereRadius = window.s(minR + (baseSphereRadius - minR) * t);
+        } else {
+            window.sphereRadius = baseSphereRadius;
+        }
+
         let phi   = Math.PI * (3 - Math.sqrt(5));
         let total = sphereModel.length;
         let rx    = window.rotX;

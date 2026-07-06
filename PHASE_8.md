@@ -141,6 +141,14 @@ return String(oi >= 0 ? oi + 1 : "");
 |---|---|---|
 | `selectedBackground` | `true` | Show the SVG decoration behind the selected app icon |
 
+### `sphere.autoRadius`
+
+| Field | Default | Description |
+|---|---|---|
+| `autoRadius.enabled` | `true` | Enable adaptive sphere radius based on node count |
+| `autoRadius.minRadius` | `160` | Sphere radius when only 1-2 nodes are visible |
+| `autoRadius.maxNodeCount` | `20` | Node count at which radius reaches `baseRadius` |
+
 ### `appCard.windowCountBadge`
 
 | Field | Default | Description |
@@ -177,3 +185,5 @@ return String(oi >= 0 ? oi + 1 : "");
 11. **Compact on close** — closing a window shifts all later indices down
 12. **New windows get next sequential index** — never reused numbers from
     closed windows
+13. **Adaptive sphere radius** — sphere shrinks with few nodes for tighter
+    clustering, grows to `baseRadius` at `maxNodeCount` nodes

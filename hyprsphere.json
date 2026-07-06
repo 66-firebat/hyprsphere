@@ -46,7 +46,7 @@
   },
 
   "sphere": {
-    "baseRadius": 368,
+    "baseRadius": 360,
     "initialZoom": 1.0,
     "zoomDurationMs": 400,
     "zoomEasing": "OutCubic",
@@ -55,7 +55,12 @@
     "maxRotationX": 2.5,
     "maxRotationY": 1.45,
     "zoomFactorWeight": 0.45,
-    "normalizationConstant": 310.5
+    "normalizationConstant": 310.5,
+    "autoRadius": {
+      "enabled": false,
+      "minRadius": 160,
+      "maxNodeCount": 20
+    }
   },
 
   "animations": {
@@ -100,7 +105,7 @@
 
   "appCard": {
     "labelBgOpacity": 0.60,
-    "nonSelectedIconSize": 55,
+    "nonSelectedIconSize": 110,
     "windowCountBadge": {
       "satellite": true,
       "nonSelected": false,
