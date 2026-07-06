@@ -493,27 +493,27 @@ variance isn't a thing worth chasing for v1).
 
 ---
 
-## Phase 8 — Visual/UX carryover and cleanup
+## Phase 8 — Visual/UX carryover and cleanup ✅
 
-- Sphere projection math (`rebuildProjCache`, `project3D`, Fibonacci
-  lattice), drag-to-rotate, auto-rotate timer, intro/exit animation,
-  satellite detail card: all reusable **unchanged**. This is the payoff of
-  keeping the same frontend — only the data layer and commit action
-  changed, and it's rebuilt wholesale on layer transitions rather than
-  patched in place.
-- Satellite card's "screen" content depends on layer: at layer 0 it shows
-  app icon + app name (+ optional window-count badge, e.g. "3 windows",
-  as a hint that `;` does something); at layer 1 it shows the specific
-  window's icon + title.
-- Card label text: app name at layer 0, window title at layer 1 — titles
-  are longer and more dynamic, so re-check `elide`/`wrapMode` behavior at
-  layer 1 once real titles are flowing in (a Chrome window titled with a
-  full page title is a good stress test).
-- Consider a subtle transition (brief scale/fade) on layer change so the
-  sphere rebuild doesn't feel like a jump-cut — reuse the existing
-  `introPhase` fade machinery rather than building a new one.
-- Remove now-dead config keys from `hyprsphere.json` that were
-  launcher-specific (`appFetchChunkSize`, anything referencing `exec`).
+Completed. See `PHASE_8.md` for details.
+
+---
+
+## Phase 9 — Ctrl+Enter spawn new window
+
+**Goal:** Press Ctrl+Enter while a node is selected to spawn a new instance
+of that application. Inspired by GNOME's AATWS which maps this to
+`app.open_new_window(-1)` — reads the `.desktop` Exec line, strips field
+codes, launches, and refreshes the switcher list via `window-created`
+signal.
+
+Hyprsphere's equivalent: extract `Exec=` from `.desktop` files alongside
+the existing icon/name scanning (Phase 7), strip field codes
+(`%u`, `%U`, `%f`, `%F`, `%i`, `%c`, `%k`), launch via
+`Quickshell.execDetached()`, and rely on the existing `openwindow` raw
+event handler to trigger `scheduleRebuild()` for auto-selection.
+
+See `PHASE_9.md` for the full implementation plan and exit criteria.
 
 ---
 
