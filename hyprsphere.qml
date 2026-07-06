@@ -1283,8 +1283,16 @@ PanelWindow {
                                 Layout.fillWidth: true
                                 implicitHeight: labelText.implicitHeight + window._s4
                                 radius: window._s4
-                                visible: window.showNonSelectedLabel()
-                                color: Qt.rgba(window.crust.r, window.crust.g, window.crust.b, cfg.appCard?.labelBgOpacity ?? 0.60)
+                                visible: {
+                                    if (!window.showNonSelectedLabel()) return false;
+                                    var n = window.sphereModel[index];
+                                    return n && n.isWindowNode;
+                                }
+                                color: Qt.rgba(
+                                    (parseInt((cfg.appCard?.labelBgColor ?? "#ff4400").substring(1,3),16)/255),
+                                    (parseInt((cfg.appCard?.labelBgColor ?? "#ff4400").substring(3,5),16)/255),
+                                    (parseInt((cfg.appCard?.labelBgColor ?? "#ff4400").substring(5,7),16)/255),
+                                    cfg.appCard?.labelBgOpacity ?? 0.5)
 
                                 Text {
                                     id: labelText
@@ -1297,9 +1305,9 @@ PanelWindow {
                                         return n.title ? n.title : (n.label || "");
                                     }
                                     font.family: "JetBrains Mono"
-                                    font.pixelSize: window._s11
+                                    font.pixelSize: window.s(14)
                                     font.weight: Font.DemiBold
-                                    color: window.text
+                                    color: cfg.appCard?.labelTextColor ?? "#2b2b2b"
                                     horizontalAlignment: Text.AlignHCenter
                                     verticalAlignment:   Text.AlignVCenter
                                     elide: Text.ElideRight
@@ -1409,24 +1417,45 @@ PanelWindow {
                                     Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
                                 }
 
-                                Text {
-                                    id: satLabel
+                                Rectangle {
+                                    id: satLabelBg
                                     anchors.horizontalCenter: parent.horizontalCenter
                                     anchors.top: satIcon.bottom
                                     anchors.topMargin: window._s5
                                     width: parent.width * 0.8
-                                    text: {
+                                    implicitHeight: satLabelText.implicitHeight + window._s4
+                                    radius: window._s4
+                                    visible: {
                                         var n = window.sphereModel[window.selectedAppIndex];
-                                        if (!n) return "";
-                                        return n && n.title ? n.title : (n && n.label || "");
+                                        if (!n) return false;
+                                        if (n.isWindowNode) return true;
+                                        return cfg.appCard?.satelliteAppLabel === true;
                                     }
-                                    font.family: "JetBrains Mono"
-                                    font.pixelSize: window._sat_fontSize
-                                    font.weight: Font.Bold
-                                    color: window.text
-                                    horizontalAlignment: Text.AlignHCenter
-                                    elide: Text.ElideRight
-                                    wrapMode: Text.WordWrap
+                                    color: Qt.rgba(
+                                        (parseInt((cfg.appCard?.labelBgColor ?? "#ff4400").substring(1,3),16)/255),
+                                        (parseInt((cfg.appCard?.labelBgColor ?? "#ff4400").substring(3,5),16)/255),
+                                        (parseInt((cfg.appCard?.labelBgColor ?? "#ff4400").substring(5,7),16)/255),
+                                        cfg.appCard?.labelBgOpacity ?? 0.5)
+
+                                    Text {
+                                        id: satLabelText
+                                        anchors.fill: parent
+                                        anchors.leftMargin: window._s3
+                                        anchors.rightMargin: window._s3
+                                        text: {
+                                            var n = window.sphereModel[window.selectedAppIndex];
+                                            if (!n) return "";
+                                            return n && n.title ? n.title : (n && n.label || "");
+                                        }
+                                        font.family: "JetBrains Mono"
+                                        font.pixelSize: window._sat_fontSize
+                                        font.weight: Font.Bold
+                                        color: cfg.appCard?.labelTextColor ?? "#2b2b2b"
+                                        horizontalAlignment: Text.AlignHCenter
+                                        verticalAlignment: Text.AlignVCenter
+                                        elide: Text.ElideRight
+                                        wrapMode: Text.WordWrap
+                                    }
                                 }
 
                                 // Window count / index badge (over icon)

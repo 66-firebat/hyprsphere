@@ -22,7 +22,8 @@ replaced with `assets/selected.svg`. The SVG is conditionally shown via
 ### 3. Configurable icon sizes ✅
 
 - **Selected icon size:** `satellite.iconSize` in config (default 40)
-- **Non-selected icon size:** `appCard.nonSelectedIconSize` in config (default 55)
+- **Non-selected icon size:** `appCard.nonSelectedIconSize` in config (default 110)
+- **Window icon opacity:** `appCard.windowIconOpacity` in config (default 0.75)
 
 ### 4. Window-count / index badge (redesigned)
 
@@ -38,17 +39,17 @@ the window's **per-app opening-order index** (e.g. `"2"`).
   "appCard": {
     "windowCountBadge": {
       "satellite": true,
-      "nonSelected": true,
-      "offsetY": 0,
-      "offsetX": -60,
+      "nonSelected": false,
+      "offsetY": 55,
+      "offsetX": 0,
       "fontSize": 18,
       "padding": 14,
       "color": "#ff4400",
       "bgColor": "#2b2b2b",
-      "bgOpacity": 0.5,
-      "windowColor": "#2b2b2b",
-      "windowBgColor": "#ff4400",
-      "windowBgOpacity": 0.5
+      "bgOpacity": 1.0,
+      "windowColor": "#ff4400",
+      "windowBgColor": "#2b2b2b",
+      "windowBgOpacity": 1.0
     }
   }
 }
@@ -57,31 +58,29 @@ the window's **per-app opening-order index** (e.g. `"2"`).
 | Field | Default | Description |
 |---|---|---|
 | `windowCountBadge.satellite` | `true` | Show badge on the selected satellite card |
-| `windowCountBadge.nonSelected` | `true` | Show badge on non-selected sphere cards |
-| `windowCountBadge.offsetY` | `0` | Vertical offset from icon center (negative = upward) |
-| `windowCountBadge.offsetX` | `-60` | Horizontal offset from icon center (negative = left) |
+| `windowCountBadge.nonSelected` | `false` | Show badge on non-selected sphere cards |
+| `windowCountBadge.offsetY` | `55` | Vertical offset from icon center (negative = up) |
+| `windowCountBadge.offsetX` | `0` | Horizontal offset from icon center (negative = left) |
 | `windowCountBadge.fontSize` | `18` | Pixel size of the badge text |
 | `windowCountBadge.padding` | `14` | Extra space added to text (symmetric, keeps badge circular) |
-| `windowCountBadge.color` | `"#ff4400"` | Foreground text color of the badge |
-| `windowCountBadge.bgColor` | `"#2b2b2b"` | Background pill color of the badge |
-| `windowCountBadge.bgOpacity` | `0.5` | Opacity of the background pill (0-1) |
-| `windowCountBadge.windowColor` | `"#2b2b2b"` | Foreground text color for window index badges |
-| `windowCountBadge.windowBgColor` | `"#ff4400"` | Background pill color for window index badges |
-| `windowCountBadge.windowBgOpacity` | `0.5` | Background pill opacity for window index badges (0-1) |
+| `windowCountBadge.color` | `"#ff4400"` | Foreground text color of app badges (prepended with `+`) |
+| `windowCountBadge.bgColor` | `"#2b2b2b"` | Background pill color of app badges |
+| `windowCountBadge.bgOpacity` | `1.0` | Opacity of the background pill (0-1) |
+| `windowCountBadge.windowColor` | `"#ff4400"` | Foreground text color of window index badges (plain number) |
+| `windowCountBadge.windowBgColor` | `"#2b2b2b"` | Background pill color of window index badges |
+| `windowCountBadge.windowBgOpacity` | `1.0` | Background pill opacity for window index badges (0-1) |
 
 #### Behavior
 
-- **What it shows:** App nodes show window count (e.g. `"3"`);
-  window nodes show static 1-based opening-order index (e.g. `"2"`)
+- **What it shows:** App nodes show `+` + window count (e.g. `"+3"`);
+  window nodes show 1-based per-app opening-order index (e.g. `"2"`)
 - **Where:** Centered over the app/window icon, with X/Y offset,
-  for both the satellite card and non-selected cards
+  only on the satellite card (non-selected badges disabled)
 - **When:** App nodes where `windowCount` ≥ 1. Window nodes always show
   their index badge. Hidden for whitelisted placeholders and
   "No windows"/"No results" placeholders
-- **Style:** Bold text on a rounded pill background. App badges use
-  `bgColor`/`bgOpacity`. Window badges use `windowBgColor`/
-  `windowBgOpacity`/`windowColor`. Positioned centered over the icon,
-  with configurable X/Y offset.
+- **Style:** Bold text on a rounded pill background. Both app and window
+  badges share the same color scheme: `#ff4400` text on `#2b2b2b` pill.
 
 #### Implementation
 
@@ -92,10 +91,7 @@ satellite icon `Image`, with configurable X/Y offset. Visible when:
 - If app node: `windowCount` ≥ 1; if window node: always
 
 **Non-selected cards:** Same `Item` pattern anchored to the center of the
-card's icon `Image`. Visible when:
-- `cfg.appCard?.windowCountBadge?.nonSelected !== false`
-- The current node is not a placeholder/whitelisted placeholder
-- If app node: `windowCount` ≥ 1; if window node: always
+card's icon `Image`. Currently disabled (`nonSelected: false`).
 
 #### Per-app window indexing
 
@@ -127,9 +123,10 @@ return String(oi >= 0 ? oi + 1 : "");
   positioned relative to the icon `Image` itself
 - The anchor point changed from `bottom-right` of card to `center` of
   the icon, with configurable X/Y offset
-- App badges use `color`/`bgColor`/`bgOpacity`;
-  window badges use `windowColor`/`windowBgColor`/`windowBgOpacity`
-  (inverted color scheme: orange pill with dark text for windows)
+- App badges prepend `+` to their window count; window badges show
+  a plain per-app opening-order index number
+- Both app and window badges now share the same color scheme
+  (`#ff4400` on `#2b2b2b`)
 
 ---
 
@@ -149,22 +146,28 @@ return String(oi >= 0 ? oi + 1 : "");
 | `autoRadius.minRadius` | `160` | Sphere radius when only 1-2 nodes are visible |
 | `autoRadius.maxNodeCount` | `20` | Node count at which radius reaches `baseRadius` |
 
+### `appIcon.windowIconOpacity`
+
+| Field | Default | Description |
+|---|---|---|
+| `windowIconOpacity` | `0.75` | Opacity of icons on window nodes (layer 1/layer 2). App icons are full opacity. |
+
 ### `appCard.windowCountBadge`
 
 | Field | Default | Description |
 |---|---|---|
 | `windowCountBadge.satellite` | `true` | Show window count on the satellite card |
-| `windowCountBadge.nonSelected` | `true` | Show window count on non-selected cards |
-| `windowCountBadge.offsetY` | `0` | Vertical offset from icon center (negative = up) |
-| `windowCountBadge.offsetX` | `-60` | Horizontal offset from icon center (negative = left) |
+| `windowCountBadge.nonSelected` | `false` | Show window count on non-selected cards |
+| `windowCountBadge.offsetY` | `55` | Vertical offset from icon center (negative = up) |
+| `windowCountBadge.offsetX` | `0` | Horizontal offset from icon center (negative = left) |
 | `windowCountBadge.fontSize` | `18` | Pixel size of the badge text |
 | `windowCountBadge.padding` | `14` | Extra space added to text (symmetric, keeps badge circular) |
-| `windowCountBadge.color` | `"#ff4400"` | Foreground text color of the badge |
-| `windowCountBadge.bgColor` | `"#2b2b2b"` | Background pill color of the badge |
-| `windowCountBadge.bgOpacity` | `0.5` | Opacity of the background pill (0-1) |
-| `windowCountBadge.windowColor` | `"#2b2b2b"` | Foreground text color for window index badges |
-| `windowCountBadge.windowBgColor` | `"#ff4400"` | Background pill color for window index badges |
-| `windowCountBadge.windowBgOpacity` | `0.5` | Background pill opacity for window index badges (0-1) |
+| `windowCountBadge.color` | `"#ff4400"` | Foreground text color of app badges (prepended with `+`) |
+| `windowCountBadge.bgColor` | `"#2b2b2b"` | Background pill color of app badges |
+| `windowCountBadge.bgOpacity` | `1.0` | Opacity of the background pill (0-1) |
+| `windowCountBadge.windowColor` | `"#ff4400"` | Foreground text color of window index badges (plain number) |
+| `windowCountBadge.windowBgColor` | `"#2b2b2b"` | Background pill color of window index badges |
+| `windowCountBadge.windowBgOpacity` | `1.0` | Background pill opacity for window index badges (0-1) |
 
 ---
 
@@ -187,3 +190,8 @@ return String(oi >= 0 ? oi + 1 : "");
     closed windows
 13. **Adaptive sphere radius** — sphere shrinks with few nodes for tighter
     clustering, grows to `baseRadius` at `maxNodeCount` nodes
+    (currently disabled)
+14. **App badges prepend `+`** — app window counts shown as `+3`
+    instead of `3`
+15. **Window icon opacity** — window node icons render at
+    `windowIconOpacity` (default 0.75)

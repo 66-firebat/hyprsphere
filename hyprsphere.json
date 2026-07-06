@@ -108,7 +108,10 @@
   },
 
   "appCard": {
-    "labelBgOpacity": 0.60,
+    "satelliteAppLabel": false,
+    "labelBgOpacity": 0.5,
+    "labelBgColor": "#ff4400",
+    "labelTextColor": "#2b2b2b",
     "nonSelectedIconSize": 110,
     "windowIconOpacity": 0.75,
     "windowCountBadge": {
