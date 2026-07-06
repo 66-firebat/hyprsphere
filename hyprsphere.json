@@ -110,7 +110,10 @@
       "padding": 14,
       "color": "#ff4400",
       "bgColor": "#2b2b2b",
-      "bgOpacity": 0.5
+      "bgOpacity": 0.5,
+      "windowColor": "#2b2b2b",
+      "windowBgColor": "#ff4400",
+      "windowBgOpacity": 0.5
     },
     "nonSelectedLayerLabels": {
       "layer_0": false,

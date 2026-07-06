@@ -61,6 +61,7 @@ PanelWindow {
     // ── Phase 2: MRU tracking ──
     property var appMru: []
     property var appWindowMru: ({})
+    property var _appOpeningOrder: ({})
 
     // ── Phase 7: Icon & name resolution ──
     property var iconMap: ({})
@@ -136,6 +137,30 @@ PanelWindow {
         console.log("[hyprsphere] Icon map built: " + Object.keys(map).length + " entries, Name map built: " + Object.keys(nmap).length + " entries");
         // If overlay is already visible, refresh sphere with correct icons
         if (window.visible) scheduleRebuild();
+    }
+
+    function initWindowIndices() {
+        var tls = Hyprland.toplevels;
+        var arr = (tls && tls.values) || [];
+        if (arr.length === 0) {
+            // Toplevels not populated yet — retry on next tick
+            Qt.callLater(function() { window.initWindowIndices(); });
+            return;
+        }
+        window._appOpeningOrder = {};
+        for (var i = 0; i < arr.length; i++) {
+            var t = arr[i];
+            if (!t) continue;
+            var addr = t.address || "";
+            if (!addr) continue;
+            if (addr.indexOf("0x") !== 0) addr = "0x" + addr;
+            var appId = (t.wayland && t.wayland.appId) ? t.wayland.appId : "unknown";
+            if (!window._appOpeningOrder[appId]) window._appOpeningOrder[appId] = [];
+            if (window._appOpeningOrder[appId].indexOf(addr) === -1) {
+                window._appOpeningOrder[appId].push(addr);
+            }
+        }
+        console.log("[hyprsphere] Per-app opening order initialized for " + Object.keys(window._appOpeningOrder).length + " apps");
     }
 
     // ── Phase 6: Search / Layer 2 ──
@@ -469,6 +494,7 @@ PanelWindow {
                             icon:    app.icon,
                             label:   app.label,
                             appId:   app.appId,
+                            isWindowNode: true,
                         };
                     }).sort(function(a, b) {
                         var ia = winMru.indexOf(a.address);
@@ -516,6 +542,7 @@ PanelWindow {
                     icon:    app.icon,
                     label:   app.label,
                     appId:   app.appId,
+                    isWindowNode: true,
                 };
             }).sort(function(a, b) {
                 var ia = winMru.indexOf(a.address);
@@ -549,6 +576,7 @@ PanelWindow {
                     icon:    node.icon,
                     label:   node.label,
                     appId:   node.appId,
+                    isWindowNode: true,
                 };
             }).sort(function(a, b) {
                 var ia = winMru.indexOf(a.address);
@@ -743,6 +771,11 @@ PanelWindow {
                     if (addr.indexOf("0x") !== 0) addr = "0x" + addr;
                     var appId = parts[2];
                     if (!appId) return;
+                    // Track per-app opening order
+                    if (!window._appOpeningOrder[appId]) window._appOpeningOrder[appId] = [];
+                    if (window._appOpeningOrder[appId].indexOf(addr) === -1) {
+                        window._appOpeningOrder[appId].push(addr);
+                    }
                     var filtered = [];
                     for (var i = 0; i < appMru.length; i++) {
                         if (appMru[i] !== appId) filtered.push(appMru[i]);
@@ -756,6 +789,18 @@ PanelWindow {
             if (event.name !== "closewindow") return;
             var addr = event.data || "";
             if (!addr) return;
+
+            // Remove from per-app opening order (compacts that app's indices)
+            var normAddr = addr.indexOf("0x") === 0 ? addr : "0x" + addr;
+            for (var aid in window._appOpeningOrder) {
+                var list = window._appOpeningOrder[aid];
+                var oi = list.indexOf(normAddr);
+                if (oi !== -1) {
+                    list.splice(oi, 1);
+                    if (list.length === 0) delete window._appOpeningOrder[aid];
+                    break;
+                }
+            }
 
             for (var appId in appWindowMru) {
                 var list = appWindowMru[appId];
@@ -840,6 +885,8 @@ PanelWindow {
         configReader.running = true;
         iconReader.running = true;
         Hyprland.refreshToplevels();
+        // After toplevels populate, assign static indices to existing windows
+        Qt.callLater(function() { window.initWindowIndices(); });
     }
 
     // Responsive scaler — scales values proportionally to window width
@@ -1245,7 +1292,7 @@ PanelWindow {
 
                         }
 
-                        // Window count badge (over icon)
+                        // Window count / index badge (over icon)
                         Item {
                             id: windowBadge
                             anchors.horizontalCenter: cardIcon.horizontalCenter
@@ -1257,15 +1304,26 @@ PanelWindow {
                             visible: {
                                 if (cfg.appCard?.windowCountBadge?.nonSelected === false) return false;
                                 var n = window.sphereModel[index];
-                                if (!n || n.isWindowNode || n.isPlaceholder || n.isWhitelistPlaceholder) return false;
+                                if (!n || n.isPlaceholder || n.isWhitelistPlaceholder) return false;
+                                if (n.isWindowNode) return true;
                                 return (n.windowCount || 0) >= 1;
                             }
 
                             Rectangle {
                                 anchors.fill: parent
                                 radius: height / 2
-                                color: cfg.appCard?.windowCountBadge?.bgColor ?? "#2b2b2b"
-                                opacity: cfg.appCard?.windowCountBadge?.bgOpacity ?? 0.5
+                                color: {
+                                    var n = window.sphereModel[index];
+                                    return n && n.isWindowNode
+                                        ? (cfg.appCard?.windowCountBadge?.windowBgColor ?? "#ff4400")
+                                        : (cfg.appCard?.windowCountBadge?.bgColor ?? "#2b2b2b");
+                                }
+                                opacity: {
+                                    var n = window.sphereModel[index];
+                                    return n && n.isWindowNode
+                                        ? (cfg.appCard?.windowCountBadge?.windowBgOpacity ?? 0.5)
+                                        : (cfg.appCard?.windowCountBadge?.bgOpacity ?? 0.5);
+                                }
                             }
 
                             Text {
@@ -1274,12 +1332,25 @@ PanelWindow {
                                 text: {
                                     var n = window.sphereModel[index];
                                     if (!n) return "";
+                                    if (n.isWindowNode) {
+                                        var a = n.address || "";
+                                        if (a.indexOf("0x") !== 0) a = "0x" + a;
+                                        var appList = window._appOpeningOrder[n.appId];
+                                        if (!appList) return "";
+                                        var oi = appList.indexOf(a);
+                                        return String(oi >= 0 ? oi + 1 : "");
+                                    }
                                     return String(n.windowCount || 0);
                                 }
                                 font.family: "JetBrains Mono"
                                 font.pixelSize: window.s(cfg.appCard?.windowCountBadge?.fontSize ?? 18)
                                 font.weight: Font.Bold
-                                color: cfg.appCard?.windowCountBadge?.color ?? "#ff4400"
+                                color: {
+                                    var n = window.sphereModel[index];
+                                    return n && n.isWindowNode
+                                        ? (cfg.appCard?.windowCountBadge?.windowColor ?? "#2b2b2b")
+                                        : (cfg.appCard?.windowCountBadge?.color ?? "#ff4400");
+                                }
                                 horizontalAlignment: Text.AlignHCenter
                                 verticalAlignment: Text.AlignVCenter
                             }
@@ -1337,7 +1408,7 @@ PanelWindow {
                                     wrapMode: Text.WordWrap
                                 }
 
-                                // Window count badge (over icon)
+                                // Window count / index badge (over icon)
                                 Item {
                                     id: satBadge
                                     anchors.horizontalCenter: satIcon.horizontalCenter
@@ -1349,15 +1420,26 @@ PanelWindow {
                                     visible: {
                                         if (cfg.appCard?.windowCountBadge?.satellite === false) return false;
                                         var n = window.sphereModel[window.selectedAppIndex];
-                                        if (!n || n.isWindowNode || n.isPlaceholder || n.isWhitelistPlaceholder) return false;
+                                        if (!n || n.isPlaceholder || n.isWhitelistPlaceholder) return false;
+                                        if (n.isWindowNode) return true;
                                         return (n.windowCount || 0) >= 1;
                                     }
 
                                     Rectangle {
                                         anchors.fill: parent
                                         radius: height / 2
-                                        color: cfg.appCard?.windowCountBadge?.bgColor ?? "#2b2b2b"
-                                        opacity: cfg.appCard?.windowCountBadge?.bgOpacity ?? 0.5
+                                        color: {
+                                            var n = window.sphereModel[window.selectedAppIndex];
+                                            return n && n.isWindowNode
+                                                ? (cfg.appCard?.windowCountBadge?.windowBgColor ?? "#ff4400")
+                                                : (cfg.appCard?.windowCountBadge?.bgColor ?? "#2b2b2b");
+                                        }
+                                        opacity: {
+                                            var n = window.sphereModel[window.selectedAppIndex];
+                                            return n && n.isWindowNode
+                                                ? (cfg.appCard?.windowCountBadge?.windowBgOpacity ?? 0.5)
+                                                : (cfg.appCard?.windowCountBadge?.bgOpacity ?? 0.5);
+                                        }
                                     }
 
                                     Text {
@@ -1366,12 +1448,25 @@ PanelWindow {
                                         text: {
                                             var n = window.sphereModel[window.selectedAppIndex];
                                             if (!n) return "";
+                                            if (n.isWindowNode) {
+                                                var a = n.address || "";
+                                                if (a.indexOf("0x") !== 0) a = "0x" + a;
+                                                var appList = window._appOpeningOrder[n.appId];
+                                                if (!appList) return "";
+                                                var oi = appList.indexOf(a);
+                                                return String(oi >= 0 ? oi + 1 : "");
+                                            }
                                             return String(n.windowCount || 0);
                                         }
                                         font.family: "JetBrains Mono"
                                         font.pixelSize: window.s(cfg.appCard?.windowCountBadge?.fontSize ?? 18)
                                         font.weight: Font.Bold
-                                        color: cfg.appCard?.windowCountBadge?.color ?? "#ff4400"
+                                        color: {
+                                            var n = window.sphereModel[window.selectedAppIndex];
+                                            return n && n.isWindowNode
+                                                ? (cfg.appCard?.windowCountBadge?.windowColor ?? "#2b2b2b")
+                                                : (cfg.appCard?.windowCountBadge?.color ?? "#ff4400");
+                                        }
                                         horizontalAlignment: Text.AlignHCenter
                                         verticalAlignment: Text.AlignVCenter
                                     }
