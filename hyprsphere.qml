@@ -582,9 +582,11 @@ PanelWindow {
                         }
                     }
                 } else {
-                    // Layer 1/2: match by address
+                    // Layer 1/2: match by address (normalize 0x prefix)
                     for (var si = 0; si < window.sphereModel.length; si++) {
-                        if (window.sphereModel[si].address === window._pendingSpawnAddr) {
+                        var sa = window.sphereModel[si].address || "";
+                        if (sa.indexOf("0x") !== 0) sa = "0x" + sa;
+                        if (sa === window._pendingSpawnAddr) {
                             window.selectedAppIndex = si;
                             window.centerOnApp(si);
                             found = true;
