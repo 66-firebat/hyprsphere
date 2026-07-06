@@ -68,18 +68,59 @@ Replace `/home/fireshark/hyprsphere` with the actual path to your clone.
 
 ### 3. Qt5Compat QML import path
 
-Quickshell needs the Qt5Compat QML module for certain effects. Set the
-environment variable before starting:
+Quickshell needs the Qt5Compat QML module (specifically
+`Qt5Compat.GraphicalEffects`) for certain visual effects. Set the
+`QML2_IMPORT_PATH` environment variable to point to the Qt5Compat QML
+directory before starting Quickshell:
 
 ```bash
-export QML2_IMPORT_PATH="${QML2_IMPORT_PATH:+$QML2_IMPORT_PATH:}/path/to/qt5compat/lib/qt-6/qml"
+export QML2_IMPORT_PATH="/path/to/qt5compat/lib/qt-6/qml"
 ```
 
-On NixOS, find the path with:
+#### Finding your Qt5Compat path
 
+**NixOS / Nix:**
 ```bash
-find /nix/store -name "qt5compat*" -type d 2>/dev/null | head -1
+ls -d /nix/store/*qt5compat*/lib/qt-6/qml 2>/dev/null
 ```
+This lists all Qt5Compat QML paths in your Nix store. Pick one and set
+it as `QML2_IMPORT_PATH`.
+
+**Arch Linux (qt5compat from AUR or extra):**
+```bash
+pacman -Ql qt5compat 2>/dev/null | grep 'qt-6/qml' | head -1 | cut -d' ' -f2
+# or find the installed path:
+pkg-config --variable=libdir Qt5Compat 2>/dev/null
+# common path:
+ls -d /usr/lib/qt6/qml/Qt5Compat* 2>/dev/null
+```
+
+**Debian/Ubuntu (qt6-base-dev or similar):**
+```bash
+dpkg -L qt6-base-dev 2>/dev/null | grep 'qt5compat' | head -1
+# or check common locations:
+ls -d /usr/lib/*/qt6/qml/Qt5Compat* 2>/dev/null
+ls -d /usr/lib/qt6/qml/Qt5Compat* 2>/dev/null
+```
+
+**Fedora (qt6-qt5compat):**
+```bash
+rpm -ql qt6-qt5compat 2>/dev/null | grep qt-6/qml | head -1
+# or:
+ls -d /usr/lib64/qt6/qml/Qt5Compat* 2>/dev/null
+```
+
+**Manual search (any distro):**
+```bash
+find /usr -path '*/Qt5Compat*' -type d 2>/dev/null | head -5
+```
+
+If all else fails, look for any directory named `Qt5Compat` or
+`qt5compat` under your Qt QML installation and point
+`QML2_IMPORT_PATH` to its parent chain ending in `qt-6/qml`.
+The `manual_start.sh` script included in this repo will attempt to
+auto-detect the path on NixOS, but for other distros you'll need to
+set it yourself.
 
 ### 4. Add required keybinds to `keymaps.lua`
 

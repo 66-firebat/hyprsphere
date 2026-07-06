@@ -1,30 +1,48 @@
 #!/usr/bin/env bash
 # Start hyprsphere: kill old instances, symlink config, launch.
 # After this, open the overlay with:  qs ipc call hyprsphere toggle
+#
+# This script uses relative paths — it must be run from within the
+# hyprsphere repository directory.
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
 
 # Kill any existing quickshell instances running our config
 echo "Killing existing hyprsphere processes..."
 pkill -f "quickshell.*shell.qml" 2>/dev/null || true
 sleep 1
 
-# Ensure the symlink exists for IPC discovery
+# Ensure the symlinks exist for IPC discovery
 mkdir -p "$HOME/.config/quickshell"
 ln -sf "$SCRIPT_DIR/hyprsphere.qml" "$HOME/.config/quickshell/shell.qml"
-echo "Symlink: $HOME/.config/quickshell/shell.qml -> hyprsphere.qml"
+ln -sf "$SCRIPT_DIR/lib"           "$HOME/.config/quickshell/lib"
+echo "Symlinks created:"
+echo "  $HOME/.config/quickshell/shell.qml -> hyprsphere.qml"
+echo "  $HOME/.config/quickshell/lib       -> lib/"
 
-# Qt5Compat QML import path (may differ on your system)
-export QML2_IMPORT_PATH="${QML2_IMPORT_PATH:+$QML2_IMPORT_PATH:}/nix/store/b542sz5kqs7kv3lqc8pl7id0rkk4ynmg-qt5compat-6.11.0/lib/qt-6/qml"
+# Locate the Qt5Compat QML import path for Quickshell
+# This is typically provided by a system package (e.g. qt5compat on Nix).
+# Falls back to QML2_IMPORT_PATH if already set.
+if [ -z "$QML2_IMPORT_PATH" ]; then
+    QT5COMPAT_PATH="$(ls -d /nix/store/*qt5compat*/lib/qt-6/qml 2>/dev/null | head -1)"
+    if [ -n "$QT5COMPAT_PATH" ]; then
+        export QML2_IMPORT_PATH="$QT5COMPAT_PATH"
+        echo "Found Qt5Compat: $QML2_IMPORT_PATH"
+    else
+        echo "WARNING: QML2_IMPORT_PATH not set and couldn't find qt5compat in /nix/store."
+        echo "Set QML2_IMPORT_PATH manually or the overlay may fail to render."
+    fi
+fi
 
 echo "Starting hyprsphere..."
 quickshell &
 
 # Wait for it to be ready
 for i in $(seq 1 10); do
-    if quickshell list --all 2>/dev/null | grep -q "shell.qml"; then
+    if qs list --all 2>/dev/null | grep -q "shell.qml"; then
         echo "hyprsphere is running."
         echo "Open overlay:  qs ipc call hyprsphere toggle"
         exit 0
