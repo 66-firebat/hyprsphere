@@ -114,6 +114,10 @@ PanelWindow {
         introPhaseAnim.restart();
         focusGrabber.forceActiveFocus();
 
+        // Enter Hyprland submap so letter keys pass through to QML
+        // NOTE: must use hyprctl eval, not dispatch (submap is Lua-only)
+        Quickshell.execDetached(["hyprctl", "eval", 'hl.dispatch(hl.dsp.submap("hyprsphere"))']);
+
         // Toplevel IPC data is not available synchronously (confirmed by
         // Phase 1 testing: 2 event-loop ticks needed after refresh).
         // Build asynchronously with retry.
@@ -564,6 +568,10 @@ PanelWindow {
         // Focus the target window using Lua dispatch format.
         var prefix = addr.indexOf("0x") === 0 ? "" : "0x";
         Quickshell.execDetached(["hyprctl", "dispatch", 'hl.dsp.focus({window="address:' + prefix + addr + '"})']);
+
+        // Reset Hyprland submap so normal bindings work again
+        // NOTE: must use hyprctl eval, not dispatch (submap is Lua-only)
+        Quickshell.execDetached(["hyprctl", "eval", 'hl.dispatch(hl.dsp.submap("reset"))']);
     }
 
     // ── Phase 5: Ctrl+C close ──
@@ -730,6 +738,12 @@ PanelWindow {
         function commit(): void {
             if (window.overlayActive) {
                 window.commitSelection();
+            }
+        }
+
+        function cancel(): void {
+            if (window.overlayActive) {
+                window.cancelSwitch();
             }
         }
     }
@@ -933,6 +947,7 @@ PanelWindow {
     }
 
     function cancelSwitch() {
+        if (closeSequence.running) return;  // guard against double-fire
         window.layer = 0;
         window.drilledAppId = "";
         window.searchQuery = "";
@@ -940,6 +955,9 @@ PanelWindow {
         window.savedLayer2Query = "";
         window.overlayActive = false;
         closeSequence.start();
+        // Reset Hyprland submap so normal bindings work again
+        // NOTE: must use hyprctl eval, not dispatch (submap is Lua-only)
+        Quickshell.execDetached(["hyprctl", "eval", 'hl.dispatch(hl.dsp.submap("reset"))']);
     }
 
     // ── Phase 3: key handling ──

@@ -482,6 +482,108 @@ Layer 2 window nodes: show window title (like layer 1)
 
 ---
 
+## Submap integration (Hyprland key event pass-through)
+
+The core problem is that **33 Alt-prefixed Hyprland keymaps** (fullscreen,
+focus, launch rofi, etc.) consume key events before QML ever sees them.
+When the user holds Alt and types 'f', Hyprland fires `ALT + F` →
+fullscreen toggle and the 'f' key never reaches the overlay.
+
+### Solution: Hyprland submap
+
+When the overlay opens, we enter a dedicated `hyprsphere` submap via
+`hyprctl dispatch submap hyprsphere`. Inside the submap:
+
+- **Only three binds are defined:**
+  - `ALT + Alt_L` release → `qs ipc call hyprsphere commit`
+  - `ALT + Alt_R` release → `qs ipc call hyprsphere commit`
+  - `Escape` → `qs ipc call hyprsphere cancel`
+- **All other keys are unbound** → Hyprland passes them through to the
+  focused layer surface (the overlay). QML's `Keys.onPressed` receives
+  them directly, including letter keys and Tab.
+
+### Flow
+
+```
+User presses Alt+Tab
+    │
+    ▼
+Global `ALT + Tab` bind fires (Lua function)
+    ├─ hl.dispatch(hl.dsp.submap("hyprsphere"))     ← synchronously enters submap FIRST
+    └─ hl.dispatch(hl.dsp.exec_cmd("qs ipc call hyprsphere toggle"))  ← then opens overlay
+    │
+    ▼
+QML: openSwitcher() sets up sphere
+    │
+    ▼
+Submap active → user types 'f'
+    │  Hyprland checks submap: no ALT+F bind → passes key through
+    ├─ Global `ALT + F` bind does NOT fire (submap blocks it)
+    └─ QML receives 'f' → _handleSearchInput() → layer 2
+    │
+    ▼
+User releases Alt → submap `release = true` bind fires → commit
+    │
+    ▼
+QML commitSelection() → focus dispatch + submap reset
+
+User presses Escape → submap bind fires → IPC cancel → submap reset
+```
+
+### Changes to keymaps.lua
+
+```lua
+hl.define_submap("hyprsphere", function()
+    -- Alt release to commit
+    hl.bind("ALT + Alt_L", hl.dsp.exec_cmd("qs ipc call hyprsphere commit"), { release = true })
+    hl.bind("ALT + Alt_R", hl.dsp.exec_cmd("qs ipc call hyprsphere commit"), { release = true })
+
+    -- Escape to close overlay and reset submap
+    hl.bind("Escape", function()
+        hl.dispatch(hl.dsp.exec_cmd("qs ipc call hyprsphere cancel"))
+    end)
+end)
+
+-- The global release binds (ALT + Alt_L / Alt_R) are commented out since
+-- the submap now handles Alt release detection. They would never fire
+-- because the submap intercepts the release event first.
+```
+
+### Changes to hyprsphere.qml
+
+- `openSwitcher()`: `execDetached` submap dispatch kept as safety net (harmless no-op if submap already active)
+- `cancelSwitch()`: add submap reset + `closeSequence.running` guard
+- `commitSelection()`: add submap reset after focus dispatch
+- New `cancel()` IpcHandler function for Escape IPC route
+
+### `Keys.onPressed` for Escape
+
+The QML `Keys.onPressed` handler for Escape is kept as a safety fallback.
+When the submap is active, Hyprland consumes the Escape key and the QML
+handler won't fire. If the submap is somehow inactive, the QML handler
+still works. A `closeSequence.running` guard in `cancelSwitch()` prevents
+double-fire if both paths execute.
+
+### `Keys.onPressed` for Tab
+
+With the submap active and `submap_universal` unset (default `false`),
+global binds are blocked inside the submap. `ALT + Tab` is not bound in
+the submap, so the Tab key passes through to QML directly.
+`Keys.onPressed` sees `Qt.Key_Tab` (possibly with `Qt.AltModifier`) and
+calls `advance(1)` — Tab cycling works natively now, no IPC fallback
+needed. The `overlayActive` guard in `toggle()` is kept as a safety net.
+
+### Why this approach (not Phase 3's submap failure)
+
+Phase 3's submap attempt failed for a different scenario: it tried to
+detect Alt release INSIDE a submap entered by holding Alt+Tab, where
+the release-bind was consumed by the submap entry mechanism itself.
+Here, the submap is entered programmatically via `hyprctl dispatch`
+from QML, not by a keypress. The release-binds work correctly in this
+context.
+
+---
+
 ## Config additions (`hyprsphere.json`)
 
 ### `searchBar` block (updated from old launcher config)
