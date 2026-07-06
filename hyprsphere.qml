@@ -1091,25 +1091,6 @@ PanelWindow {
     }
 
     Item {
-        anchors.fill: parent
-        opacity: window.introPhase
-
-        Repeater {
-            model: cfg.stars?.count ?? 50
-            Rectangle {
-                property real seed: Math.random()
-                x: seed * window.width
-                y: Math.random() * window.height
-                width:  window._s2 + Math.random() * window._s2
-                height: width
-                radius: width / 2
-                color:  window.text
-                opacity: (cfg.stars?.opacityMin ?? 0.08) + Math.random() * ((cfg.stars?.opacityMax ?? 0.12) - (cfg.stars?.opacityMin ?? 0.08))
-            }
-        }
-    }
-
-    Item {
         id: scene3D
         anchors.fill: parent
         opacity: window.introPhase
@@ -1220,8 +1201,8 @@ PanelWindow {
 
                             Image {
                                 Layout.alignment: Qt.AlignHCenter
-                                Layout.preferredWidth:  window._s55
-                                Layout.preferredHeight: window._s55
+                                Layout.preferredWidth:  window.s(cfg.appCard?.nonSelectedIconSize ?? 55)
+                                Layout.preferredHeight: window.s(cfg.appCard?.nonSelectedIconSize ?? 55)
                                 source: {
                                     var ic = window.sphereModel[index] ? window.sphereModel[index].icon : "";
                                     return ic ? (ic.startsWith("/") ? "file://" + ic : "image://icon/" + ic) : "image://icon/application-x-executable";
@@ -1273,190 +1254,70 @@ PanelWindow {
 
                         sourceComponent: Component {
                             Item {
-                                // Satellite total dimensions (20 % smaller than original)
-                                readonly property real satW: window._sat_panelW + window._sat_strutW
-                                                           + window._sat_hullW
-                                                           + window._sat_strutW + window._sat_panelW
-                                readonly property real satH: window._sat_hullH
-                                                           + window._sat_antennaH
-                                                           + window._sat_thrusterH
-                                                           + window.s(11)
+                                // Satellite sized to the SVG viewBox (256x256)
+                                // Scaled relative to hull width for consistency
+                                readonly property real satSz: window._sat_hullW * 1.4
 
-                                width:  satW
-                                height: satH
+                                width:  satSz
+                                height: satSz
 
-                                // Left solar panel
-                                Rectangle {
-                                    id: lPanel
-                                    width:  window._sat_panelW
-                                    height: window._sat_panelH
-                                    anchors.right: lStrut.left
-                                    anchors.verticalCenter: hull.verticalCenter
-                                    color: window.mantle
-                                    border.color: Qt.alpha(window.surface2, 0.4)
-                                    border.width: 1
-                                    radius: window._sat_radius4
-
-                                    Grid {
-                                        anchors.fill: parent
-                                        anchors.margins: window._sat_screenM * 0.5
-                                        columns: 4; rows: 4
-                                        spacing: window._s2
-                                        Repeater {
-                                            model: 16
-                                            Rectangle {
-                                                width:  (lPanel.width  - window._sat_screenM - 3 * window._s2) / 4
-                                                height: (lPanel.height - window._sat_screenM - 3 * window._s2) / 4
-                                                color: Qt.alpha(window.blue, index % 3 === 0 ? 0.15 : 0.05)
-                                                radius: 1
-                                            }
-                                        }
-                                    }
+                                // SVG decoration behind the screen
+                                Image {
+                                    anchors.fill: parent
+                                    source: "file:///home/fireshark/hyprsphere/assets/selected.svg"
+                                    fillMode: Image.PreserveAspectFit
+                                    smooth: true
+                                    asynchronous: true
+                                    cache: true
                                 }
 
+                                // Screen showing selected app (centered in SVG)
                                 Rectangle {
-                                    id: lStrut
-                                    width:  window._sat_strutW
-                                    height: window._sat_strutH
-                                    anchors.right: hull.left
-                                    anchors.verticalCenter: hull.verticalCenter
-                                    color: Qt.alpha(window.surface2, 0.5)
-                                }
-
-                                // Central hull
-                                Rectangle {
-                                    id: hull
-                                    width:  window._sat_hullW
-                                    height: window._sat_hullH
+                                    id: notifScreen
+                                    width:  window._sat_hullW * 0.75
+                                    height: window._sat_hullH * 0.75
                                     anchors.centerIn: parent
-                                    anchors.verticalCenterOffset: (window._sat_antennaH - window._sat_thrusterH) * 0.5
-                                    color: window.base
-                                    border.color: Qt.alpha(window.surface1, 0.6)
-                                    border.width: cfg.satellite?.hullBorderWidth ?? 1.5
-                                    radius: window._sat_radius12
-
-                                    // Antenna
-                                    Rectangle {
-                                        width:  window._sat_antStick
-                                        height: window._sat_antennaH
-                                        anchors.horizontalCenter: parent.horizontalCenter
-                                        anchors.horizontalCenterOffset: -window._sat_antOffX
-                                        anchors.bottom: parent.top
-                                        color: Qt.alpha(window.surface2, 0.7)
-                                        radius: 1
-                                        Rectangle {
-                                            width:  window._sat_antBall
-                                            height: window._sat_antBall
-                                            radius: width / 2
-                                            anchors.horizontalCenter: parent.horizontalCenter
-                                            anchors.bottom: parent.top
-                                            color: window.blue
-                                        }
-                                    }
-
-                                    // Screen showing selected app
-                                    Rectangle {
-                                        id: notifScreen
-                                        anchors.fill: parent
-                                        anchors.margins: window._sat_screenM
-                                        color: window.mantle
-                                        radius: window._sat_radius8
-                                        border.color: Qt.alpha(window.surface0, 0.5)
-                                        border.width: 1
-
-                                        ColumnLayout {
-                                            anchors.fill: parent
-                                            anchors.margins: window._sat_innerM
-                                            spacing: window._sat_spacing
-
-                                            Image {
-                                                Layout.alignment: Qt.AlignHCenter
-                                                Layout.preferredWidth:  window._sat_iconSz
-                                                Layout.preferredHeight: window._sat_iconSz
-                                                source: {
-                                                    var node = window.sphereModel[window.selectedAppIndex];
-                                                    var ic = node ? node.icon : "";
-                                                    ic ? (ic.startsWith("/") ? "file://" + ic : "image://icon/" + ic) : "image://icon/application-x-executable";
-                                                }
-                                                fillMode: Image.PreserveAspectFit
-                                                smooth: true
-                                                cache: true
-                                            }
-
-                                            Text {
-                                                Layout.alignment: Qt.AlignHCenter
-                                                Layout.fillWidth: true
-                                                text: {
-                                                    var n = window.sphereModel[window.selectedAppIndex];
-                                                    if (!n) return "";
-                                                    return n && n.title ? n.title : (n && n.label || "");
-                                                }
-                                                font.family: "JetBrains Mono"
-                                                font.pixelSize: window._sat_fontSize
-                                                font.weight: Font.Bold
-                                                color: window.text
-                                                horizontalAlignment: Text.AlignHCenter
-                                                elide: Text.ElideRight
-                                                wrapMode: Text.WordWrap
-                                            }
-                                        }
-                                    }
-
-                                    // Thruster
-                                    Rectangle {
-                                        width:  window._sat_thrBase
-                                        height: window._sat_thrusterH * 0.5
-                                        anchors.horizontalCenter: parent.horizontalCenter
-                                        anchors.top: parent.bottom
-                                        color: window.surface1
-                                        radius: 2
-                                        Rectangle {
-                                            anchors.horizontalCenter: parent.horizontalCenter
-                                            anchors.top: parent.bottom
-                                            width:  parent.width * 0.6
-                                            height: window._sat_thrusterH
-                                            radius: width / 2
-                                            color: Qt.alpha(window.sapphire, 0.35)
-                                        }
-                                    }
-                                }
-
-                                // Right solar panel
-                                Rectangle {
-                                    id: rPanel
-                                    width:  window._sat_panelW
-                                    height: window._sat_panelH
-                                    anchors.left: rStrut.right
-                                    anchors.verticalCenter: hull.verticalCenter
                                     color: window.mantle
-                                    border.color: Qt.alpha(window.surface2, 0.4)
+                                    radius: window._sat_radius8
+                                    border.color: Qt.alpha(window.surface0, 0.5)
                                     border.width: 1
-                                    radius: window._sat_radius4
 
-                                    Grid {
+                                    ColumnLayout {
                                         anchors.fill: parent
-                                        anchors.margins: window._sat_screenM * 0.5
-                                        columns: 4; rows: 4
-                                        spacing: window._s2
-                                        Repeater {
-                                            model: 16
-                                            Rectangle {
-                                                width:  (rPanel.width  - window._sat_screenM - 3 * window._s2) / 4
-                                                height: (rPanel.height - window._sat_screenM - 3 * window._s2) / 4
-                                                color: Qt.alpha(window.blue, index % 3 === 0 ? 0.15 : 0.05)
-                                                radius: 1
+                                        anchors.margins: window._sat_innerM
+                                        spacing: window._sat_spacing
+
+                                        Image {
+                                            Layout.alignment: Qt.AlignHCenter
+                                            Layout.preferredWidth:  window._sat_iconSz
+                                            Layout.preferredHeight: window._sat_iconSz
+                                            source: {
+                                                var node = window.sphereModel[window.selectedAppIndex];
+                                                var ic = node ? node.icon : "";
+                                                ic ? (ic.startsWith("/") ? "file://" + ic : "image://icon/" + ic) : "image://icon/application-x-executable";
                                             }
+                                            fillMode: Image.PreserveAspectFit
+                                            smooth: true
+                                            cache: true
+                                        }
+
+                                        Text {
+                                            Layout.alignment: Qt.AlignHCenter
+                                            Layout.fillWidth: true
+                                            text: {
+                                                var n = window.sphereModel[window.selectedAppIndex];
+                                                if (!n) return "";
+                                                return n && n.title ? n.title : (n && n.label || "");
+                                            }
+                                            font.family: "JetBrains Mono"
+                                            font.pixelSize: window._sat_fontSize
+                                            font.weight: Font.Bold
+                                            color: window.text
+                                            horizontalAlignment: Text.AlignHCenter
+                                            elide: Text.ElideRight
+                                            wrapMode: Text.WordWrap
                                         }
                                     }
-                                }
-
-                                Rectangle {
-                                    id: rStrut
-                                    width:  window._sat_strutW
-                                    height: window._sat_strutH
-                                    anchors.left: hull.right
-                                    anchors.verticalCenter: hull.verticalCenter
-                                    color: Qt.alpha(window.surface2, 0.5)
                                 }
                             }
                         }
