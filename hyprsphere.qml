@@ -1271,6 +1271,11 @@ PanelWindow {
                                 fillMode: Image.PreserveAspectFit
                                 smooth: true
                                 cache: true
+                                opacity: {
+                                    var n = window.sphereModel[index];
+                                    return n && n.isWindowNode ? (cfg.appCard?.windowIconOpacity ?? 0.5) : 1.0;
+                                }
+                                Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
                             }
 
                             Rectangle {
@@ -1351,7 +1356,7 @@ PanelWindow {
                                         var oi = appList.indexOf(a);
                                         return String(oi >= 0 ? oi + 1 : "");
                                     }
-                                    return String(n.windowCount || 0);
+                                    return "+" + String(n.windowCount || 0);
                                 }
                                 font.family: "JetBrains Mono"
                                 font.pixelSize: window.s(cfg.appCard?.windowCountBadge?.fontSize ?? 18)
@@ -1397,6 +1402,11 @@ PanelWindow {
                                     }
                                     fillMode: Image.PreserveAspectFit
                                     smooth: true
+                                    opacity: {
+                                        var n = window.sphereModel[window.selectedAppIndex];
+                                        return n && n.isWindowNode ? (cfg.appCard?.windowIconOpacity ?? 0.5) : 1.0;
+                                    }
+                                    Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
                                 }
 
                                 Text {
@@ -1467,7 +1477,7 @@ PanelWindow {
                                                 var oi = appList.indexOf(a);
                                                 return String(oi >= 0 ? oi + 1 : "");
                                             }
-                                            return String(n.windowCount || 0);
+                                            return "+" + String(n.windowCount || 0);
                                         }
                                         font.family: "JetBrains Mono"
                                         font.pixelSize: window.s(cfg.appCard?.windowCountBadge?.fontSize ?? 18)

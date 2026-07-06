@@ -106,6 +106,7 @@
   "appCard": {
     "labelBgOpacity": 0.60,
     "nonSelectedIconSize": 110,
+    "windowIconOpacity": 0.75,
     "windowCountBadge": {
       "satellite": true,
       "nonSelected": false,
@@ -116,8 +117,8 @@
       "color": "#ff4400",
       "bgColor": "#2b2b2b",
       "bgOpacity": 1.0,
-      "windowColor": "#2b2b2b",
-      "windowBgColor": "#ff4400",
+      "windowColor": "#ff4400",
+      "windowBgColor": "#2b2b2b",
       "windowBgOpacity": 1.0
     },
     "nonSelectedLayerLabels": {
