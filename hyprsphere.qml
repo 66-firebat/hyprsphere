@@ -66,6 +66,7 @@ PanelWindow {
     // ── Phase 7: Icon & name resolution ──
     property var iconMap: ({})
     property var nameMap: ({})
+    property var execMap: ({})
 
     function resolveIcon(appId) {
         if (!appId) return "application-x-executable";
@@ -75,6 +76,11 @@ PanelWindow {
     function resolveName(appId) {
         if (!appId) return appId;
         return nameMap[appId] || appId;
+    }
+
+    function resolveExec(appId) {
+        if (!appId) return null;
+        return execMap[appId] || null;
     }
 
     function showNonSelectedLabel() {
@@ -91,7 +97,7 @@ PanelWindow {
             "$HOME/.local/share/applications/*.desktop; do " +
             "[ -f \"$f\" ] || continue; " +
             "echo \"[ID]$(basename \"$f\" .desktop)\"; " +
-            "grep -E '^(Name=|Icon=|StartupWMClass=)' \"$f\" 2>/dev/null; " +
+            "grep -E '^(Name=|Icon=|StartupWMClass=|Exec=)' \"$f\" 2>/dev/null; " +
             "echo '---'; done"
         ]
         running: false
@@ -107,10 +113,11 @@ PanelWindow {
     function parseIcons(text) {
         var map = {};
         var nmap = {};
+        var emap = {};
         var blocks = text.split('---');
         for (var b = 0; b < blocks.length; b++) {
             var lines = blocks[b].trim().split('\n');
-            var id = null, icon = null, wmClass = null, name = null;
+            var id = null, icon = null, wmClass = null, name = null, exec = null;
             for (var i = 0; i < lines.length; i++) {
                 var line = lines[i].trim();
                 if (line.startsWith('[ID]')) {
@@ -121,6 +128,12 @@ PanelWindow {
                     icon = line.substring(5).trim();
                 } else if (line.startsWith('StartupWMClass=')) {
                     wmClass = line.substring(15).trim();
+                } else if (line.startsWith('Exec=') && exec === null) {
+                    // Only use the first Exec= line (the default action)
+                    exec = line.substring(5).trim();
+                    // Strip freedesktop field codes: %u %U %f %F %i %c %k %%
+                    exec = exec.replace(/%[uUfFick]/g, '').trim();
+                    exec = exec.replace(/%%/g, '%');
                 }
             }
             if (id && icon) {
@@ -131,10 +144,15 @@ PanelWindow {
                 nmap[id] = name;
                 if (wmClass) nmap[wmClass] = name;
             }
+            if (id && exec) {
+                emap[id] = exec;
+                if (wmClass) emap[wmClass] = exec;
+            }
         }
         iconMap = map;
         nameMap = nmap;
-        console.log("[hyprsphere] Icon map built: " + Object.keys(map).length + " entries, Name map built: " + Object.keys(nmap).length + " entries");
+        execMap = emap;
+        console.log("[hyprsphere] Icon map built: " + Object.keys(map).length + " entries, Name map built: " + Object.keys(nmap).length + " entries, Exec map built: " + Object.keys(emap).length + " entries");
         // If overlay is already visible, refresh sphere with correct icons
         if (window.visible) scheduleRebuild();
     }
@@ -171,6 +189,8 @@ PanelWindow {
     property var savedLayer2Model: []
     property string savedLayer2Query: ""
     property bool searchFocused: false
+    property string _pendingSpawnAppId: ""
+    property string _pendingSpawnAddr: ""
 
     function buildLayer0() {
         var groups = {};
@@ -519,6 +539,17 @@ PanelWindow {
 
             projDirty = true;
             rebuildProjCache();
+            // If we just spawned a new window, select it
+            if (window._pendingSpawnAddr) {
+                for (var si = 0; si < window.sphereModel.length; si++) {
+                    if (window.sphereModel[si].address === window._pendingSpawnAddr) {
+                        window.selectedAppIndex = si;
+                        window.centerOnApp(si);
+                        break;
+                    }
+                }
+                window._pendingSpawnAddr = "";
+            }
             // After any sphere rebuild, ensure overlay still has keyboard focus
             focusGrabber.forceActiveFocus();
         });
@@ -713,6 +744,24 @@ PanelWindow {
         }
     }
 
+    function openNewWindow() {
+        if (closeSequence.running) return;
+
+        var node = sphereModel[selectedAppIndex];
+        if (!node || node.isPlaceholder) return;
+
+        // Resolve appId — for window nodes, use the parent appId
+        var appId = node.appId;
+        if (!appId) return;
+
+        // Build exec command: whitelist exec → execMap → appId fallback
+        var execCmd = node.exec || window.resolveExec(appId) || appId;
+
+        // Launch the app
+        window._pendingSpawnAppId = appId;
+        Quickshell.execDetached(["bash", "-c", execCmd]);
+    }
+
     function rebuildToLayer0(raw) {
         if (raw.length === 0) {
             sphereModel = [{ label: "No windows", icon: "", appId: "", windows: [], isPlaceholder: true }];
@@ -782,6 +831,13 @@ PanelWindow {
                     }
                     appMru = [appId].concat(filtered);
                     appWindowMru[appId] = [addr].concat(appWindowMru[appId] || []);
+
+                    // If this is a spawned window, auto-select it
+                    if (window._pendingSpawnAppId === appId) {
+                        window._pendingSpawnAppId = "";
+                        window._pendingSpawnAddr = addr;
+                        if (window.visible) window.scheduleRebuild();
+                    }
                 }
                 return;
             }
@@ -1126,6 +1182,9 @@ PanelWindow {
                 event.accepted = true;
             } else if (event.key === Qt.Key_C && (event.modifiers & Qt.ControlModifier)) {
                 window.closeSelection();
+                event.accepted = true;
+            } else if (event.key === Qt.Key_Return && (event.modifiers & Qt.ControlModifier)) {
+                window.openNewWindow();
                 event.accepted = true;
             } else if (event.key === Qt.Key_Backspace && !event.isAutoRepeat) {
                 if (window.searchQuery.length > 0) {
