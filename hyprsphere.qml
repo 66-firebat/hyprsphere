@@ -62,12 +62,25 @@ PanelWindow {
     property var appMru: []
     property var appWindowMru: ({})
 
-    // ── Phase 7: Icon resolution ──
+    // ── Phase 7: Icon & name resolution ──
     property var iconMap: ({})
+    property var nameMap: ({})
 
     function resolveIcon(appId) {
         if (!appId) return "application-x-executable";
         return iconMap[appId] || "application-x-executable";
+    }
+
+    function resolveName(appId) {
+        if (!appId) return appId;
+        return nameMap[appId] || appId;
+    }
+
+    function showNonSelectedLabel() {
+        var layers = cfg.appCard?.nonSelectedLayerLabels;
+        if (!layers) return true;
+        var key = "layer_" + window.layer;
+        return layers[key] !== false;
     }
 
     Process {
@@ -77,7 +90,7 @@ PanelWindow {
             "$HOME/.local/share/applications/*.desktop; do " +
             "[ -f \"$f\" ] || continue; " +
             "echo \"[ID]$(basename \"$f\" .desktop)\"; " +
-            "grep -E '^(Icon=|StartupWMClass=)' \"$f\" 2>/dev/null; " +
+            "grep -E '^(Name=|Icon=|StartupWMClass=)' \"$f\" 2>/dev/null; " +
             "echo '---'; done"
         ]
         running: false
@@ -92,14 +105,17 @@ PanelWindow {
 
     function parseIcons(text) {
         var map = {};
+        var nmap = {};
         var blocks = text.split('---');
         for (var b = 0; b < blocks.length; b++) {
             var lines = blocks[b].trim().split('\n');
-            var id = null, icon = null, wmClass = null;
+            var id = null, icon = null, wmClass = null, name = null;
             for (var i = 0; i < lines.length; i++) {
                 var line = lines[i].trim();
                 if (line.startsWith('[ID]')) {
                     id = line.substring(4).trim();
+                } else if (line.startsWith('Name=')) {
+                    name = line.substring(5).trim();
                 } else if (line.startsWith('Icon=')) {
                     icon = line.substring(5).trim();
                 } else if (line.startsWith('StartupWMClass=')) {
@@ -110,9 +126,14 @@ PanelWindow {
                 map[id] = icon;
                 if (wmClass) map[wmClass] = icon;
             }
+            if (id && name) {
+                nmap[id] = name;
+                if (wmClass) nmap[wmClass] = name;
+            }
         }
         iconMap = map;
-        console.log("[hyprsphere] Icon map built: " + Object.keys(map).length + " entries");
+        nameMap = nmap;
+        console.log("[hyprsphere] Icon map built: " + Object.keys(map).length + " entries, Name map built: " + Object.keys(nmap).length + " entries");
         // If overlay is already visible, refresh sphere with correct icons
         if (window.visible) scheduleRebuild();
     }
@@ -138,7 +159,7 @@ PanelWindow {
             if (ws && String(ws.name || "").startsWith("special:")) continue;
             var wl = t.wayland;
             var appId = (wl && wl.appId) ? wl.appId : "unknown";
-            if (!groups[appId]) groups[appId] = { appId: appId, label: appId, icon: window.resolveIcon(appId), windows: [] };
+            if (!groups[appId]) groups[appId] = { appId: appId, label: window.resolveName(appId), icon: window.resolveIcon(appId), windows: [] };
             groups[appId].windows.push({ address: t.address, title: t.title });
             groups[appId].windowCount = groups[appId].windows.length;
         }
@@ -253,7 +274,7 @@ PanelWindow {
             var appId = (wl && wl.appId) ? wl.appId : "unknown";
             if (!seenApps[appId]) {
                 seenApps[appId] = true;
-                db.push({ type: "running-app", appId: appId, label: appId, icon: window.resolveIcon(appId), windows: [] });
+                db.push({ type: "running-app", appId: appId, label: window.resolveName(appId), icon: window.resolveIcon(appId), windows: [] });
             }
             for (var d = 0; d < db.length; d++) {
                 if (db[d].appId === appId && db[d].type === "running-app") {
@@ -272,7 +293,7 @@ PanelWindow {
             var wl2 = t2.wayland;
             var appId2 = (wl2 && wl2.appId) ? wl2.appId : "unknown";
             db.push({
-                type: "window", appId: appId2, label: appId2, icon: window.resolveIcon(appId2),
+                type: "window", appId: appId2, label: window.resolveName(appId2), icon: window.resolveIcon(appId2),
                 address: t2.address, title: t2.title || appId2
             });
         }
@@ -1221,7 +1242,12 @@ PanelWindow {
                                     anchors.fill: parent
                                     anchors.leftMargin:  window._s3
                                     anchors.rightMargin: window._s3
-                                    text: model.title ? model.title : (model.label || "")
+                                    text: {
+                                        var n = window.sphereModel[index];
+                                        if (!n) return "";
+                                        return n.title ? n.title : (n.label || "");
+                                    }
+                                    visible: window.showNonSelectedLabel()
                                     font.family: "JetBrains Mono"
                                     font.pixelSize: window._s11
                                     font.weight: Font.DemiBold
