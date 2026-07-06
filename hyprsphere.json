@@ -100,7 +100,7 @@
   "appCard": {
     "labelBgOpacity": 0.60,
     "nonSelectedLayerLabels": {
-      "layer_0": true,
+      "layer_0": false,
       "layer_1": true,
       "layer_2": true
     }

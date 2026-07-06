@@ -1232,9 +1232,11 @@ PanelWindow {
                             }
 
                             Rectangle {
+                                id: labelBg
                                 Layout.fillWidth: true
                                 implicitHeight: labelText.implicitHeight + window._s4
                                 radius: window._s4
+                                visible: window.showNonSelectedLabel()
                                 color: Qt.rgba(window.crust.r, window.crust.g, window.crust.b, cfg.appCard?.labelBgOpacity ?? 0.60)
 
                                 Text {
@@ -1247,7 +1249,6 @@ PanelWindow {
                                         if (!n) return "";
                                         return n.title ? n.title : (n.label || "");
                                     }
-                                    visible: window.showNonSelectedLabel()
                                     font.family: "JetBrains Mono"
                                     font.pixelSize: window._s11
                                     font.weight: Font.DemiBold
