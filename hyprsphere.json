@@ -88,11 +88,15 @@
     "borderRadius": 28,
     "bottomMargin": 63,
     "borderWidth": 1.5,
-    "backgroundOpacity": 0.92,
+    "backgroundColor": "#ff4400",
+    "backgroundOpacity": 0.3,
+    "borderColor": "#2b2b2b",
+    "activeBorderColor": "#ff4400",
+    "textColor": "#ff4400",
     "shadowOpacity": 0.4,
     "shadowBlur": 1.5,
     "placeholderText": "Search apps and windows...",
-    "placeholderColor": "#6c7086"
+    "placeholderColor": "#ff4400"
   },
 
   "search": {

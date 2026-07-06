@@ -196,46 +196,184 @@ or startup script.
 
 ## Configuration
 
-All configurable settings are in `hyprsphere.json`:
+All configurable settings are in `hyprsphere.json`. Below is every option
+organized by section.
 
-- **`colors`** — Catppuccin Mocha theme colors (customizable)
-- **`scaler`** — Responsive scaling reference width and limits
-- **`sizes`** — Various UI element sizes
-- **`satellite`** — Satellite detail card dimensions
-- **`sphere`** — Sphere radius, rotation limits, zoom settings
-- **`animations`** — Animation durations and easing curves
-- **`mouse`** — Drag sensitivity
-- **`searchBar`** — Search bar dimensions, colors, opacity, shadow
-- **`search`** — Fuse.js fuzzy search parameters and debounce delay
-- **`appCard`** — App card label background opacity
-- **`cardTilt`** — Tilt angles, scale, and opacity for sphere cards
-- **`stars`** — Background stars count and opacity range
-- **`whitelist`** — Apps that always appear on the sphere even when not
-  running (e.g., blender, kicad, sioyek). Committing launches them.
+### `colors` — Catppuccin Mocha theme
 
-### Search config reference
+| Field | Default | Description |
+|---|---|---|
+| `base` | `"#1e1e2e"` | Background color |
+| `mantle` | `"#181825"` | Slightly darker background variant |
+| `crust` | `"#11111b"` | Darkest background variant |
+| `surface0` | `"#313244"` | Surface/raised element color |
+| `surface1` | `"#45475a"` | Brighter surface variant |
+| `surface2` | `"#585b70"` | Subtle/hover surface variant |
+| `text` | `"#cdd6f4"` | Primary text color |
+| `subtext0` | `"#a6adc8"` | Subdued text color |
+| `blue` | `"#89b4fa"` | Blue accent |
+| `mauve` | `"#cba6f7"` | Mauve/purple accent |
+| `teal` | `"#94e2d5"` | Teal accent |
+| `overlay0` | `"#6c7086"` | Overlay/subtle element color |
+| `peach` | `"#fab387"` | Peach/orange accent |
+| `yellow` | `"#f9e2af"` | Yellow accent |
+| `sapphire` | `"#74c7ec"` | Sapphire/blue accent |
 
+### `scaler` — Responsive scaling
+
+| Field | Default | Description |
+|---|---|---|
+| `referenceWidth` | `1920` | Reference screen width for 1:1 scaling |
+| `minRatio` | `0.5` | Minimum scale ratio (at very small screens) |
+| `maxRatio` | `2.0` | Maximum scale ratio (at very large screens) |
+
+### `sizes` — Base size tokens (used internally by the scaler)
+
+| Field | Default | Description |
+|---|---|---|
+| `s2`–`s104` | various | Named sizes (2, 3, 4, 5, 8, 9, 10, 11, 12, 15, 16, 18, 20, 28, 40, 50, 55, 56, 63, 74, 104) used throughout the UI. All scaled by the responsive scaler. |
+
+### `satellite` — Detail card (selected app/window)
+
+| Field | Default | Description |
+|---|---|---|
+| `hullWidth` | `216` | Width of the satellite card background |
+| `hullHeight` | `148` | Height of the satellite card background |
+| `panelWidth` | `64` | Width of decorative solar panels |
+| `panelHeight` | `51` | Height of decorative solar panels |
+| `strutWidth` | `10` | Width of decorative struts |
+| `strutHeight` | `4` | Height of decorative struts |
+| `antennaHeight` | `16` | Height of decorative antenna |
+| `thrusterHeight` | `11` | Height of decorative thruster |
+| `screenMargin` | `8` | Margin inside the card for screen content |
+| `innerMargin` | `10` | Inner margin for content layout |
+| `iconSize` | `160` | Size of the satellite card's app icon |
+| `fontSize` | `10` | Font size of the satellite card label |
+| `spacing` | `5` | Spacing between satellite card elements |
+| `hullBorderWidth` | `1.5` | Border width of the satellite card hull |
+| `selectedBackground` | `false` | Show SVG decoration behind the satellite icon |
+
+### `sphere` — 3D sphere layout
+
+| Field | Default | Description |
+|---|---|---|
+| `baseRadius` | `360` | Base radius of the Fibonacci sphere in pixels |
+| `initialZoom` | `1.0` | Initial zoom level when overlay opens |
+| `zoomDurationMs` | `400` | Duration of zoom animations in ms |
+| `zoomEasing` | `"OutCubic"` | Easing curve for zoom animations |
+| `initialRotX` | `-0.2` | Initial X-axis rotation (radians) |
+| `initialRotY` | `0` | Initial Y-axis rotation (radians) |
+| `maxRotationX` | `2.5` | Maximum X-axis rotation limit (drag) |
+| `maxRotationY` | `1.45` | Maximum Y-axis rotation limit (drag) |
+| `zoomFactorWeight` | `0.45` | How much zoom affects node scale (0-1) |
+| `normalizationConstant` | `310.5` | Tilt calculation normalization factor |
+| `autoRadius.enabled` | `false` | Enable adaptive sphere radius based on node count |
+| `autoRadius.minRadius` | `160` | Smallest sphere radius when adaptive (few nodes) |
+| `autoRadius.maxNodeCount` | `20` | Node count at which adaptive radius reaches `baseRadius` |
+
+### `animations` — Timing and easing
+
+| Field | Default | Description |
+|---|---|---|
+| `searchRotateDurationMs` | `250` | Duration of sphere rotation to center on a search result (ms) |
+| `sphereAutoRotateIntervalMs` | `16` | Interval of the auto-rotation timer (ms, ~60 FPS) |
+| `sphereRotateSpeed` | `0.002` | Radians per tick for auto-rotation |
+| `cardFadeDurationMs` | `200` | Duration of card opacity transitions (ms) |
+| `cardScaleDurationMs` | `200` | Duration of card scale transitions (ms) |
+| `satelliteFadeDurationMs` | `400` | Duration of satellite card fade-in/out (ms) |
+| `satelliteScaleDurationMs` | `450` | Duration of satellite card scale-up animation (ms) |
+| `satelliteInitialScale` | `0.4` | Starting scale of the satellite card (animates up) |
+| `satelliteTargetScale` | `1.5` | Final scale of the satellite card |
+| `entranceFadeDurationMs` | `800` | Duration of the overlay's entrance fade animation (ms) |
+| `exitFadeDurationMs` | `400` | Duration of the overlay's exit fade animation (ms) |
+| `borderColorDurationMs` | `150` | Duration of card border color transitions (ms) |
+
+### `mouse` — Interaction
+
+| Field | Default | Description |
+|---|---|---|
+| `dragSensitivity` | `0.005` | Mouse drag rotation sensitivity |
+
+### `searchBar` — Search input appearance
+
+| Field | Default | Description |
+|---|---|---|
+| `width` | `560` | Width of the search bar rectangle |
+| `height` | `56` | Height of the search bar rectangle |
+| `borderRadius` | `28` | Corner radius of the search bar (pill shape) |
+| `bottomMargin` | `63` | Distance from the search bar to the bottom of the screen |
+| `borderWidth` | `1.5` | Border width of the search bar |
+| `backgroundOpacity` | `0.92` | Background opacity of the search bar |
+| `shadowOpacity` | `0.4` | Opacity of the drop shadow below the search bar |
+| `shadowBlur` | `1.5` | Blur radius of the drop shadow |
+| `placeholderText` | `"Search apps and windows..."` | Placeholder text when search is empty |
+| `placeholderColor` | `"#6c7086"` | Color of the placeholder text |
+
+### `search` — Fuse.js fuzzy search
+
+| Field | Default | Description |
+|---|---|---|
+| `delayMs` | `150` | Debounce delay before executing search after keystroke (ms) |
+| `maxResults` | `30` | Maximum results returned from Fuse.js |
+| `fuseThreshold` | `0.4` | Fuse.js match threshold (0=perfect, 1=anything) |
+| `fuseMinMatchCharLength` | `1` | Minimum character length for a Fuse.js match |
+| `layer2Zoom` | `1.5` | Zoom level applied to the sphere during search (layer 2) |
+
+### `appCard` — Sphere card appearance
+
+| Field | Default | Description |
+|---|---|---|
+| `labelBgOpacity` | `0.60` | Background opacity of the label rectangle on non-selected cards |
+| `nonSelectedIconSize` | `110` | Size of the app icon on non-selected sphere cards |
+| `windowIconOpacity` | `0.75` | Opacity of icons on window nodes (layer 1/layer 2) — app icons are full opacity |
+| `nonSelectedLayerLabels.layer_0` | `false` | Show labels on non-selected cards at layer 0 (app list) |
+| `nonSelectedLayerLabels.layer_1` | `true` | Show labels on non-selected cards at layer 1 (window drill-down) |
+| `nonSelectedLayerLabels.layer_2` | `true` | Show labels on non-selected cards at layer 2 (search results) |
+| `windowCountBadge.satellite` | `true` | Show badge on the satellite (selected) card |
+| `windowCountBadge.nonSelected` | `false` | Show badge on non-selected sphere cards |
+| `windowCountBadge.offsetY` | `55` | Vertical offset of the badge from icon center (negative = up) |
+| `windowCountBadge.offsetX` | `0` | Horizontal offset of the badge from icon center (negative = left) |
+| `windowCountBadge.fontSize` | `18` | Font size of the badge text |
+| `windowCountBadge.padding` | `14` | Total extra space around badge text (symmetric, keeps it circular) |
+| `windowCountBadge.color` | `"#ff4400"` | Foreground text color of app window-count badges (prepended with `+`) |
+| `windowCountBadge.bgColor` | `"#2b2b2b"` | Background pill color of app window-count badges |
+| `windowCountBadge.bgOpacity` | `1.0` | Background opacity of app window-count badges (0-1) |
+| `windowCountBadge.windowColor` | `"#ff4400"` | Foreground text color of window index badges (plain number, no `+`) |
+| `windowCountBadge.windowBgColor` | `"#2b2b2b"` | Background pill color of window index badges |
+| `windowCountBadge.windowBgOpacity` | `1.0` | Background opacity of window index badges (0-1) |
+
+### `cardTilt` — 3D card tilt effects
+
+| Field | Default | Description |
+|---|---|---|
+| `maxAngleX` | `45` | Maximum X-axis tilt angle (degrees) for cards at sphere edges |
+| `maxAngleY` | `35` | Maximum Y-axis tilt angle (degrees) for cards at sphere edges |
+| `baseScaleAtEdge` | `0.78` | Scale of cards at the far edge of the sphere (z=0) |
+| `scaleIncreaseTowardCenter` | `0.22` | Additional scale added as cards approach the front center (z=1) |
+| `hoverScaleMultiplier` | `1.12` | Scale multiplier when hovering over a non-selected card |
+| `depthOpacityMultiplier` | `4.0` | How quickly cards fade as they rotate behind the sphere (higher = sharper falloff) |
+| `nonMatchOpacity` | `0.15` | Opacity of non-matching results during search |
+
+### `whitelist` — Persistent app dock
+
+Each entry is an object with the following fields. Whitelisted apps always
+appear on the sphere even when not running. If they ARE running, the entry
+is deduplicated and shown in its normal MRU position.
+
+| Field | Description |
+|---|---|
+| `appId` | App identifier (must match Hyprland's `wayland.appId` for dedup) |
+| `label` | Human-readable label displayed on the card |
+| `icon` | Freedesktop icon name (fed to `image://icon/...`) |
+| `exec` | Shell command to launch the app (e.g., `"firefox"`) |
+
+#### Example
 ```json
 {
-  "searchBar": {
-    "width": 560,
-    "height": 56,
-    "borderRadius": 28,
-    "bottomMargin": 63,
-    "borderWidth": 1.5,
-    "backgroundOpacity": 0.92,
-    "shadowOpacity": 0.4,
-    "shadowBlur": 1.5,
-    "placeholderText": "Search apps and windows...",
-    "placeholderColor": "#6c7086"
-  },
-  "search": {
-    "delayMs": 150,
-    "maxResults": 30,
-    "fuseThreshold": 0.4,
-    "fuseMinMatchCharLength": 1,
-    "layer2Zoom": 1.5
-  }
+  "appId": "firefox",
+  "label": "Firefox",
+  "icon": "firefox",
+  "exec": "firefox"
 }
 ```
 

@@ -1527,9 +1527,14 @@ PanelWindow {
         anchors.bottomMargin: window.s(cfg.searchBar?.bottomMargin ?? 63)
         anchors.horizontalCenter: parent.horizontalCenter
         radius: window.s(cfg.searchBar?.borderRadius ?? 28)
-        color: Qt.rgba(window.mantle.r, window.mantle.g, window.mantle.b,
-                       cfg.searchBar?.backgroundOpacity ?? 0.92)
-        border.color: window.searchQuery.length > 0 ? window.mauve : window.surface1
+        color: Qt.rgba(
+            (parseInt((cfg.searchBar?.backgroundColor ?? "#ff4400").substring(1,3),16)/255),
+            (parseInt((cfg.searchBar?.backgroundColor ?? "#ff4400").substring(3,5),16)/255),
+            (parseInt((cfg.searchBar?.backgroundColor ?? "#ff4400").substring(5,7),16)/255),
+            cfg.searchBar?.backgroundOpacity ?? 0.3)
+        border.color: window.searchQuery.length > 0
+            ? (cfg.searchBar?.activeBorderColor ?? "#ff4400")
+            : (cfg.searchBar?.borderColor ?? "#2b2b2b")
         border.width: window.s(cfg.searchBar?.borderWidth ?? 1.5)
         opacity: window.introPhase
         transform: Translate { y: (1 - window.introPhase) * window._s40 }
@@ -1552,11 +1557,16 @@ PanelWindow {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 background: Item {}
-                color: window.text
+                color: cfg.searchBar?.textColor ?? "#ff4400"
                 font.family: "JetBrains Mono"
                 font.pixelSize: window._s15
                 font.weight: Font.Medium
                 selectByMouse: true
+                selectionColor: Qt.rgba(
+                    (parseInt((cfg.searchBar?.textColor ?? "#ff4400").substring(1,3),16)/255),
+                    (parseInt((cfg.searchBar?.textColor ?? "#ff4400").substring(3,5),16)/255),
+                    (parseInt((cfg.searchBar?.textColor ?? "#ff4400").substring(5,7),16)/255),
+                    0.3)
                 readOnly: true
                 text: window.searchQuery
                 placeholderText: cfg.searchBar?.placeholderText ?? "Search apps and windows..."
