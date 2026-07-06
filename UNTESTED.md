@@ -47,3 +47,17 @@ With whitelist entries always configured, the "No windows" placeholder
 should never appear — there are always whitelist ghost entries visible.
 
 **Reason skipped:** Effectively unreachable in practice due to whitelist.
+
+## Phase 6
+
+### M14. Drill-down from layer 2, then window close
+
+Drill into a multi-window app from layer 2, close a background window
+externally, verify layer 1 rebuilds, then toggle back to layer 2 and
+verify layer 2 also rebuilds with updated data.
+
+**Reason skipped:** Cannot physically close a window while hyprsphere
+overlay is active (the overlay covers all windows and grabs keyboard
+focus). External `hyprctl dispatch closewindow` would be needed from
+a different terminal, but closing windows during an active search
+session is an extremely rare edge case.
