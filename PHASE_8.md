@@ -1,97 +1,100 @@
 # PHASE_8 — Visual/UX cleanup and polish
 
 **Deliverable:** Clean up visual elements, replace the satellite decoration
-with a custom SVG, and make icon sizes configurable per selection state.
+with a custom SVG, make icon sizes configurable per selection state, and
+add a window-count badge.
 
 ---
 
 ## Tasks
 
-### 1. Remove the stars background
+### 1. Remove the stars background ✅
 
 The `Repeater` that generates 50 random star dots in the overlay background
-is removed. Stars were a carryover from the app-launcher prototype and don't
-serve a functional purpose in the Alt+Tab switcher.
+is removed.
 
-**Files changed:** `hyprsphere.qml`
+### 2. Replace satellite decoration with custom SVG ✅
 
-**Changes:**
-- Delete the `Item { opacity: window.introPhase }` block that contains the
-  star `Repeater` and its delegate `Rectangle`.
+Satellite QML primitives (hull, solar panels, struts, antenna, thruster)
+replaced with `assets/selected.svg`. The SVG is conditionally shown via
+`satellite.selectedBackground` config.
 
----
+### 3. Configurable icon sizes ✅
 
-### 2. Replace satellite decoration with custom SVG
+- **Selected icon size:** `satellite.iconSize` in config (default 40)
+- **Non-selected icon size:** `appCard.nonSelectedIconSize` in config (default 55)
 
-The satellite card is currently built from ~100 lines of QML primitives:
-- Central hull (Rectangle with rounded corners)
-- Two solar panels with grid patterns
-- Two struts connecting panels to hull
-- Antenna with ball on top
-- Thruster at bottom
-- Screen area (overlay on hull) containing app icon + label
+### 4. Window-count badge
 
-This entire container decoration is replaced by loading
-`assets/selected.svg` as the satellite background image. The SVG is a
-467KB detailed illustration that acts as the chassis behind the screen
-content.
+Shows the number of windows for an app node as a small numeric badge at the
+bottom-right of the card. Only appears on **app nodes** (not window nodes or
+placeholders) across all layers.
 
-**Design:**
-- The SVG is loaded as an Image filling the satellite container
-- The app icon + label still render on top of the SVG (in the "screen"
-  area, matching the current layout)
-- The `assets/` directory is shipped with the repository
+#### Config
 
-**Files changed:** `hyprsphere.qml`
+```json
+{
+  "appCard": {
+    "windowCountBadge": {
+      "satellite": true,
+      "nonSelected": true
+    }
+  }
+}
+```
 
-**Changes:**
-- Add a new `Image` loading `file:///path/to/assets/selected.svg`
-  behind the existing `notifScreen` Rectangle
-- Remove the QML code for: `lPanel`, `lStrut`, `hull` (antenna, screen,
-  thruster), `rStrut`, `rPanel`
+| Field | Default | Description |
+|---|---|---|
+| `windowCountBadge.satellite` | `true` | Show badge on the selected satellite card |
+| `windowCountBadge.nonSelected` | `true` | Show badge on non-selected sphere cards |
 
----
+#### Behavior
 
-### 3. Configurable non-selected icon size
+- **What it shows:** The raw window count number (e.g. `"3"`)
+- **Where:** Bottom-right corner of the card, positioned over the SVG or
+  card background
+- **When:** Only for app nodes where `windowCount` ≥ 1. Hidden for window
+  nodes, whitelisted placeholders, and "No windows"/"No results"
+  placeholders
+- **Style:** Small, subtle text — same font as the card label, slightly
+  smaller pixel size, with a contrasting background circle or pill shape
 
-Currently both selected and non-selected card icons use different size
-sources:
-- **Selected (satellite) icon:** `cfg.satellite?.iconSize ?? 40` — already
-  configurable via `satellite.iconSize` in `hyprsphere.json`
-- **Non-selected card icon:** Hardcoded to `window._s55` (55px scaled)
+#### Implementation
 
-A new config field `appCard.nonSelectedIconSize` is added, defaulting to
-`55`. The non-selected card's `Image` uses this instead of `_s55`.
+**Satellite card:** Add a `Text` element anchored to the bottom-right of
+the satellite `ColumnLayout`, visible when:
+- `cfg.appCard?.windowCountBadge?.satellite !== false`
+- The selected node is an app node (has `windowCount` ≥ 1)
 
-**Files changed:** `hyprsphere.qml`, `hyprsphere.json`
-
-**Changes:**
-- Add `"nonSelectedIconSize": 55` to the `appCard` block in config
-- Replace `Layout.preferredWidth: window._s55` with
-  `window.s(cfg.appCard?.nonSelectedIconSize ?? 55)` in the non-selected
-  card delegate
+**Non-selected cards:** Add a `Text` element anchored to the bottom-right
+of the card `ColumnLayout`, visible when:
+- `cfg.appCard?.windowCountBadge?.nonSelected !== false`
+- The current node has `windowCount` ≥ 1
 
 ---
 
 ## Config additions
 
-### `appCard.nonSelectedIconSize`
+### `satellite.selectedBackground`
 
 | Field | Default | Description |
 |---|---|---|
-| `nonSelectedIconSize` | `55` | Icon size in pixels for non-selected sphere cards |
+| `selectedBackground` | `true` | Show the SVG decoration behind the selected app icon |
 
-The selected (satellite) icon size was already configurable via
-`satellite.iconSize`.
+### `appCard.windowCountBadge`
+
+| Field | Default | Description |
+|---|---|---|
+| `windowCountBadge.satellite` | `true` | Show window count on the satellite card |
+| `windowCountBadge.nonSelected` | `true` | Show window count on non-selected cards |
 
 ---
 
 ## Exit criteria
 
-1. **No stars background** appears behind the sphere overlay
-2. **Satellite card** shows the custom `selected.svg` decoration behind
-   the app icon and label
-3. **Non-selected icon size** can be changed via `hyprsphere.json` and
-   updates on restart
-4. **Selected icon size** still configurable via `satellite.iconSize`
-   (unchanged)
+1. ✅ No stars background
+2. ✅ Satellite SVG decoration (toggleable via config)
+3. ✅ Selected icon size configurable via `satellite.iconSize`
+4. ✅ Non-selected icon size configurable via `appCard.nonSelectedIconSize`
+5. **Window count badge** shows on app nodes across all layers
+6. **Badge toggles** independently for satellite and non-selected cards

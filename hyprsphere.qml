@@ -875,6 +875,8 @@ PanelWindow {
     readonly property real _s4:   window.s(cfg.sizes?.s4   ?? 4)
     readonly property real _s5:   window.s(cfg.sizes?.s5   ?? 5)
     readonly property real _s8:   window.s(cfg.sizes?.s8   ?? 8)
+    readonly property real _s9:   window.s(cfg.sizes?.s9   ?? 9)
+    readonly property real _s10:  window.s(cfg.sizes?.s10  ?? 10)
     readonly property real _s11:  window.s(cfg.sizes?.s11  ?? 11)
     readonly property real _s12:  window.s(cfg.sizes?.s12  ?? 12)
     readonly property real _s15:  window.s(cfg.sizes?.s15  ?? 15)
@@ -1239,6 +1241,44 @@ PanelWindow {
                                     elide: Text.ElideRight
                                 }
                             }
+
+                            // Window count badge (bottom-right of card)
+                            Item {
+                                anchors.right: parent.right
+                                anchors.bottom: parent.bottom
+                                anchors.rightMargin: window._s3
+                                anchors.bottomMargin: window._s3
+                                width: badgeText2.width + window._s6
+                                height: badgeText2.height + window._s3
+                                visible: {
+                                    if (cfg.appCard?.windowCountBadge?.nonSelected === false) return false;
+                                    var n = window.sphereModel[index];
+                                    if (!n || n.isWindowNode || n.isPlaceholder || n.isWhitelistPlaceholder) return false;
+                                    return (n.windowCount || 0) >= 1;
+                                }
+
+                                Rectangle {
+                                    anchors.fill: parent
+                                    radius: height / 2
+                                    color: Qt.rgba(window.crust.r, window.crust.g, window.crust.b, 0.75)
+                                }
+
+                                Text {
+                                    id: badgeText2
+                                    anchors.centerIn: parent
+                                    text: {
+                                        var n = window.sphereModel[index];
+                                        if (!n) return "";
+                                        return String(n.windowCount || 0);
+                                    }
+                                    font.family: "JetBrains Mono"
+                                    font.pixelSize: window._s9
+                                    font.weight: Font.Bold
+                                    color: window.text
+                                    horizontalAlignment: Text.AlignHCenter
+                                    verticalAlignment: Text.AlignVCenter
+                                }
+                            }
                         }
                     }
 
@@ -1254,62 +1294,82 @@ PanelWindow {
 
                         sourceComponent: Component {
                             Item {
-                                // Satellite sized to the SVG viewBox (256x256)
-                                // Scaled relative to hull width for consistency
-                                readonly property real satSz: window._sat_hullW * 1.4
+                                width:  window._sat_hullW
+                                height: window._sat_hullH
 
-                                width:  satSz
-                                height: satSz
-
-                                // SVG decoration behind the screen
                                 Image {
-                                    anchors.fill: parent
-                                    visible: cfg.satellite?.selectedBackground !== false
-                                    source: "file:///home/fireshark/hyprsphere/assets/selected.svg"
+                                    id: satIcon
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    anchors.top: parent.top
+                                    anchors.topMargin: window._s5
+                                    width:  window._sat_iconSz
+                                    height: window._sat_iconSz
+                                    source: {
+                                        var node = window.sphereModel[window.selectedAppIndex];
+                                        var ic = node ? node.icon : "";
+                                        ic ? (ic.startsWith("/") ? "file://" + ic : "image://icon/" + ic) : "image://icon/application-x-executable";
+                                    }
                                     fillMode: Image.PreserveAspectFit
                                     smooth: true
-                                    asynchronous: true
-                                    cache: true
                                 }
 
-                                // App icon + label (centered on SVG)
-                                ColumnLayout {
-                                        anchors.centerIn: parent
-                                        width:  window._sat_hullW * 0.55
-                                        height: window._sat_hullH * 0.65
-                                        spacing: window._sat_spacing
-
-                                        Image {
-                                            Layout.alignment: Qt.AlignHCenter
-                                            Layout.preferredWidth:  window._sat_iconSz
-                                            Layout.preferredHeight: window._sat_iconSz
-                                            source: {
-                                                var node = window.sphereModel[window.selectedAppIndex];
-                                                var ic = node ? node.icon : "";
-                                                ic ? (ic.startsWith("/") ? "file://" + ic : "image://icon/" + ic) : "image://icon/application-x-executable";
-                                            }
-                                            fillMode: Image.PreserveAspectFit
-                                            smooth: true
-                                            cache: true
-                                        }
-
-                                        Text {
-                                            Layout.alignment: Qt.AlignHCenter
-                                            Layout.fillWidth: true
-                                            text: {
-                                                var n = window.sphereModel[window.selectedAppIndex];
-                                                if (!n) return "";
-                                                return n && n.title ? n.title : (n && n.label || "");
-                                            }
-                                            font.family: "JetBrains Mono"
-                                            font.pixelSize: window._sat_fontSize
-                                            font.weight: Font.Bold
-                                            color: window.text
-                                            horizontalAlignment: Text.AlignHCenter
-                                            elide: Text.ElideRight
-                                            wrapMode: Text.WordWrap
-                                        }
+                                Text {
+                                    id: satLabel
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    anchors.top: satIcon.bottom
+                                    anchors.topMargin: window._s5
+                                    width: parent.width * 0.8
+                                    text: {
+                                        var n = window.sphereModel[window.selectedAppIndex];
+                                        if (!n) return "";
+                                        return n && n.title ? n.title : (n && n.label || "");
                                     }
+                                    font.family: "JetBrains Mono"
+                                    font.pixelSize: window._sat_fontSize
+                                    font.weight: Font.Bold
+                                    color: window.text
+                                    horizontalAlignment: Text.AlignHCenter
+                                    elide: Text.ElideRight
+                                    wrapMode: Text.WordWrap
+                                }
+
+                                // Window count badge
+                                Item {
+                                    anchors.right: parent.right
+                                    anchors.bottom: parent.bottom
+                                    anchors.rightMargin: window._s4
+                                    anchors.bottomMargin: window._s4
+                                    width: badgeText.width + window._s8
+                                    height: badgeText.height + window._s4
+                                    visible: {
+                                        if (cfg.appCard?.windowCountBadge?.satellite === false) return false;
+                                        var n = window.sphereModel[window.selectedAppIndex];
+                                        if (!n || n.isWindowNode || n.isPlaceholder || n.isWhitelistPlaceholder) return false;
+                                        return (n.windowCount || 0) >= 1;
+                                    }
+
+                                    Rectangle {
+                                        anchors.fill: parent
+                                        radius: height / 2
+                                        color: Qt.rgba(window.crust.r, window.crust.g, window.crust.b, 0.75)
+                                    }
+
+                                    Text {
+                                        id: badgeText
+                                        anchors.centerIn: parent
+                                        text: {
+                                            var n = window.sphereModel[window.selectedAppIndex];
+                                            if (!n) return "";
+                                            return String(n.windowCount || 0);
+                                        }
+                                        font.family: "JetBrains Mono"
+                                        font.pixelSize: window._s10
+                                        font.weight: Font.Bold
+                                        color: window.text
+                                        horizontalAlignment: Text.AlignHCenter
+                                        verticalAlignment: Text.AlignVCenter
+                                    }
+                                }
                             }
                         }
                     }
