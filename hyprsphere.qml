@@ -1264,6 +1264,7 @@ PanelWindow {
                                 // SVG decoration behind the screen
                                 Image {
                                     anchors.fill: parent
+                                    visible: cfg.satellite?.selectedBackground !== false
                                     source: "file:///home/fireshark/hyprsphere/assets/selected.svg"
                                     fillMode: Image.PreserveAspectFit
                                     smooth: true

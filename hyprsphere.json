@@ -38,10 +38,11 @@
     "radius12": 10, "radius8": 7, "radius4": 3,
     "antBall": 6, "antStick": 2, "antOffX": 14,
     "screenMargin": 8, "innerMargin": 10,
-    "iconSize": 40, "fontSize": 10,
+    "iconSize": 160, "fontSize": 10,
     "thrusterBase": 16, "spacing": 5,
     "extraHeight": 11,
-    "hullBorderWidth": 1.5
+    "hullBorderWidth": 1.5,
+    "selectedBackground": false
   },
 
   "sphere": {
