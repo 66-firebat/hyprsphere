@@ -564,3 +564,54 @@ it.
 The entire search pipeline runs inside QML's JavaScript engine. No
 background process, no Unix socket, no subprocess spawn — every
 keystroke is evaluated in-process.
+
+---
+
+## Closing Mechanism
+
+**Keybind:** `Ctrl+C` while the overlay is open.
+
+### Layer 0 (app list) or layer 2 (search — app nodes)
+
+Closes **all windows** of the selected app. The function iterates through
+every window in the app's `windows` array and sends a separate
+`hyprctl dispatch closewindow` command for each one:
+
+```js
+for (var w = 0; w < node.windows.length; w++) {
+    var a = node.windows[w].address;
+    var p = a.indexOf("0x") === 0 ? "" : "0x";
+    Quickshell.execDetached(["hyprctl", "dispatch",
+        'hl.dsp.window.close({window="address:' + p + a + '"})']);
+}
+```
+
+Each `closewindow` command triggers a Hyprland raw event, which the
+`onRawEvent` handler picks up to:
+1. Remove the window address from `appWindowMru` (per-app MRU)
+2. If that was the app's last window, remove the app from `appMru`
+3. Remove the address from `_appOpeningOrder` (compacting window indices)
+4. Call `scheduleRebuild()` to refresh the sphere
+
+### Layer 1 (drilled into app's windows) or layer 2 (search — window nodes)
+
+Closes only the **single selected window** using its address:
+
+```js
+var p = node.address.indexOf("0x") === 0 ? "" : "0x";
+Quickshell.execDetached(["hyprctl", "dispatch",
+    'hl.dsp.window.close({window="address:' + p + node.address + '"})']);
+```
+
+### Aftermath
+
+After closing:
+- The sphere **automatically rebuilds** — closed windows disappear, and
+  if an app's last window is closed, the entire app node disappears from
+  the sphere (unless it's in the whitelist, in which case it reverts to
+  a placeholder)
+- **Window index badges compact** — if window #3 is closed, windows
+  #4–8 shift down to become #3–7
+- The overlay **stays open** so you can continue cycling
+- **Guard:** `closeSequence.running` prevents double-firing during the
+  exit animation sequence
