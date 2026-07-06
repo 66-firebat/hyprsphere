@@ -29,8 +29,8 @@ PanelWindow {
     implicitWidth: Screen.width
     implicitHeight: Screen.height
 
-    // Config file path
-    property string configPath: "/home/fireshark/hyprsphere/hyprsphere.json"
+    // Config file path — resolved relative to shell.qml's directory
+    property string configPath: String(Qt.resolvedUrl("hyprsphere.json")).replace(/^file:\/\//, "")
 
     // Config loaded from hyprsphere.json
     property var cfg: ({})
