@@ -20,9 +20,8 @@ Hyprsphere's equivalent:
 - Read `Exec=` from `.desktop` files (we already scan them in Phase 7)
 - Strip freedesktop field codes (`%u`, `%U`, `%f`, `%F`, `%i`, `%c`, `%k`)
 - Launch via `Quickshell.execDetached()`
-- New window appears naturally via the `openwindow` raw event handler,
-  which triggers `scheduleRebuild()` → sphere refreshes with new node
-  selected
+- New window appears naturally via the `openwindow` raw event handler
+- `scheduleRebuild()` refreshes the sphere with the new node selected
 
 ---
 
@@ -68,7 +67,6 @@ Additional cleanup:
 ### 2. Add `execMap` property and `resolveExec()` function
 
 ```qml
-property var execMap: ({})
 property var execMap: ({})
 
 function resolveExec(appId) {
@@ -152,21 +150,13 @@ This was the most nuanced part. When a new window is spawned:
    `_pendingSpawnAddr`. This is important because at layer 0, app nodes
    don't have an `.address` field, so matching must be done by appId.
 
-**Why layer awareness matters:** At layer 0, the sphere contains app
-groups (one node per distinct appId). These nodes lack an `address`
-property because they represent multiple windows. The original
-implementation only searched by `sphereModel[si].address`, which never
-matched at layer 0, leaving the selection unchanged (often pointing to
-a different app entirely).
-
 ### 6. No-op for unresolvable apps
 
 If no `exec` can be found (no desktop file, no whitelist entry, and the
 appId doesn't work as a command), `openNewWindow()` silently returns.
-The `resolveExec(appId)` returns `null`, and the fallback chain
-`node.exec || resolveExec(appId) || appId` means the raw appId is tried
-as a last resort. If that fails to launch anything, Hyprland simply
-does nothing.
+The fallback chain `node.exec || resolveExec(appId) || appId` means the
+raw appId is tried as a last resort. If that fails to launch anything,
+Hyprland simply does nothing.
 
 ### 7. Behavior after spawn
 
@@ -184,47 +174,135 @@ to avoid an empty or invalid selection.
 
 ---
 
-## Implementation details discovered during coding
+## Bugs discovered during testing
 
-### Firefox Exec= multi-line issue
+### Bug 1: Firefox profile manager instead of new window
 
-Firefox's `.desktop` file has multiple `Exec=` lines for different
-actions (normal launch, new window, private window, profile manager).
-The grep pattern matches ALL of them. Without the `exec === null`
-guard, the parser takes the LAST `Exec=` line, which is
-`Exec=firefox --ProfileManager` → the profile manager opens instead of
-a normal window.
+**Symptom:** Ctrl+Enter on Firefox opened the profile manager dialog.
 
-**Fix:** Only capture the first `Exec=` line per block.
+**Root cause:** Firefox's `.desktop` file has 4 `Exec=` lines:
+```
+Exec=firefox --name firefox %U       ← default (first)
+Exec=firefox --private-window %U
+Exec=firefox --new-window %U
+Exec=firefox --ProfileManager        ← last, this was being picked!
+```
 
-### Layer-0 vs layer-1 auto-selection
+The grep matched ALL Exec lines, and the parser kept the **last** one.
 
-At layer 0, sphere nodes are app groups — they have `appId`,
-`windows`, `windowCount`, etc., but NO `address` property. The
-original auto-selection loop searched `sphereModel[si].address ===
-pendingSpawnAddr`, which failed silently at layer 0. The sphere rebuilt
-but the selection stayed on whatever `rebuildToLayer0()` set it to,
-which could be a completely different app.
+**Fix:** Only capture the first `Exec=` per block (`exec === null` guard).
 
-**Fix:** Layer-aware matching — appId at layer 0, address at layers 1/2.
+### Bug 2: Layer-0 auto-selection matched by address (impossible)
 
-### Pending spawn flag lifecycle
+**Symptom:** After spawning Firefox's first window, the sphere rebuilt but
+a different app (Ghostty) was selected instead of Firefox.
 
-The `openwindow` handler initially cleared `_pendingSpawnAppId` before
-calling `scheduleRebuild()`. But since `scheduleRebuild()` defers via
-`Qt.callLater`, by the time the rebuild ran, the appId was gone and
-layer-0 auto-selection had nothing to match against.
+**Root cause:** At layer 0, sphere nodes are app groups — they have
+`appId`, `windows`, `windowCount`, etc., but NO `address` property. The
+auto-selection loop searched `sphereModel[si].address === pendingSpawnAddr`,
+which never matched at layer 0, so the selection stayed on whatever
+`rebuildToLayer0()` set it to.
+
+**Fix:** Layer-aware matching — match by `appId` at layer 0, by `address`
+at layers 1/2.
+
+### Bug 3: `_pendingSpawnAppId` cleared before deferred rebuild
+
+**Symptom:** Same as Bug 2 — auto-selection failed.
+
+**Root cause:** The `openwindow` handler initially cleared
+`_pendingSpawnAppId = ""` before calling `scheduleRebuild()`. But
+`scheduleRebuild()` defers via `Qt.callLater` — by the time the rebuild
+callback ran, `_pendingSpawnAppId` was already gone. The layer-0
+auto-selection had nothing to match against.
 
 **Fix:** The `openwindow` handler only sets `_pendingSpawnAddr` and
-leaves `_pendingSpawnAppId` intact. Both are cleared at the end of the
-auto-selection block inside the deferred rebuild callback.
+leaves `_pendingSpawnAppId` intact. Both are cleared inside the deferred
+rebuild callback after auto-selection completes.
+
+### Bug 4: Toplevel data not yet available during deferred rebuild
+
+**Symptom:** After spawning, the badge showed `+0` or `+1` incorrectly.
+Closing and reopening the overlay showed the correct count.
+
+**Root cause:** `Hyprland.toplevels` is populated asynchronously. When
+the `openwindow` event fires and `scheduleRebuild()` runs on the next
+tick, the toplevel list may not yet reflect the new window. So
+`buildLayer0()` returns stale data — the spawned app still appears as a
+whitelist placeholder or with an outdated window count.
+
+**Fix:** Added a **retry loop** inside the deferred `scheduleRebuild()`
+callback. After calling `Hyprland.refreshToplevels()` and
+`buildLayer0()`, it checks if the specific pending address
+(`_pendingSpawnAddr`) actually exists in the app's window list. If not,
+it resets the rebuild guard and re-schedules for the next tick. This
+continues until the toplevel data catches up.
+
+### Bug 5: Retry check too lenient for subsequent spawns
+
+**Symptom:** First spawn worked, second spawn showed stale count (e.g.,
++1 instead of +2), third spawn showed +2 instead of +3.
+
+**Root cause:** The original retry check only verified `windowCount >= 1
+&& !isWhitelistPlaceholder`. After the first spawn, the app already had
+1 window, so this check passed immediately — even when the toplevel data
+hadn't updated yet. The second spawn's data was silently ignored.
+
+**Fix:** Instead of checking `windowCount >= 1`, the retry now checks if
+the **specific pending address** exists in the app's window array by
+comparing addresses.
+
+### Bug 6: Address format mismatch (`0x` prefix)
+
+**Symptom:** Retry loop never completed (infinite retries suspected).
+
+**Root cause:** `t.address` from `HyprlandToplevel` may or may not
+include the `0x` prefix. But `_pendingSpawnAddr` is always normalized to
+include `0x` (done in the `openwindow` handler). The comparison
+`raw[ri].windows[wj].address === window._pendingSpawnAddr` would fail
+even when the window IS in the list, because one has `0x` and the other
+doesn't.
+
+**Fix:** Normalize both sides before comparing:
+```js
+var winAddr = raw[ri].windows[wj].address || "";
+if (winAddr.indexOf("0x") !== 0) winAddr = "0x" + winAddr;
+if (winAddr === window._pendingSpawnAddr) { ... }
+```
+
+---
+
+## Retry loop flow
+
+The retry logic inside `scheduleRebuild()`'s deferred callback:
+
+```
+scheduleRebuild() called
+  │
+  ▼
+Qt.callLater → deferred callback
+  │
+  ├── Hyprland.refreshToplevels()
+  ├── raw = buildLayer0()
+  │
+  ├── If _pendingSpawnAddr is set and raw has data:
+  │     Check: does app's window list contain _pendingSpawnAddr?
+  │       ├── YES → proceed to sphere rebuild
+  │       └── NO  → rebuildScheduled = false
+  │                  scheduleRebuild()  ← retry on next tick
+  │                  return
+  │
+  ├── (normal sphere rebuild: layer handling, sortByMru, etc.)
+  ├── Auto-select: find matching node by appId or address
+  ├── Clear _pendingSpawnAddr and _pendingSpawnAppId
+  └── forceActiveFocus()
+```
 
 ---
 
 ## Config
 
-No new config fields needed for the basic feature. If we want to make the
-launch command overridable later, it can go in a future refinement.
+No new config fields needed for the basic feature.
 
 ---
 
@@ -253,3 +331,9 @@ launch command overridable later, it can go in a future refinement.
     correct app group is selected after spawn
 13. **Persistence of `_pendingSpawnAppId`** — the flag survives until the
     deferred rebuild callback consumes it
+14. **Retry loop** handles async toplevel data — retries until the spawned
+    window's address appears in the app's window list
+15. **Multiple sequential spawns** — each Ctrl+Enter increments the badge
+    correctly (+1, +2, +3, ...)
+16. **Address format normalization** — `0x` prefix comparison is handled
+    correctly between event data and toplevel data
