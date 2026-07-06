@@ -231,9 +231,6 @@ PanelWindow {
 
         window.focusable = true;
         window.overlayActive = true;
-        window.visible = true;
-        introPhaseAnim.restart();
-        focusGrabber.forceActiveFocus();
 
         // Enter Hyprland submap so letter keys pass through to QML
         // NOTE: must use hyprctl eval, not dispatch (submap is Lua-only)
@@ -247,6 +244,9 @@ PanelWindow {
     }
 
     function finishOpenSwitcher() {
+        // Guard: if the overlay was cancelled during async data gathering, abort
+        if (!window.overlayActive) return;
+
         // Wait for icon map to be built before building sphere
         // (iconReader Process runs async at startup)
         var iconReady = Object.keys(iconMap).length > 0;
@@ -281,6 +281,11 @@ PanelWindow {
 
         // Initialize Fuse index for search
         initFuseIndex();
+
+        // Make overlay visible now that sphere data is ready.
+        // The entrance fade animation and focus grab are triggered
+        // automatically by the onVisibleChanged handler.
+        window.visible = true;
 
         // Refresh on next tick to catch pending appId resolutions.
         Qt.callLater(function() { scheduleRebuild(); });
