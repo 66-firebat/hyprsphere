@@ -538,6 +538,8 @@ PanelWindow {
             var sh = node.exec + ' & sleep 0.3 && hyprctl dispatch ' + "'hl.dsp.focus({window=\\\"class:" + node.appId + "\\\"})'" + ' &';
             Quickshell.execDetached(["bash", "-c", sh]);
             closeSequence.start();
+            // Reset Hyprland submap so next ALT+Tab works
+            Quickshell.execDetached(["hyprctl", "eval", 'hl.dispatch(hl.dsp.submap("reset"))']);
             return;
         }
 

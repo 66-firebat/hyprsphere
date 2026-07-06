@@ -640,3 +640,115 @@ Removed from `sphere` block: `searchZoom` (replaced by `search.layer2Zoom`).
 12. **searchZoom/layer2Zoom** sphere zoom is configurable
 13. **Fuse.js** settings are configurable via hyprsphere.json
 14. **No search bar/keyboard focus conflict** — TextField is readOnly
+
+---
+
+## Testing discoveries & fixes
+
+The following issues were discovered during manual testing and fixed before
+Phase 6 was marked complete.
+
+### 1. Fuse.js import path resolution
+
+**Issue:** `import "lib/fuse.js" as FuseJs` resolved relative to the symlink
+parent (`~/.config/quickshell/`), not the actual file location
+(`/home/fireshark/hyprsphere/`). Quickshell could not find the file.
+
+**Fix:** Symlink the `lib` directory alongside the `shell.qml` symlink:
+```bash
+ln -sf /home/fireshark/hyprsphere/lib ~/.config/quickshell/lib
+```
+
+### 2. `hl.define_submap` syntax
+
+**Issue:** Used a Lua table `{ ... }` as the second argument, but
+`define_submap` expects a **function**:
+```lua
+-- BROKEN:
+hl.define_submap("hyprsphere", { ... })
+
+-- FIXED:
+hl.define_submap("hyprsphere", function() ... end)
+```
+
+**Fix:** Wrapped submap contents in `function()` ... `end)`.
+
+### 3. `hl.dispatch()` required inside Lua function handlers
+
+**Issue:** `hl.dsp.exec_cmd()` and `hl.dsp.submap()` return dispatcher
+objects. When used directly in `hl.bind()`, Hyprland calls the dispatcher
+automatically. But inside a Lua function handler, you must explicitly
+dispatch them with `hl.dispatch()`:
+```lua
+-- BROKEN inside function():
+hl.dsp.exec_cmd("qs ipc call hyprsphere toggle")  -- creates dispatcher, never fires
+hl.dsp.submap("reset")  -- creates dispatcher, never fires
+
+-- FIXED inside function():
+hl.dispatch(hl.dsp.exec_cmd("qs ipc call hyprsphere toggle"))
+hl.dispatch(hl.dsp.submap("reset"))
+```
+
+### 4. `hyprctl dispatch submap ...` does NOT work with Lua config
+
+**Issue:** In Hyprland's Lua config mode, `submap` is a Lua-only dispatcher
+accessed via `hl.dsp.submap()`. The raw dispatcher string `submap` is no
+longer available through `hyprctl dispatch`:
+```
+$ hyprctl dispatch submap hyprsphere
+error: ')' expected near 'hyprsphere'
+```
+
+**Fix:** Use `hyprctl eval` instead:
+```bash
+hyprctl eval 'hl.dispatch(hl.dsp.submap("hyprsphere"))'  # enter submap
+hyprctl eval 'hl.dispatch(hl.dsp.submap("reset"))'        # exit submap
+```
+
+All QML `execDetached` calls that managed the submap were updated from
+`hyprctl dispatch submap ...` to `hyprctl eval 'hl.dispatch(...)'`.
+
+### 5. Submap must be entered via `hl.dispatch()` from the ALT+Tab bind
+
+**Issue:** Entering the submap from QML via `hyprctl eval` is too slow.
+By the time the submap is active, the user has already pressed a letter
+key and Hyprland fires the global `ALT + letter` bind.
+
+**Fix:** Enter the submap **synchronously from the Lua bind handler**
+before opening the overlay. The `ALT + Tab` bind became a Lua function
+that dispatches submap entry first, then opens the overlay:
+```lua
+hl.bind(mainMod .. " + Tab", function()
+    hl.dispatch(hl.dsp.submap("hyprsphere"))  -- synchronous, immediate
+    hl.dispatch(hl.dsp.exec_cmd("qs ipc call hyprsphere toggle"))
+end)
+```
+
+### 6. Submap `release = true` handler cannot reset itself
+
+**Issue:** The submap's `ALT + Alt_L` release handler tried to reset the
+submap with `hl.dispatch(hl.dsp.submap("reset"))` but the reset did not
+take effect when called from within a `release = true` handler. The submap
+remained active after commit, blocking the next `ALT + Tab` press.
+
+**Fix:** Moved submap reset out of the Lua release handler and into QML's
+`commitSelection()` and `cancelSwitch()` via `hyprctl eval`.
+
+### 7. Whitelist placeholder commit path missed submap reset
+
+**Issue:** `commitSelection()` has an early `return` in the whitelist
+placeholder path (line 540) that exits before reaching the submap reset
+code at line 574. Committing a whitelisted app (one not currently running)
+left the submap active, preventing the next `ALT + Tab` from working.
+
+**Fix:** Added a `hyprctl eval` submap reset call before the early return
+in the whitelist placeholder path.
+
+### 8. `closeSequence.running` guard in `cancelSwitch()`
+
+**Issue:** Both the submap's Escape bind and QML's `Keys.onPressed` for
+Escape could fire `cancelSwitch()`. Without a guard, the close animation
+would be started twice, causing visual glitches.
+
+**Fix:** Added `if (closeSequence.running) return;` at the top of
+`cancelSwitch()` so the second call is a no-op.
