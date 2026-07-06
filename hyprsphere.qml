@@ -1271,20 +1271,11 @@ PanelWindow {
                                     cache: true
                                 }
 
-                                // Screen showing selected app (centered in SVG)
-                                Rectangle {
-                                    id: notifScreen
-                                    width:  window._sat_hullW * 0.75
-                                    height: window._sat_hullH * 0.75
-                                    anchors.centerIn: parent
-                                    color: window.mantle
-                                    radius: window._sat_radius8
-                                    border.color: Qt.alpha(window.surface0, 0.5)
-                                    border.width: 1
-
-                                    ColumnLayout {
-                                        anchors.fill: parent
-                                        anchors.margins: window._sat_innerM
+                                // App icon + label (centered on SVG)
+                                ColumnLayout {
+                                        anchors.centerIn: parent
+                                        width:  window._sat_hullW * 0.55
+                                        height: window._sat_hullH * 0.65
                                         spacing: window._sat_spacing
 
                                         Image {
@@ -1318,7 +1309,6 @@ PanelWindow {
                                             wrapMode: Text.WordWrap
                                         }
                                     }
-                                }
                             }
                         }
                     }
