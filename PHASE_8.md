@@ -146,11 +146,25 @@ return String(oi >= 0 ? oi + 1 : "");
 | `autoRadius.minRadius` | `160` | Sphere radius when only 1-2 nodes are visible |
 | `autoRadius.maxNodeCount` | `20` | Node count at which radius reaches `baseRadius` |
 
-### `appIcon.windowIconOpacity`
+### `appCard.windowIconOpacity`
 
 | Field | Default | Description |
 |---|---|---|
 | `windowIconOpacity` | `0.75` | Opacity of icons on window nodes (layer 1/layer 2). App icons are full opacity. |
+
+### `appCard.satelliteAppLabel`
+
+| Field | Default | Description |
+|---|---|---|
+| `satelliteAppLabel` | `false` | Show the label rectangle on the satellite card for app nodes. Window nodes always show the label. |
+
+### `appCard` label colors
+
+| Field | Default | Description |
+|---|---|---|
+| `labelBgColor` | `"#ff4400"` | Background color of the label rectangle on non-selected cards and satellite card |
+| `labelTextColor` | `"#2b2b2b"` | Text color inside the label rectangle |
+| `labelBgOpacity` | `0.5` | Opacity of the label background pill (0-1) |
 
 ### `appCard.windowCountBadge`
 
@@ -195,3 +209,8 @@ return String(oi >= 0 ? oi + 1 : "");
     instead of `3`
 15. **Window icon opacity** — window node icons render at
     `windowIconOpacity` (default 0.75)
+16. **App labels hidden** — labels only show on window nodes, not app nodes
+    (non-selected cards always; satellite card configurable via
+    `satelliteAppLabel`)
+17. **Label colors** — labels use `labelBgColor`/`labelBgOpacity`/`labelTextColor`
+    config (default `#ff4400` at 50% on `#2b2b2b` text)

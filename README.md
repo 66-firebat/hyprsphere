@@ -326,6 +326,10 @@ organized by section.
 | `labelBgOpacity` | `0.60` | Background opacity of the label rectangle on non-selected cards |
 | `nonSelectedIconSize` | `110` | Size of the app icon on non-selected sphere cards |
 | `windowIconOpacity` | `0.75` | Opacity of icons on window nodes (layer 1/layer 2) — app icons are full opacity |
+| `satelliteAppLabel` | `false` | Show label on the satellite card for app nodes (window nodes always show) |
+| `labelBgColor` | `"#ff4400"` | Background color of the label rectangle on non-selected cards and satellite |
+| `labelTextColor` | `"#2b2b2b"` | Text color of the label rectangle |
+| `labelBgOpacity` | `0.5` | Opacity of the label background pill (0-1) |
 | `nonSelectedLayerLabels.layer_0` | `false` | Show labels on non-selected cards at layer 0 (app list) |
 | `nonSelectedLayerLabels.layer_1` | `true` | Show labels on non-selected cards at layer 1 (window drill-down) |
 | `nonSelectedLayerLabels.layer_2` | `true` | Show labels on non-selected cards at layer 2 (search results) |
