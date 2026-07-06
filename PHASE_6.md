@@ -752,3 +752,16 @@ would be started twice, causing visual glitches.
 
 **Fix:** Added `if (closeSequence.running) return;` at the top of
 `cancelSwitch()` so the second call is a no-op.
+
+### 9. Placeholder commit path missed submap reset
+
+**Issue:** `commitSelection()` has an early `return` when the selected node
+is a placeholder (`isPlaceholder: true`), which covers both "No windows"
+(layer 0) and "No results" (layer 2). This early return exits before
+reaching the submap reset code (`hyprctl eval`). Committing on a placeholder
+(e.g., typing gibberish until "No results" shows, then releasing Alt) left
+the submap active, preventing the next `ALT + Tab` from working.
+
+**Fix:** Added a `hyprctl eval` submap reset call before the early return
+in the placeholder check path — same fix as issue #7 for whitelist
+placeholders, but for the generic "no content" placeholder.

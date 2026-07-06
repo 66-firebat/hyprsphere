@@ -527,6 +527,8 @@ PanelWindow {
         if (!node || node.isPlaceholder) {
             window.overlayActive = false;
             closeSequence.start();
+            // Reset Hyprland submap so next ALT+Tab works
+            Quickshell.execDetached(["hyprctl", "eval", 'hl.dispatch(hl.dsp.submap("reset"))']);
             return;
         }
 
