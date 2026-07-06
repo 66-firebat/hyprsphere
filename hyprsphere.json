@@ -103,7 +103,14 @@
     "nonSelectedIconSize": 55,
     "windowCountBadge": {
       "satellite": true,
-      "nonSelected": true
+      "nonSelected": true,
+      "offsetY": 0,
+      "offsetX": -60,
+      "fontSize": 18,
+      "padding": 14,
+      "color": "#ff4400",
+      "bgColor": "#2b2b2b",
+      "bgOpacity": 0.5
     },
     "nonSelectedLayerLabels": {
       "layer_0": false,

@@ -1202,6 +1202,7 @@ PanelWindow {
                             spacing: window._s5
 
                             Image {
+                                id: cardIcon
                                 Layout.alignment: Qt.AlignHCenter
                                 Layout.preferredWidth:  window.s(cfg.appCard?.nonSelectedIconSize ?? 55)
                                 Layout.preferredHeight: window.s(cfg.appCard?.nonSelectedIconSize ?? 55)
@@ -1242,42 +1243,45 @@ PanelWindow {
                                 }
                             }
 
-                            // Window count badge (bottom-right of card)
-                            Item {
-                                anchors.right: parent.right
-                                anchors.bottom: parent.bottom
-                                anchors.rightMargin: window._s3
-                                anchors.bottomMargin: window._s3
-                                width: badgeText2.width + window._s6
-                                height: badgeText2.height + window._s3
-                                visible: {
-                                    if (cfg.appCard?.windowCountBadge?.nonSelected === false) return false;
+                        }
+
+                        // Window count badge (over icon)
+                        Item {
+                            id: windowBadge
+                            anchors.horizontalCenter: cardIcon.horizontalCenter
+                            anchors.verticalCenter: cardIcon.verticalCenter
+                            anchors.horizontalCenterOffset: window.s(cfg.appCard?.windowCountBadge?.offsetX ?? -60)
+                            anchors.verticalCenterOffset: window.s(cfg.appCard?.windowCountBadge?.offsetY ?? 0)
+                            width: badgeLabel.width + window.s(cfg.appCard?.windowCountBadge?.padding ?? 14)
+                            height: badgeLabel.height + window.s(cfg.appCard?.windowCountBadge?.padding ?? 14)
+                            visible: {
+                                if (cfg.appCard?.windowCountBadge?.nonSelected === false) return false;
+                                var n = window.sphereModel[index];
+                                if (!n || n.isWindowNode || n.isPlaceholder || n.isWhitelistPlaceholder) return false;
+                                return (n.windowCount || 0) >= 1;
+                            }
+
+                            Rectangle {
+                                anchors.fill: parent
+                                radius: height / 2
+                                color: cfg.appCard?.windowCountBadge?.bgColor ?? "#2b2b2b"
+                                opacity: cfg.appCard?.windowCountBadge?.bgOpacity ?? 0.5
+                            }
+
+                            Text {
+                                id: badgeLabel
+                                anchors.centerIn: parent
+                                text: {
                                     var n = window.sphereModel[index];
-                                    if (!n || n.isWindowNode || n.isPlaceholder || n.isWhitelistPlaceholder) return false;
-                                    return (n.windowCount || 0) >= 1;
+                                    if (!n) return "";
+                                    return String(n.windowCount || 0);
                                 }
-
-                                Rectangle {
-                                    anchors.fill: parent
-                                    radius: height / 2
-                                    color: Qt.rgba(window.crust.r, window.crust.g, window.crust.b, 0.75)
-                                }
-
-                                Text {
-                                    id: badgeText2
-                                    anchors.centerIn: parent
-                                    text: {
-                                        var n = window.sphereModel[index];
-                                        if (!n) return "";
-                                        return String(n.windowCount || 0);
-                                    }
-                                    font.family: "JetBrains Mono"
-                                    font.pixelSize: window._s9
-                                    font.weight: Font.Bold
-                                    color: window.text
-                                    horizontalAlignment: Text.AlignHCenter
-                                    verticalAlignment: Text.AlignVCenter
-                                }
+                                font.family: "JetBrains Mono"
+                                font.pixelSize: window.s(cfg.appCard?.windowCountBadge?.fontSize ?? 18)
+                                font.weight: Font.Bold
+                                color: cfg.appCard?.windowCountBadge?.color ?? "#ff4400"
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
                             }
                         }
                     }
@@ -1333,14 +1337,15 @@ PanelWindow {
                                     wrapMode: Text.WordWrap
                                 }
 
-                                // Window count badge
+                                // Window count badge (over icon)
                                 Item {
-                                    anchors.right: parent.right
-                                    anchors.bottom: parent.bottom
-                                    anchors.rightMargin: window._s4
-                                    anchors.bottomMargin: window._s4
-                                    width: badgeText.width + window._s8
-                                    height: badgeText.height + window._s4
+                                    id: satBadge
+                                    anchors.horizontalCenter: satIcon.horizontalCenter
+                                    anchors.verticalCenter: satIcon.verticalCenter
+                                    anchors.horizontalCenterOffset: window.s(cfg.appCard?.windowCountBadge?.offsetX ?? -60)
+                                    anchors.verticalCenterOffset: window.s(cfg.appCard?.windowCountBadge?.offsetY ?? 0)
+                                    width: satBadgeLabel.width + window.s(cfg.appCard?.windowCountBadge?.padding ?? 14)
+                                    height: satBadgeLabel.height + window.s(cfg.appCard?.windowCountBadge?.padding ?? 14)
                                     visible: {
                                         if (cfg.appCard?.windowCountBadge?.satellite === false) return false;
                                         var n = window.sphereModel[window.selectedAppIndex];
@@ -1351,11 +1356,12 @@ PanelWindow {
                                     Rectangle {
                                         anchors.fill: parent
                                         radius: height / 2
-                                        color: Qt.rgba(window.crust.r, window.crust.g, window.crust.b, 0.75)
+                                        color: cfg.appCard?.windowCountBadge?.bgColor ?? "#2b2b2b"
+                                        opacity: cfg.appCard?.windowCountBadge?.bgOpacity ?? 0.5
                                     }
 
                                     Text {
-                                        id: badgeText
+                                        id: satBadgeLabel
                                         anchors.centerIn: parent
                                         text: {
                                             var n = window.sphereModel[window.selectedAppIndex];
@@ -1363,9 +1369,9 @@ PanelWindow {
                                             return String(n.windowCount || 0);
                                         }
                                         font.family: "JetBrains Mono"
-                                        font.pixelSize: window._s10
+                                        font.pixelSize: window.s(cfg.appCard?.windowCountBadge?.fontSize ?? 18)
                                         font.weight: Font.Bold
-                                        color: window.text
+                                        color: cfg.appCard?.windowCountBadge?.color ?? "#ff4400"
                                         horizontalAlignment: Text.AlignHCenter
                                         verticalAlignment: Text.AlignVCenter
                                     }
