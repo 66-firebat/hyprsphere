@@ -169,6 +169,30 @@
       "label": "Sioyek",
       "icon": "sioyek-icon-linux",
       "exec": "sioyek"
+    },
+    {
+      "appId": "firefox",
+      "label": "Firefox",
+      "icon": "firefox",
+      "exec": "firefox"
+    },
+    {
+      "appId": "emacs",
+      "label": "Emacs",
+      "icon": "emacs",
+      "exec": "emacs"
+    },
+    {
+      "appId": "anki",
+      "label": "Anki",
+      "icon": "anki",
+      "exec": "anki"
+    },
+    {
+      "appId": "gimp",
+      "label": "GIMP",
+      "icon": "gimp",
+      "exec": "gimp"
     }
   ],
 

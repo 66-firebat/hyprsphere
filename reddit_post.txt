@@ -1,0 +1,36 @@
+I wanted to share a project I've been working on: **hyprsphere** — a window switcher that replaces the conventional flat Alt+Tab grid with a 3D Fibonacci lattice sphere. Its design philosophy is heavily derived from that of GNOME's AATWS extension, which, in my opinion is STILL the most powerful and useful tool in the GNOME DE toolkit. Had it been ported for hyprland, I probably wouldn't have spent days making this...If you are on GNOME and haven't used it or integrated it into your workflow, you are seriously missing out. I'm hoping that over the next few weeks I can do a refactor of hyprsphere and get it close to the comfort and ease of use that AATWS provided me during my time on GNOME.
+Massive gratitude to u/ilyamiro for paving the way for this project. He designed the fundamental UI for the fibonacci lattice, and it was featured in the applauncher that was showcased a few weeks ago. I immediately saw its potential as an alt tab switcher. I'm linking ilyamiro's github here if anyone is interested in browsing further: https://github.com/ilyamiro/hypr-comp
+
+**What it does:**
+When you press Alt+Tab, instead of a flat list of icons, you get a rotating sphere with all your running apps positioned on it. Each app gets its own node showing the app icon. The sphere auto-rotates, you can drag to spin it around, and there's a satellite detail card that pops up for the selected item.
+**Key features:**
+- **Two-layer drill-down** — Press `Tab` to cycle apps, press `;` to drill into an app's individual windows. Press `;` again to go back.
+- **Live search** — Just start typing any letter while the overlay is open. It uses Fuse.js for fuzzy matching across running apps, whitelisted apps, and window titles.
+- **Static per-app window indexing** — Each window gets a permanent opening-order number. Close window #3 and windows #4–8 shift down to fill the gap. New windows always get the next sequential number.
+- **Window count badges** — App nodes show `+3` (number of open windows). Window nodes show their index number. All badge colors are fully configurable.
+- **Ctrl+C to close** — Close all windows of an app at layer 0, or a specific window at layer 1.
+- **Mouse-driven** — Click to select, double-click to commit, drag to rotate. It HAS capability to be used with the mouse, but I would argue that hyprsphere is very much a keyboard driven application.
+- **Whitelist** — Pin apps like Blender or KiCad to the sphere so they always appear, even when not running. Committing launches them.
+- **Fully configurable** — Colors (Catppuccin Mocha), animations, sizes, sphere radius, card tilt, search parameters — all in a single `hyprsphere.json`.
+- **Three operation layers** — Layer 0 (apps grouped by ID), Layer 1 (individual windows of an app), Layer 2 (search results).
+
+
+**Hyprland integration:**
+The entire Hyprland footprint is a single bind in `keymaps.lua`:
+```lua
+hl.bind("ALT + Tab", hl.dsp.exec_cmd("qs ipc call hyprsphere toggle"))
+```
+
+Once the overlay opens, everything — Tab cycling, search, drill-down, Alt-release commit, Escape — is handled client-side in QML via Qt's key event handlers. No submaps, no `keyd`, no daemon, no polling `hyprctl`. Quickshell's built-in `Hyprland` singleton provides live reactive toplevel tracking.
+
+**The tech stack:**
+- **Quickshell** + **Qt Quick** for the UI (PanelWindow overlay)
+- **Fuse.js v7** for fuzzy search (bundled, no npm)
+- **Hyprland IPC** via Quickshell's native Hyprland module
+- Everything runs in-process — no daemons, no Unix sockets, no Python scripts
+
+**The development story:**
+This whole project was vibe-coded using **DeepSeek V4 Flash** using **Matt Pocock's Plan Loop** methodology — an iterative process where each phase is planned, implemented, tested against explicit exit criteria, and documented before moving to the next. The project went through 8 phases, and each phase had its own test suite, test logs, and retrospective documentation. What started as an app launcher prototype got completely gutted and rebuilt into a full window switcher, all through AI pair programming with structured testing loops.
+
+**Links:**
+- GitHub: https://github.com/66-firebat/hyprsphere
