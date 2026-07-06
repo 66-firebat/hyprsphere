@@ -1,0 +1,7 @@
+=== PHASE 9 TESTS Sun Jul  5 11:51:27 PM MDT 2026 ===
+execMap property: 1
+resolveExec function: 1
+openNewWindow function: 1
+Key_Return + ControlModifier: 1
+Exec= in iconReader: 3
+execMap references: 4

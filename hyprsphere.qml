@@ -486,7 +486,35 @@ PanelWindow {
             rebuildScheduled = false;
             // Run regardless of visibility — sphere data is cheap to rebuild
             // and may be needed when overlay reappears after visible toggle.
+            Hyprland.refreshToplevels();
             var raw = buildLayer0();
+
+            // If waiting for a spawned window and the data isn't ready yet, retry
+            if (window._pendingSpawnAddr && raw.length > 0) {
+                var spawnReady = false;
+                for (var ri = 0; ri < raw.length; ri++) {
+                    if (raw[ri].appId === window._pendingSpawnAppId
+                        && !raw[ri].isWhitelistPlaceholder) {
+                        // Verify the specific pending address is in the window list
+                        // (normalize both sides to handle 0x prefix mismatch)
+                        for (var wj = 0; wj < (raw[ri].windows || []).length; wj++) {
+                            var winAddr = raw[ri].windows[wj].address || "";
+                            if (winAddr.indexOf("0x") !== 0) winAddr = "0x" + winAddr;
+                            if (winAddr === window._pendingSpawnAddr) {
+                                spawnReady = true;
+                                break;
+                            }
+                        }
+                        break;
+                    }
+                }
+                if (!spawnReady) {
+                    // Toplevel data not yet updated — retry on next tick
+                    window.rebuildScheduled = false;
+                    window.scheduleRebuild();
+                    return;
+                }
+            }
 
             if (window.layer === 2 && window.searchQuery !== "") {
                 // Layer 2 active: re-init Fuse index and re-run search
@@ -541,11 +569,37 @@ PanelWindow {
             rebuildProjCache();
             // If we just spawned a new window, select it
             if (window._pendingSpawnAddr) {
-                for (var si = 0; si < window.sphereModel.length; si++) {
-                    if (window.sphereModel[si].address === window._pendingSpawnAddr) {
-                        window.selectedAppIndex = si;
-                        window.centerOnApp(si);
-                        break;
+                var found = false;
+                if (window.layer === 0) {
+                    // Layer 0: match by appId (app nodes don't have .address)
+                    for (var si = 0; si < window.sphereModel.length; si++) {
+                        if (window.sphereModel[si].appId === window._pendingSpawnAppId
+                            && !window.sphereModel[si].isWhitelistPlaceholder) {
+                            window.selectedAppIndex = si;
+                            window.centerOnApp(si);
+                            found = true;
+                            break;
+                        }
+                    }
+                } else {
+                    // Layer 1/2: match by address
+                    for (var si = 0; si < window.sphereModel.length; si++) {
+                        if (window.sphereModel[si].address === window._pendingSpawnAddr) {
+                            window.selectedAppIndex = si;
+                            window.centerOnApp(si);
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+                if (!found && window.layer === 0 && window.sphereModel.length > 0) {
+                    // Fallback: select the first non-placeholder node
+                    for (var si = 0; si < window.sphereModel.length; si++) {
+                        if (!window.sphereModel[si].isPlaceholder) {
+                            window.selectedAppIndex = si;
+                            window.centerOnApp(si);
+                            break;
+                        }
                     }
                 }
                 window._pendingSpawnAddr = "";
@@ -832,9 +886,8 @@ PanelWindow {
                     appMru = [appId].concat(filtered);
                     appWindowMru[appId] = [addr].concat(appWindowMru[appId] || []);
 
-                    // If this is a spawned window, auto-select it
+                    // If this is a spawned window, save info for auto-selection
                     if (window._pendingSpawnAppId === appId) {
-                        window._pendingSpawnAppId = "";
                         window._pendingSpawnAddr = addr;
                         if (window.visible) window.scheduleRebuild();
                     }
