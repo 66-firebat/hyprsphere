@@ -207,6 +207,32 @@ window._windowClosedThisSession = false;
 This ensures that Ctrl+C followed by Alt release takes you to the window
 that was focused before the closed window, not an older one.
 
+### Synchronous MRU update in `commitSelection()`
+
+When the overlay closes (`visible = false`), the QML engine pauses. The
+`onActiveToplevelChanged` signal for the newly focused window is queued
+and may not fire until the overlay reopens — after `finishOpenSwitcher()`
+has already calculated `_preSelectedAppId` from stale `globalWindowMru`
+data.
+
+**Fix:** Update `globalWindowMru` synchronously in `commitSelection()`
+before `visible = false`, using the `addr` of the committed window:
+
+```javascript
+if (cfg.mruMethod === "window" && addr) {
+    var commitNorm = addr.indexOf("0x") === 0 ? addr : "0x" + addr;
+    var commitFiltered = [];
+    for (var ci = 0; ci < globalWindowMru.length; ci++) {
+        if (globalWindowMru[ci] !== commitNorm) commitFiltered.push(globalWindowMru[ci]);
+    }
+    globalWindowMru = [commitNorm].concat(commitFiltered);
+}
+```
+
+This runs the same logic as `onActiveToplevelChanged` but synchronously,
+so the next `finishOpenSwitcher()` always sees the correct MRU order
+regardless of signal queuing delays.
+
 ### `0x` prefix normalization in `globalWindowMru`
 
 Window addresses from `t.address` in `onActiveToplevelChanged` do NOT
