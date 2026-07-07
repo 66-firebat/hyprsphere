@@ -951,7 +951,21 @@ PanelWindow {
         if (closeSequence.running) return;
 
         var node = sphereModel[selectedAppIndex];
-        if (!node || node.isPlaceholder || node.isWhitelistPlaceholder) return;
+        if (!node || node.isPlaceholder) return;
+
+        // If the node is still a whitelisted placeholder but windows have
+        // been spawned (e.g. Ctrl+Enter before the sphere rebuilds), close
+        // via appWindowMru which is updated immediately by openwindow.
+        if (node.isWhitelistPlaceholder) {
+            var spawnAddrs = appWindowMru[node.appId] || [];
+            for (var si = 0; si < spawnAddrs.length; si++) {
+                var sa = spawnAddrs[si];
+                var sp = sa.indexOf("0x") === 0 ? "" : "0x";
+                Quickshell.execDetached(["hyprctl", "dispatch",
+                    'hl.dsp.window.close({window="address:' + sp + sa + '"})']);
+            }
+            return;
+        }
 
         if (window.layer === 0 || (window.layer === 2 && !node.isWindowNode)) {
             // Layer 0 or layer 2 app node: close all windows of this app
@@ -1083,7 +1097,17 @@ PanelWindow {
                     // If this is a spawned window, save info for auto-selection
                     if (window._pendingSpawnAppId === appId) {
                         window._pendingSpawnAddr = addr;
-                        if (window.visible) window.scheduleRebuild();
+                        if (window.visible) {
+                            // Cycle visibility to force the compositor to
+                            // re-grant keyboard focus to the overlay layer.
+                            // Some apps (Blender) steal focus on open.
+                            window.visible = false;
+                            Qt.callLater(function() {
+                                window.visible = true;
+                                // onVisibleChanged → forceActiveFocus
+                            });
+                            window.scheduleRebuild();
+                        }
                     }
 
                     // Fullscreen on activate for whitelisted app launches.
@@ -1091,11 +1115,13 @@ PanelWindow {
                         window._fullscreenedAddresses[addr] = true;
                         var fsAddr = addr.indexOf("0x") === 0 ? addr : "0x" + addr;
                         window._pendingFullscreenAddr = addr;
-                        // Immediate dispatch on openwindow (works for most apps).
-                        // The whitelist commit also uses exec_cmd with a
-                        // PID-tracked maximize rule for persistent enforcement.
                         Quickshell.execDetached(["hyprctl", "dispatch",
                             'hl.dsp.window.fullscreen({ mode = "maximized", action = "set", window = "address:' + fsAddr + '" })']);
+                        if (window.visible) {
+                            window.focusable = false;
+                            window.focusable = true;
+                            focusGrabber.forceActiveFocus();
+                        }
                     }
                 }
                 return;
