@@ -113,7 +113,8 @@
     "labelBgColor": "#ff4400",
     "labelTextColor": "#2b2b2b",
     "nonSelectedIconSize": 110,
-    "windowIconOpacity": 0.75,
+    "appIconOpacity": 1.0,
+    "windowIconOpacity": 1.0,
     "windowCountBadge": {
       "satellite": true,
       "nonSelected": false,

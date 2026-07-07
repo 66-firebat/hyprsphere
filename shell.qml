@@ -1576,7 +1576,9 @@ if (window.layer === 2 && window.searchQuery !== "") {
                                 cache: true
                                 opacity: {
                                     var n = window.sphereModel[index];
-                                    return n && n.isWindowNode ? (cfg.appCard?.windowIconOpacity ?? 0.5) : 1.0;
+                                    if (!n) return 1.0;
+                                    if (n.isWindowNode) return cfg.appCard?.windowIconOpacity ?? 0.75;
+                                    return cfg.appCard?.appIconOpacity ?? 1.0;
                                 }
                                 Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
                             }
@@ -1715,7 +1717,9 @@ if (window.layer === 2 && window.searchQuery !== "") {
                                     smooth: true
                                     opacity: {
                                         var n = window.sphereModel[window.selectedAppIndex];
-                                        return n && n.isWindowNode ? (cfg.appCard?.windowIconOpacity ?? 0.5) : 1.0;
+                                        if (!n) return 1.0;
+                                        if (n.isWindowNode) return cfg.appCard?.windowIconOpacity ?? 0.75;
+                                        return cfg.appCard?.appIconOpacity ?? 1.0;
                                     }
                                     Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
                                 }
