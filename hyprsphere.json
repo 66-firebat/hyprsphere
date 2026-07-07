@@ -114,6 +114,7 @@
     "labelTextColor": "#2b2b2b",
     "nonSelectedIconSize": 110,
     "appIconOpacity": 1.0,
+    "cardBorderColor": "transparent",
     "windowIconOpacity": 1.0,
     "windowCountBadge": {
       "satellite": true,

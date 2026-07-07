@@ -362,6 +362,7 @@ organized by section.
 | `labelBgOpacity` | `0.60` | Background opacity of the label rectangle on non-selected cards |
 | `nonSelectedIconSize` | `110` | Size of the app icon on non-selected sphere cards |
 | `appIconOpacity` | `1.0` | Opacity of app group icons on non-selected cards (layer 0). Range 0–1. |
+| `cardBorderColor` | `"transparent"` | Border colour of non-selected cards on hover. Set to a hex like `"#45475a"` to show a coloured border on hover, or keep `"transparent"` for no border. |
 | `windowIconOpacity` | `0.75` | Opacity of icons on window nodes (layer 1/layer 2) — app icons are full opacity unless overridden by `appIconOpacity` |
 | `satelliteAppLabel` | `false` | Show label on the satellite card for app nodes (window nodes always show) |
 | `labelBgColor` | `"#ff4400"` | Background color of the label rectangle on non-selected cards and satellite |

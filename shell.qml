@@ -1550,7 +1550,7 @@ if (window.layer === 2 && window.searchQuery !== "") {
                         anchors.fill: parent
                         radius: window._s12
                         color:  "transparent"
-                        border.color: nodeMa.containsMouse && !appNode.isSelected ? window.surface2 : "transparent"
+                        border.color: nodeMa.containsMouse && !appNode.isSelected ? (cfg.appCard?.cardBorderColor ?? "transparent") : "transparent"
                         border.width: window._s2
                         Behavior on color { ColorAnimation { duration: cfg.animations?.cardFadeDurationMs ?? 200 } }
 
