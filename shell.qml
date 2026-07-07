@@ -196,8 +196,6 @@ PanelWindow {
     // ── Global window-level MRU tracking ──
     property var globalWindowMru: []
     property string _preSelectedAppId: ""
-    property bool _windowClosedThisSession: false
-    property string _sessionOriginAddr: ""
 
     function _findAppForAddress(addr) {
         if (!addr) return "";
@@ -255,8 +253,6 @@ PanelWindow {
         window.overlayActive = true;
         window._pendingSpawnAppId = "";
         window._preSelectedAppId = "";
-        window._windowClosedThisSession = false;
-        window._sessionOriginAddr = window.globalWindowMru.length >= 1 ? window.globalWindowMru[0] : "";
 
         // Enter Hyprland submap so letter keys pass through to QML
         // NOTE: must use hyprctl eval, not dispatch (submap is Lua-only)
@@ -842,13 +838,10 @@ if (window.layer === 2 && window.searchQuery !== "") {
                 var spawnMru = appWindowMru[node.appId] || [];
                 addr = spawnMru.length >= 1 ? spawnMru[0] : "";
             } else if (node.appId === window._preSelectedAppId) {
-                // Normal previous-window targeting, unless a window was
-                // just closed — then the target shifts to the new index 0.
-                var wmruIdx = window._windowClosedThisSession ? 0 : 1;
+                // Target the previous window (globalWindowMru[1])
                 addr = window.globalWindowMru.length >= 2
-                    ? window.globalWindowMru[wmruIdx]
+                    ? window.globalWindowMru[1]
                     : (node.windows[0] ? node.windows[0].address : "");
-                window._windowClosedThisSession = false;
             } else {
                 // Layer 0 or layer 2 app node: focus MRU-most window
                 var winMru = appWindowMru[node.appId] || [];
@@ -1089,11 +1082,6 @@ if (window.layer === 2 && window.searchQuery !== "") {
                     if (list[k] === addr) { idx = k; break; }
                 }
                 if (idx !== -1) {
-                    // PATCH 1: if the closed window belongs to the
-                    // pre-selected app, commit should use index 0.
-                    if (appId === window._preSelectedAppId) {
-                        window._windowClosedThisSession = true;
-                    }
                     var newList = [];
                     for (var k2 = 0; k2 < list.length; k2++) {
                         if (k2 !== idx) newList.push(list[k2]);
@@ -1117,15 +1105,6 @@ if (window.layer === 2 && window.searchQuery !== "") {
             var gwNew = [];
             for (var gi = 0; gi < globalWindowMru.length; gi++) {
                 if (globalWindowMru[gi] !== gwNorm) gwNew.push(globalWindowMru[gi]);
-            }
-            // If the closed window was the session origin (the window focused
-            // when the overlay opened), shift commit target to the new index 0
-            // so the user lands on the window before the closed one.
-            // Skip this if the closed window was a spawn that briefly appeared
-            // at [0] during a visibility toggle — the user's origin hasn't changed.
-            if (window._sessionOriginAddr && globalWindowMru.length >= 1
-                && globalWindowMru[0] === gwNorm && gwNorm === window._sessionOriginAddr) {
-                window._windowClosedThisSession = true;
             }
             globalWindowMru = gwNew;
 
