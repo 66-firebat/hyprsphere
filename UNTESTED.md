@@ -4,6 +4,21 @@ Tests that were deferred during manual testing. These are edge cases
 that are rare enough to not block shipping, but should be revisited when making
 changes that touch the relevant code paths.
 
+## PATCH_2 (Window-level MRU only)
+
+### CTRL+C close with multiple Firefox windows
+
+When multiple Firefox windows are open and CTRL+C is used to close them,
+Ghostty correctly appears as the pre-selected app, but ALT+RELEASE drops
+the user into the same Ghostty window (no window switch occurs). This could
+be intended behaviour (the current Ghostty window IS the MRU-most window
+of the Ghostty app), but it's extremely difficult to reproduce reliably.
+
+**Reason not investigated:** Extremely difficult to reproduce. The effect
+requires a specific MRU ordering with multiple Firefox windows that is hard
+to recreate consistently. Not blocking shipping — revisit if this pattern
+becomes a recurring complaint.
+
 ## Phase 9
 
 ### M7. No-op on unresolvable app

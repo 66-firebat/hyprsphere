@@ -414,6 +414,28 @@ which no longer exists.
 
 ---
 
+### Change 14 — `shell.qml`: Remove `_pendingFullscreenAppId` and `_fullscreenedAddresses` fallback mechanisms
+
+During testing, Blender launched maximised (via `exec_cmd` PID-tracked rule) but the
+`_pendingFullscreenAppId` fallback mechanisms in `onActiveToplevelChanged` and `onRawEvent`
+openwindow handler were **interfering** with it. Removing these fallbacks fixed Blender
+maximise-on-launch.
+
+**What was removed:**
+1. `_pendingFullscreenAppId` property declaration (line ~194)
+2. `_fullscreenedAddresses` property declaration + tracking (line ~197)
+3. `onActiveToplevelChanged` fullscreen re-apply block (~8 lines)
+4. `onRawEvent` openwindow fullscreen dispatch block (~10 lines)
+5. All set/clear sites in `openSwitcher()`, `cancelSwitch()`, `commitSelection()`, `openNewWindow()`
+
+The `exec_cmd` with `{ maximize = true }` PID-tracked rule is now the **sole** mechanism
+for maximising whitelisted launches. This simplified the launch path to a single
+`hyprctl dispatch` call with no event-handler fallbacks.
+
+**Files changed:** `shell.qml` — 7 edits, removing both properties and all references.
+
+---
+
 ## What stays unchanged
 
 | Feature | Reason |
@@ -423,11 +445,9 @@ which no longer exists.
 | `_windowClosedThisSession` flag | Needed for close+commit targeting in window-mode |
 | Synchronous MRU update in `commitSelection()` | Always needed (QML engine pauses on hide) |
 | `_findAppForAddress()` (NEW) | Shared helper, reduces duplication |
-| Fullscreen-on-activate paths | Unrelated to mruMethod |
+| `fullscreenOnActivate` config & Path A dispatch | Address-based fullscreen on existing-window commit (unrelated to launch) |
 | `appMru` sorting | Still used for sphere sort order |
 | `appWindowMru` maintenance | Still used for drill-down sorting, spawn override, close cleanup |
-| `_fullscreenedAddresses` | Needed for duplicate fullscreen prevention |
-| `_pendingFullscreenAppId` | Needed for GIMP/Blender fallback |
 | `_pendingSpawnAppId` / `_pendingSpawnAddr` | Needed for Ctrl+Enter spawn tracking |
 
 ---
@@ -478,6 +498,14 @@ grep -c 'selectedAppIndex = (appMru.length >= 2)' shell.qml
 # C10: fullscreen-on-activate paths still intact
 grep -c 'fullscreenOnActivate' shell.qml
 # Expected: at least 2
+
+# C12: No _pendingFullscreenAppId remains (removed fallback mechanisms)
+grep -c '_pendingFullscreenAppId' shell.qml
+# Expected: 0
+
+# C13: No _fullscreenedAddresses remains (removed fallback mechanisms)
+grep -c '_fullscreenedAddresses' shell.qml
+# Expected: 0
 ```
 
 ---
