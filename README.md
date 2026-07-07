@@ -192,6 +192,42 @@ end)
 Or use your desktop environment's autostart mechanism with a desktop file
 or startup script.
 
+### 7. Using `manual_start.sh`
+
+The repository includes a `manual_start.sh` script that handles everything
+automatically — killing old instances, creating symlinks, and launching
+quickshell:
+
+```bash
+cd /path/to/hyprsphere
+bash manual_start.sh
+```
+
+After running, the overlay is ready. Open it with:
+
+```bash
+qs ipc call hyprsphere toggle
+```
+
+The script performs these steps:
+
+1. **Kills** any existing quickshell processes
+2. **Creates symlinks** in `~/.config/quickshell/` pointing to your
+   repository files (`shell.qml`, `hyprsphere.json`, `lib/`)
+3. **Auto-detects** the Qt5Compat QML import path on NixOS
+4. **Starts** quickshell and waits for it to register for IPC
+
+**NixOS note:** This script replaces any Nix-managed symlinks in
+`~/.config/quickshell/` with direct symlinks to your repository.
+To restore the Nix-generated symlinks (e.g., after rebuilding your
+system or switching configurations), you need to:
+
+```bash
+rm -rf ~/.config/quickshell
+# Then rebuild your Nix configuration:
+nixos-rebuild switch  # or: darwin-rebuild, home-manager switch, etc.
+```
+
 ---
 
 ## Configuration

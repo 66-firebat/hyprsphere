@@ -271,26 +271,69 @@ Quickshell.execDetached(["bash", "-c", sh]);
 
 **After (with fullscreenOnActivate):**
 ```qml
-var sh = node.exec + ' & sleep 0.3 && hyprctl dispatch '
-    + "'hl.dsp.focus({window=\"class:" + node.appId + "\"})'" + ' &';
-Quickshell.execDetached(["bash", "-c", sh]);
-
-// Fullscreen on activate — set a flag so the openwindow event
-// handler fires the fullscreen dispatch with the window's address
-// as soon as Hyprland reports it, no delay needed.
 if (cfg.fullscreenOnActivate) {
-    window._pendingFullscreenAppId = node.appId;
+    // Launch via exec_cmd with a PID-tracked maximize rule that is
+    // enforced by the compositor continuously. Unlike a one-shot
+    // dispatch, the app's init cannot override this — the compositor
+    // re-applies maximize on every state change the window requests.
+    Quickshell.execDetached(["hyprctl", "dispatch",
+        'hl.dsp.exec_cmd("' + node.exec + '", { maximize = true })']);
+    // Focus by class after a small delay
+    Quickshell.execDetached(["bash", "-c",
+        'sleep 0.5 && hyprctl dispatch hl.dsp.focus({window="class:' + node.appId + '"}) &']);
+} else {
+    // Original shell chain: launch + focus (no maximize)
+    var sh = node.exec + ' & sleep 0.3 && hyprctl dispatch '
+        + "'hl.dsp.focus({window=\\\"class:" + node.appId + "\\\"})'" + ' &';
+    Quickshell.execDetached(["bash", "-c", sh]);
 }
 ```
 
-For Path B, the window doesn't exist yet at commit time, so we can't
-pass an address at commit time. Instead, we set a `_pendingFullscreenAppId`
-flag. When Hyprland fires the `openwindow` raw event (handled in
-`onRawEvent`), we match the event's `appId` against this flag. On match,
-we dispatch fullscreen using the **exact window address** from the event
-— the same address-targeting approach as Path A. This is zero-delay:
-the dispatch fires on the same event tick that Hyprland reports the new
-window. No sleep, no polling, no race condition.
+For Path B, the window doesn't exist yet at commit time. When
+`fullscreenOnActivate` is true, instead of a one-shot fullscreen dispatch
+(which apps like Blender override during init), we use Hyprland's
+`hl.dsp.exec_cmd()` dispatcher with a **PID-tracked window rule**.
+This records the PID of the spawned process and applies the maximize
+rule on every window state change — the compositor enforces it
+continuously, not just once.
+
+#### 7.3.1 How the PID-tracked rule works ("the Blender fix")
+
+**The mechanism:** `hl.dsp.exec_cmd(cmd, rules?)` takes an optional
+`rules` table (here `{ maximize = true }`). Internally, Hyprland:
+
+1. Spawns the command and records the process PID
+2. Tracks all child processes of that PID in a process tree
+3. For every window whose process tree includes the tracked PID,
+   applies the window rule effects on **every state change**
+
+This means when Blender (or any app) calls `xdg_toplevel.unset_maximized()`
+during its initialization, Hyprland's rule engine intercepts the request
+and re-applies maximize before the window is rendered. The rule persists
+for the lifetime of the spawned process and is automatically cleaned up
+when the process exits. No flag cleanup, no event handling, no polling.
+
+**Why every event-based approach failed (Blender investigation):**
+
+Blender opens 4-5 windows on startup, and its GHOST toolkit repeatedly
+requests `unset_maximized` during initialization. All attempted approaches
+shared the same fundamental problem — they dispatched fullscreen **once**
+(or a few times), but Blender continued overriding the state:
+
+| Approach | What happened |
+|---|---|
+| `openwindow` event → dispatch | Blender overrides after dispatch |
+| `scheduleRebuild` retry → dispatch | Window registered in toplevels before init finishes |
+| `activewindow` event → dispatch | Focus change happens during init cycle |
+| `onActiveToplevelChanged` signal → dispatch | Same timing as activewindow |
+| `Qt.callLater` chain (2-3 ticks) | Init cycle spans many ticks, not just 2-3 |
+| Duplicate openwindow tracking | Correct but insufficient — Blender overrides all dispatches |
+| `action = "set"` (no-op if already fullscreen) | Correct but doesn't help — Blender makes it "not fullscreen" again |
+
+The `exec_cmd` approach succeeds because it's not a one-shot dispatch —
+it's a **persistent rule** that the compositor applies on every state
+change. Even if Blender requests `unset_maximized` 100 times, the rule
+engine overrides it 100 times, and the window stays maximized.
 
 #### 7.4 Edge case: Already fullscreen
 
@@ -366,12 +409,17 @@ Placed at the top level of `hyprsphere.json`:
 11. **`fullscreenOnActivate: true`** — double-click commit also maximises
 12. **`fullscreenOnActivate: true`** — Ctrl+Enter spawn then Alt release
     also maximises the spawned window
-13. **`fullscreenOnActivate: true`** — whitelisted app launch then commit
-    also maximises the launched window
-14. **Window already maximised** — committing it again does NOT un-maximise
+13. **`fullscreenOnActivate: true`** — whitelisted app launch on commit
+    maximises the launched window (Firefox, KiCad, Sioyek, etc.)
+14. **Multi-window app (Blender)** — whitelisted launch maximises ALL
+    startup windows immediately, despite Blender internally requesting
+    `unset_maximized` multiple times during its init cycle. Achieved via
+    `hl.dsp.exec_cmd()` with a PID-tracked maximize rule rather than a
+    one-shot fullscreen dispatch.
+15. **Window already maximised** — committing it again does NOT un-maximise
     it (idempotent due to `action = "set"`)
-15. **`fullscreenOnActivate: false`** (or absent) — no fullscreen dispatch
+16. **`fullscreenOnActivate: false`** (or absent) — no fullscreen dispatch
     occurs, existing behavior is preserved
-16. **Race condition** — the fullscreen dispatch targets the committed
+17. **Race condition** — the fullscreen dispatch targets the committed
     window by address (not "active window"), so it works correctly even
     if a different window gains focus between the two `hyprctl` calls
