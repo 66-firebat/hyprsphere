@@ -192,6 +192,7 @@ PanelWindow {
     property string _pendingSpawnAppId: ""
     property string _pendingSpawnAddr: ""
     property string _pendingFullscreenAppId: ""
+    property string _pendingFullscreenAddr: ""
     // Tracks which window addresses have been fullscreened during a whitelist
     // launch session, so duplicate openwindow events don't re-dispatch.
     property var _fullscreenedAddresses: ({})
@@ -527,6 +528,32 @@ PanelWindow {
                 }
             }
 
+            // Retry loop for fullscreen-on-activate: wait for the window
+            // to appear in Hyprland.toplevels before dispatching (catches
+            // apps like Blender that override our state during init).
+            if (window._pendingFullscreenAddr && raw.length > 0) {
+                var fsReady = false;
+                var fsNormAddr = window._pendingFullscreenAddr.indexOf("0x") === 0
+                    ? window._pendingFullscreenAddr : "0x" + window._pendingFullscreenAddr;
+                for (var fri = 0; fri < raw.length; fri++) {
+                    for (var fwj = 0; fwj < (raw[fri].windows || []).length; fwj++) {
+                        var fAddr = raw[fri].windows[fwj].address || "";
+                        if (fAddr.indexOf("0x") !== 0) fAddr = "0x" + fAddr;
+                        if (fAddr === fsNormAddr) {
+                            fsReady = true;
+                            break;
+                        }
+                    }
+                    if (fsReady) break;
+                }
+                if (!fsReady) {
+                    // Window not yet registered — retry on next tick
+                    window.rebuildScheduled = false;
+                    window.scheduleRebuild();
+                    return;
+                }
+            }
+
             if (window.layer === 2 && window.searchQuery !== "") {
                 // Layer 2 active: re-init Fuse index and re-run search
                 initFuseIndex();
@@ -616,6 +643,16 @@ PanelWindow {
                     }
                 }
                 window._pendingSpawnAddr = "";
+            }
+            // Fullscreen on activate — deferred dispatch via scheduleRebuild.
+            // This runs after the retry loop confirms the window is registered
+            // in Hyprland.toplevels, so it fires after the app's init cycle.
+            if (window._pendingFullscreenAddr) {
+                var rebuildAddr = window._pendingFullscreenAddr;
+                var rebuildPrefix = rebuildAddr.indexOf("0x") === 0 ? "" : "0x";
+                Quickshell.execDetached(["hyprctl", "dispatch",
+                    'hl.dsp.window.fullscreen({ mode = "maximized", action = "set", window = "address:' + rebuildPrefix + rebuildAddr + '" })']);
+                window._pendingFullscreenAddr = "";
             }
             // After any sphere rebuild, ensure overlay still has keyboard focus
             focusGrabber.forceActiveFocus();
@@ -745,16 +782,22 @@ PanelWindow {
         if (node.isWhitelistPlaceholder) {
             window.focusable = false;
             window.overlayActive = false;
+
             // Keep fade animation — overlay can't steal focus since
             // focusable is false. Dispatch by class to ensure focus.
-            var sh = node.exec + ' & sleep 0.3 && hyprctl dispatch ' + "'hl.dsp.focus({window=\\\"class:" + node.appId + "\\\"})'" + ' &';
-            Quickshell.execDetached(["bash", "-c", sh]);
-
-            // Fullscreen on activate — set a flag so the openwindow event
-            // handler fires the fullscreen dispatch with the window's address
-            // as soon as Hyprland reports it, no delay needed.
             if (cfg.fullscreenOnActivate) {
-                window._pendingFullscreenAppId = node.appId;
+                // Launch via exec_cmd with a PID-tracked maximize rule that
+                // is enforced by the compositor continuously. Unlike a one-shot
+                // dispatch, Blender's init cannot override this.
+                Quickshell.execDetached(["hyprctl", "dispatch",
+                    'hl.dsp.exec_cmd("' + node.exec + '", { maximize = true })']);
+                // Focus by class after a small delay
+                Quickshell.execDetached(["bash", "-c",
+                    'sleep 0.5 && hyprctl dispatch hl.dsp.focus({window="class:' + node.appId + '"}) &']);
+            } else {
+                // Original shell chain: launch + focus
+                var sh = node.exec + ' & sleep 0.3 && hyprctl dispatch ' + "'hl.dsp.focus({window=\\\"class:" + node.appId + "\\\"})'" + ' &';
+                Quickshell.execDetached(["bash", "-c", sh]);
             }
             closeSequence.start();
             // Reset Hyprland submap so next ALT+Tab works
@@ -886,6 +929,19 @@ PanelWindow {
                 if (winList[j] !== addr) winFiltered.push(winList[j]);
             }
             appWindowMru[appId] = [addr].concat(winFiltered);
+
+            // Fullscreen on activate for whitelisted app launches.
+            // Fires on every active-toplevel change while the launch flag is
+            // set. Most apps are handled by the immediate openwindow dispatch,
+            // but slow-initializing apps like Blender may override our state
+            // during startup — this re-applies it each time focus lands on one
+            // of their windows. Once Blender finishes init, subsequent
+            // dispatches are no-ops via action = "set".
+            if (window._pendingFullscreenAppId && appId === window._pendingFullscreenAppId) {
+                var fsAddr = addr.indexOf("0x") === 0 ? addr : "0x" + addr;
+                Quickshell.execDetached(["hyprctl", "dispatch",
+                    'hl.dsp.window.fullscreen({ mode = "maximized", action = "set", window = "address:' + fsAddr + '" })']);
+            }
         }
     }
 
@@ -919,16 +975,18 @@ PanelWindow {
                     }
 
                     // Fullscreen on activate for whitelisted app launches.
-                    // Dispatched on every openwindow event matching the appId
-                    // so multi-window apps (Blender opens 4-5) all get
-                    // fullscreened. The flag is cleared in openSwitcher().
-                    // Duplicate openwindow events for the same address are
-                    // skipped to avoid flicker.
                     if (window._pendingFullscreenAppId === appId && !window._fullscreenedAddresses[addr]) {
                         window._fullscreenedAddresses[addr] = true;
                         var fsAddr = addr.indexOf("0x") === 0 ? addr : "0x" + addr;
+                        window._pendingFullscreenAddr = addr;
+                        // Immediate dispatch on openwindow (works for most apps).
                         Quickshell.execDetached(["hyprctl", "dispatch",
                             'hl.dsp.window.fullscreen({ mode = "maximized", action = "set", window = "address:' + fsAddr + '" })']);
+                        // Also trigger scheduleRebuild which will dispatch again
+                        // after the retry loop confirms the window is registered
+                        // in Hyprland.toplevels (catches apps like Blender that
+                        // override the fullscreen state during init).
+                        window.scheduleRebuild();
                     }
                 }
                 return;
@@ -1252,6 +1310,8 @@ PanelWindow {
         window.savedLayer2Query = "";
         window.overlayActive = false;
         window._pendingFullscreenAppId = "";
+        window._pendingFullscreenAddr = "";
+        window._fullscreenedAddresses = {};
         closeSequence.start();
         // Reset Hyprland submap so normal bindings work again
         // NOTE: must use hyprctl eval, not dispatch (submap is Lua-only)
