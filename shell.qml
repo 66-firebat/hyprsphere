@@ -192,7 +192,6 @@ PanelWindow {
     property string _pendingSpawnAppId: ""
     property string _pendingSpawnAddr: ""
     property string _pendingFullscreenAppId: ""
-    property string _pendingFullscreenAddr: ""
     // Tracks which window addresses have been fullscreened during a whitelist
     // launch session, so duplicate openwindow events don't re-dispatch.
     property var _fullscreenedAddresses: ({})
@@ -200,6 +199,7 @@ PanelWindow {
     // ── PATCH 1: mruMethod — window-level MRU tracking ──
     property var globalWindowMru: []
     property string _preSelectedAppId: ""
+    property bool _windowClosedThisSession: false
 
     function buildLayer0() {
         var groups = {};
@@ -244,6 +244,7 @@ PanelWindow {
         window._fullscreenedAddresses = {};
         window._pendingSpawnAppId = "";
         window._preSelectedAppId = "";
+        window._windowClosedThisSession = false;
 
         // Enter Hyprland submap so letter keys pass through to QML
         // NOTE: must use hyprctl eval, not dispatch (submap is Lua-only)
@@ -565,33 +566,7 @@ PanelWindow {
                 }
             }
 
-            // Retry loop for fullscreen-on-activate: wait for the window
-            // to appear in Hyprland.toplevels before dispatching (catches
-            // apps like Blender that override our state during init).
-            if (window._pendingFullscreenAddr && raw.length > 0) {
-                var fsReady = false;
-                var fsNormAddr = window._pendingFullscreenAddr.indexOf("0x") === 0
-                    ? window._pendingFullscreenAddr : "0x" + window._pendingFullscreenAddr;
-                for (var fri = 0; fri < raw.length; fri++) {
-                    for (var fwj = 0; fwj < (raw[fri].windows || []).length; fwj++) {
-                        var fAddr = raw[fri].windows[fwj].address || "";
-                        if (fAddr.indexOf("0x") !== 0) fAddr = "0x" + fAddr;
-                        if (fAddr === fsNormAddr) {
-                            fsReady = true;
-                            break;
-                        }
-                    }
-                    if (fsReady) break;
-                }
-                if (!fsReady) {
-                    // Window not yet registered — retry on next tick
-                    window.rebuildScheduled = false;
-                    window.scheduleRebuild();
-                    return;
-                }
-            }
-
-            if (window.layer === 2 && window.searchQuery !== "") {
+if (window.layer === 2 && window.searchQuery !== "") {
                 // Layer 2 active: re-init Fuse index and re-run search
                 initFuseIndex();
                 _executeSearch();
@@ -681,17 +656,7 @@ PanelWindow {
                 }
                 window._pendingSpawnAddr = "";
             }
-            // Fullscreen on activate — deferred dispatch via scheduleRebuild.
-            // This runs after the retry loop confirms the window is registered
-            // in Hyprland.toplevels, so it fires after the app's init cycle.
-            if (window._pendingFullscreenAddr) {
-                var rebuildAddr = window._pendingFullscreenAddr;
-                var rebuildPrefix = rebuildAddr.indexOf("0x") === 0 ? "" : "0x";
-                Quickshell.execDetached(["hyprctl", "dispatch",
-                    'hl.dsp.window.fullscreen({ mode = "maximized", action = "set", window = "address:' + rebuildPrefix + rebuildAddr + '" })']);
-                window._pendingFullscreenAddr = "";
-            }
-            // PATCH 1: mruMethod="window" — recalculate pre-selection
+// PATCH 1: mruMethod="window" — recalculate pre-selection
             // dynamically so the sphere follows window opens/closes.
             // Don't override the spawn auto-selection though.
             if (cfg.mruMethod === "window" && window.visible && !window._pendingSpawnAppId) {
@@ -903,10 +868,13 @@ PanelWindow {
                 var spawnMru = appWindowMru[node.appId] || [];
                 addr = spawnMru.length >= 1 ? spawnMru[0] : "";
             } else if (cfg.mruMethod === "window" && node.appId === window._preSelectedAppId) {
-                // Normal previous-window targeting.
+                // Normal previous-window targeting, unless a window was
+                // just closed — then the target shifts to the new index 0.
+                var wmruIdx = window._windowClosedThisSession ? 0 : 1;
                 addr = window.globalWindowMru.length >= 2
-                    ? window.globalWindowMru[1]
+                    ? window.globalWindowMru[wmruIdx]
                     : (node.windows[0] ? node.windows[0].address : "");
+                window._windowClosedThisSession = false;
             } else {
                 // Layer 0 or layer 2 app node: focus MRU-most window
                 var winMru = appWindowMru[node.appId] || [];
@@ -1114,7 +1082,6 @@ PanelWindow {
                     if (window._pendingFullscreenAppId === appId && !window._fullscreenedAddresses[addr]) {
                         window._fullscreenedAddresses[addr] = true;
                         var fsAddr = addr.indexOf("0x") === 0 ? addr : "0x" + addr;
-                        window._pendingFullscreenAddr = addr;
                         Quickshell.execDetached(["hyprctl", "dispatch",
                             'hl.dsp.window.fullscreen({ mode = "maximized", action = "set", window = "address:' + fsAddr + '" })']);
                         if (window.visible) {
@@ -1174,6 +1141,12 @@ PanelWindow {
                 var gwNew = [];
                 for (var gi = 0; gi < globalWindowMru.length; gi++) {
                     if (globalWindowMru[gi] !== gwNorm) gwNew.push(globalWindowMru[gi]);
+                }
+                // If the closed window was at index 0, the remaining index 0
+                // now holds the window the user was on before it — commit
+                // should target that window, not the older one at index 1.
+                if (globalWindowMru.length >= 1 && globalWindowMru[0] === gwNorm) {
+                    window._windowClosedThisSession = true;
                 }
                 globalWindowMru = gwNew;
             }
@@ -1456,7 +1429,6 @@ PanelWindow {
         window.savedLayer2Query = "";
         window.overlayActive = false;
         window._pendingFullscreenAppId = "";
-        window._pendingFullscreenAddr = "";
         window._fullscreenedAddresses = {};
         closeSequence.start();
         // Reset Hyprland submap so normal bindings work again

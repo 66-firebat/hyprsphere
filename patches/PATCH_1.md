@@ -177,6 +177,36 @@ than the default `0`. This ensures the satellite card shows the window
 that would be focused on commit (Ghostty-A in the M21 scenario), not the
 MRU-most window of that app (Ghostty-B).
 
+### Closed-window commit targeting
+
+When a window is closed via Ctrl+C (or externally) while the overlay is
+open, the closewindow handler removes its address from `globalWindowMru`.
+If the closed window happened to be at `globalWindowMru[0]` (the most
+recently focused window), the remaining array shifts: the SECOND most
+recent window becomes the new `globalWindowMru[0]`, and what was the
+THIRD most recent becomes `globalWindowMru[1]`.
+
+The normal commit logic uses `globalWindowMru[1]` (the previous window).
+But after closing the most recent window, the user expects to go to the
+window they were on BEFORE it — which is now at `globalWindowMru[0]`, not
+`globalWindowMru[1]`.
+
+**Fix:** A `_windowClosedThisSession` flag is set when a closewindow
+handler removes an address from `globalWindowMru[0]`. The flag is cleared
+in `openSwitcher()`. In `commitSelection()`, when this flag is true, the
+commit uses `globalWindowMru[0]` instead of `globalWindowMru[1]`:
+
+```javascript
+var wmruIdx = window._windowClosedThisSession ? 0 : 1;
+addr = window.globalWindowMru.length >= 2
+    ? window.globalWindowMru[wmruIdx]
+    : (node.windows[0] ? node.windows[0].address : "");
+window._windowClosedThisSession = false;
+```
+
+This ensures that Ctrl+C followed by Alt release takes you to the window
+that was focused before the closed window, not an older one.
+
 ### `0x` prefix normalization in `globalWindowMru`
 
 Window addresses from `t.address` in `onActiveToplevelChanged` do NOT
