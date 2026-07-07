@@ -444,7 +444,7 @@ grep -c 'mruMethod' hyprsphere.json
 # Expected: 0
 
 # C3: globalWindowMru is always maintained in onActiveToplevelChanged
-grep -A 20 'function onActiveToplevelChanged' shell.qml | grep -c 'globalWindowMru'
+grep -A 40 'function onActiveToplevelChanged' shell.qml | grep -c 'globalWindowMru'
 # Expected: at least 1
 
 # C4: globalWindowMru is always cleaned in closewindow handler

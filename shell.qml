@@ -191,10 +191,7 @@ PanelWindow {
     property bool searchFocused: false
     property string _pendingSpawnAppId: ""
     property string _pendingSpawnAddr: ""
-    property string _pendingFullscreenAppId: ""
-    // Tracks which window addresses have been fullscreened during a whitelist
-    // launch session, so duplicate openwindow events don't re-dispatch.
-    property var _fullscreenedAddresses: ({})
+
 
     // ── Global window-level MRU tracking ──
     property var globalWindowMru: []
@@ -255,8 +252,6 @@ PanelWindow {
 
         window.focusable = true;
         window.overlayActive = true;
-        window._pendingFullscreenAppId = "";
-        window._fullscreenedAddresses = {};
         window._pendingSpawnAppId = "";
         window._preSelectedAppId = "";
         window._windowClosedThisSession = false;
@@ -818,13 +813,9 @@ if (window.layer === 2 && window.searchQuery !== "") {
             // Keep fade animation — overlay can't steal focus since
             // focusable is false. Dispatch by class to ensure focus.
             if (cfg.fullscreenOnActivate) {
-                // Launch via exec_cmd with a PID-tracked maximize rule. Also
-                // set _pendingFullscreenAppId as a fallback so the openwindow
-                // event handler dispatches fullscreen by address — some apps
-                // (like GIMP) don't respond to the PID-tracked rule.
+                // Launch via exec_cmd with a PID-tracked maximize rule
                 Quickshell.execDetached(["hyprctl", "dispatch",
                     'hl.dsp.exec_cmd("' + node.exec + '", { maximize = true })']);
-                window._pendingFullscreenAppId = node.appId;
                 // Focus by class after a small delay
                 Quickshell.execDetached(["bash", "-c",
                     'sleep 0.5 && hyprctl dispatch hl.dsp.focus({window="class:' + node.appId + '"}) &']);
@@ -960,7 +951,6 @@ if (window.layer === 2 && window.searchQuery !== "") {
         // the compositor-enforced rule persists through their entire startup.
         // Otherwise, launch via bash -c (original behaviour).
         if (cfg.fullscreenOnActivate) {
-            window._pendingFullscreenAppId = appId;
             Quickshell.execDetached(["hyprctl", "dispatch",
                 'hl.dsp.exec_cmd("' + execCmd + '", { maximize = true })']);
         } else {
@@ -1026,18 +1016,7 @@ if (window.layer === 2 && window.searchQuery !== "") {
                 globalWindowMru = [gwAddr].concat(gwFiltered);
             }
 
-            // Fullscreen on activate for whitelisted app launches.
-            // Fires on every active-toplevel change while the launch flag is
-            // set. Most apps are handled by the immediate openwindow dispatch,
-            // but slow-initializing apps like Blender may override our state
-            // during startup — this re-applies it each time focus lands on one
-            // of their windows. Once Blender finishes init, subsequent
-            // dispatches are no-ops via action = "set".
-            if (window._pendingFullscreenAppId && appId === window._pendingFullscreenAppId) {
-                var fsAddr = addr.indexOf("0x") === 0 ? addr : "0x" + addr;
-                Quickshell.execDetached(["hyprctl", "dispatch",
-                    'hl.dsp.window.fullscreen({ mode = "maximized", action = "set", window = "address:' + fsAddr + '" })']);
-            }
+
         }
     }
 
@@ -1080,18 +1059,7 @@ if (window.layer === 2 && window.searchQuery !== "") {
                         }
                     }
 
-                    // Fullscreen on activate for whitelisted app launches.
-                    if (window._pendingFullscreenAppId === appId && !window._fullscreenedAddresses[addr]) {
-                        window._fullscreenedAddresses[addr] = true;
-                        var fsAddr = addr.indexOf("0x") === 0 ? addr : "0x" + addr;
-                        Quickshell.execDetached(["hyprctl", "dispatch",
-                            'hl.dsp.window.fullscreen({ mode = "maximized", action = "set", window = "address:' + fsAddr + '" })']);
-                        if (window.visible) {
-                            window.focusable = false;
-                            window.focusable = true;
-                            focusGrabber.forceActiveFocus();
-                        }
-                    }
+
                 }
                 return;
             }
@@ -1433,8 +1401,6 @@ if (window.layer === 2 && window.searchQuery !== "") {
         window.savedLayer2Model = [];
         window.savedLayer2Query = "";
         window.overlayActive = false;
-        window._pendingFullscreenAppId = "";
-        window._fullscreenedAddresses = {};
         closeSequence.start();
         // Reset Hyprland submap so normal bindings work again
         // NOTE: must use hyprctl eval, not dispatch (submap is Lua-only)
