@@ -743,6 +743,15 @@ PanelWindow {
             // focusable is false. Dispatch by class to ensure focus.
             var sh = node.exec + ' & sleep 0.3 && hyprctl dispatch ' + "'hl.dsp.focus({window=\\\"class:" + node.appId + "\\\"})'" + ' &';
             Quickshell.execDetached(["bash", "-c", sh]);
+
+            // Fullscreen on activate — dispatched separately with a small delay
+            // to give the app time to create its window, then targeted by class.
+            if (cfg.fullscreenOnActivate) {
+                // Wrap hyprctl argument in single quotes so bash doesn't
+                // interpret ( ) and { } as shell metacharacters.
+                Quickshell.execDetached(["bash", "-c",
+                    'sleep 1 && hyprctl dispatch ' + "'hl.dsp.window.fullscreen({ mode = \"maximized\", action = \"set\", window = \"class:" + node.appId + "\" })'" ]);
+            }
             closeSequence.start();
             // Reset Hyprland submap so next ALT+Tab works
             Quickshell.execDetached(["hyprctl", "eval", 'hl.dispatch(hl.dsp.submap("reset"))']);
@@ -776,6 +785,12 @@ PanelWindow {
         // Focus the target window using Lua dispatch format.
         var prefix = addr.indexOf("0x") === 0 ? "" : "0x";
         Quickshell.execDetached(["hyprctl", "dispatch", 'hl.dsp.focus({window="address:' + prefix + addr + '"})']);
+
+        // Fullscreen on activate (if configured)
+        if (cfg.fullscreenOnActivate) {
+            Quickshell.execDetached(["hyprctl", "dispatch",
+                'hl.dsp.window.fullscreen({ mode = "maximized", action = "set", window = "address:' + prefix + addr + '" })']);
+        }
 
         // Reset Hyprland submap so normal bindings work again
         // NOTE: must use hyprctl eval, not dispatch (submap is Lua-only)

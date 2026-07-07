@@ -42,6 +42,41 @@ grep -A 5 "function finishOpenSwitcher" hyprsphere.qml | grep -c "overlayActive"
 # Expected: at least 1
 ```
 
+### C6. `fullscreenOnActivate` config reference exists
+
+```bash
+grep -c "fullscreenOnActivate" hyprsphere.qml
+# Expected: at least 1
+```
+
+### C7. Path A fullscreen dispatch with address targeting
+
+```bash
+grep -A 20 "function commitSelection" hyprsphere.qml | grep -c "fullscreenOnActivate"
+# Expected: at least 1
+```
+
+### C8. Path B fullscreen dispatch in whitelist chain
+
+```bash
+grep -A 10 "isWhitelistPlaceholder" hyprsphere.qml | grep -c "fullscreenOnActivate"
+# Expected: at least 1
+```
+
+### C9. Uses `mode = "maximized"` in the dispatch
+
+```bash
+grep -c "maximized" hyprsphere.qml
+# Expected: at least 1
+```
+
+### C10. Uses `action = "set"` in the dispatch
+
+```bash
+grep -c 'action = "set"' hyprsphere.qml
+# Expected: at least 1
+```
+
 ---
 
 ## Manual tests
@@ -159,6 +194,131 @@ toplevel refresh (or just rely on timing on a slower machine).
 
 ---
 
+## Fullscreen-on-activate tests
+
+**Prerequisites:**
+- Set `"fullscreenOnActivate": true` in `hyprsphere.json` before running
+  M10–M17
+- For M15, set `"fullscreenOnActivate": false` (or remove it)
+- Restart quickshell after each config change: `pkill -f quickshell.*shell.qml`
+  then restart
+
+---
+
+### M10. Basic fullscreen — layer 0 app node commit
+
+**Setup:** Have two or more apps running (e.g., Ghostty + Firefox), neither
+currently maximized. `fullscreenOnActivate: true`.
+
+1. Open overlay with **Alt+Tab**
+2. Tab to an app that is NOT currently maximized
+3. Release **Alt** to commit
+4. **Verify:** The overlay closes
+5. **Verify:** The selected window is now focused
+6. **Verify:** The window is maximized (fills workspace, title bar visible)
+7. Manually un-maximize the window (e.g., click the restore button)
+8. Open overlay again, select a different app, release Alt
+9. **Verify:** The second app's window is also maximized
+
+---
+
+### M11. Fullscreen — layer 1 window node commit
+
+**Setup:** Have one app with 2+ windows open. `fullscreenOnActivate: true`.
+
+1. Open overlay, tab to the multi-window app
+2. Press `;` to drill into its windows (layer 1)
+3. Tab to a specific window that is NOT maximized
+4. Release **Alt** to commit
+5. **Verify:** The specific window is focused and maximized
+6. Open overlay again, drill down, select a different window
+7. Release **Alt**
+8. **Verify:** The second window is focused and maximized
+
+---
+
+### M12. Fullscreen — layer 2 search result commit
+
+**Setup:** App running, `fullscreenOnActivate: true`.
+
+1. Open overlay, type letters to search for an app
+2. Tab to the app result or a window result in the search results
+3. Release **Alt** to commit
+4. **Verify:** The window is focused and maximized
+
+---
+
+### M13. Fullscreen — whitelisted app launch
+
+**Setup:** Have a whitelisted app that is NOT currently running (e.g.,
+Blender, KiCad, or Sioyek). `fullscreenOnActivate: true`.
+
+1. Open overlay with **Alt+Tab**
+2. Tab to the whitelisted app placeholder (shows the app even though it's
+   not running)
+3. Release **Alt** to commit (launches the app)
+4. **Verify:** The app launches
+5. **Verify:** After the app opens, it is focused
+6. **Verify:** The window is maximized
+
+---
+
+### M14. Idempotency — already-maximized window stays maximized
+
+**Setup:** `fullscreenOnActivate: true`. An app that is already maximized
+(e.g., use Alt+F or the window buttons to maximise it first).
+
+1. Open overlay with **Alt+Tab**
+2. Tab to the already-maximized window
+3. Release **Alt** to commit
+4. **Verify:** The window is STILL maximized (not toggled off)
+5. Manually un-maximize the window
+6. Open overlay and commit the same window again
+7. **Verify:** The window is now maximized (re-maximized correctly)
+
+---
+
+### M15. Feature disabled — `fullscreenOnActivate: false`
+
+**Setup:** Set `"fullscreenOnActivate": false` (or remove the key entirely).
+Restart quickshell.
+
+1. Open overlay with **Alt+Tab**
+2. Select any app that is NOT currently maximized
+3. Release **Alt** to commit
+4. **Verify:** The window is focused but NOT maximized (preserves existing
+   behavior)
+5. Repeat with a different window
+6. **Verify:** No window is maximized on commit
+
+---
+
+### M16. Fullscreen through double-click
+
+**Setup:** `fullscreenOnActivate: true`.
+
+1. Open overlay with **Alt+Tab**
+2. Double-click a non-maximized app node
+3. **Verify:** The overlay closes, the window is focused and maximized
+4. Repeat with a different app
+5. **Verify:** Same behavior
+
+---
+
+### M17. Fullscreen through Ctrl+Enter spawn
+
+**Setup:** `fullscreenOnActivate: true`. Have Firefox (or any spawnable app)
+running.
+
+1. Open overlay with **Alt+Tab**
+2. Tab to Firefox (or another spawnable app)
+3. Press **Ctrl+Enter** to spawn a new window
+4. **Verify:** The overlay stays open, sphere rebuilds with the new window
+5. Release **Alt** to commit
+6. **Verify:** The newly spawned window is focused and maximized
+
+---
+
 ## Running all tests
 
 ```bash
@@ -170,8 +330,13 @@ echo "C2 (openSwitcher no introPhaseAnim): $(grep -A 15 'function openSwitcher' 
 echo "C3 (openSwitcher no forceActiveFocus): $(grep -A 15 'function openSwitcher' hyprsphere.qml | grep -c 'forceActiveFocus')" >> PHASE_10_TEST_LOG.txt
 echo "C4 (finishOpenSwitcher has visible=true): $(grep -A 30 'function finishOpenSwitcher' hyprsphere.qml | grep -c 'visible = true')" >> PHASE_10_TEST_LOG.txt
 echo "C5 (finishOpenSwitcher has overlayActive guard): $(grep -A 5 'function finishOpenSwitcher' hyprsphere.qml | grep -c 'overlayActive')" >> PHASE_10_TEST_LOG.txt
+echo "C6 (fullscreenOnActivate config ref): $(grep -c 'fullscreenOnActivate' hyprsphere.qml)" >> PHASE_10_TEST_LOG.txt
+echo "C7 (Path A fullscreen in commitSelection): $(grep -A 20 'function commitSelection' hyprsphere.qml | grep -c 'fullscreenOnActivate')" >> PHASE_10_TEST_LOG.txt
+echo "C8 (Path B fullscreen in whitelist chain): $(grep -A 10 'isWhitelistPlaceholder' hyprsphere.qml | grep -c 'fullscreenOnActivate')" >> PHASE_10_TEST_LOG.txt
+echo "C9 (mode=maximized dispatch): $(grep -c 'maximized' hyprsphere.qml)" >> PHASE_10_TEST_LOG.txt
+echo "C10 (action=set dispatch): $(grep -c 'action.*set' hyprsphere.qml)" >> PHASE_10_TEST_LOG.txt
 echo "" >> PHASE_10_TEST_LOG.txt
-echo "--- Manual tests ---" >> PHASE_10_TEST_LOG.txt
+echo "--- Manual tests (gated visibility) ---" >> PHASE_10_TEST_LOG.txt
 echo "Run each manual test (M1-M9) and log PASS/FAIL below:" >> PHASE_10_TEST_LOG.txt
 echo "" >> PHASE_10_TEST_LOG.txt
 echo "M1 (first open — no stale/data flash):" >> PHASE_10_TEST_LOG.txt
@@ -183,4 +348,16 @@ echo "M6 (entrance animation):" >> PHASE_10_TEST_LOG.txt
 echo "M7 (keyboard focus):" >> PHASE_10_TEST_LOG.txt
 echo "M8 (visibleChanged integration):" >> PHASE_10_TEST_LOG.txt
 echo "M9 (no regression):" >> PHASE_10_TEST_LOG.txt
+echo "" >> PHASE_10_TEST_LOG.txt
+echo "--- Manual tests (fullscreen on activate) ---" >> PHASE_10_TEST_LOG.txt
+echo "Set '"'"'fullscreenOnActivate': true'"'"' in hyprsphere.json before running M10-M17." >> PHASE_10_TEST_LOG.txt
+echo "" >> PHASE_10_TEST_LOG.txt
+echo "M10 (layer 0 app node commit):" >> PHASE_10_TEST_LOG.txt
+echo "M11 (layer 1 window node commit):" >> PHASE_10_TEST_LOG.txt
+echo "M12 (layer 2 search result commit):" >> PHASE_10_TEST_LOG.txt
+echo "M13 (whitelisted app launch):" >> PHASE_10_TEST_LOG.txt
+echo "M14 (idempotency — already maximized):" >> PHASE_10_TEST_LOG.txt
+echo "M15 (disabled — false/absent):" >> PHASE_10_TEST_LOG.txt
+echo "M16 (double-click commit):" >> PHASE_10_TEST_LOG.txt
+echo "M17 (Ctrl+Enter spawn):" >> PHASE_10_TEST_LOG.txt
 ```

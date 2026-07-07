@@ -12,16 +12,22 @@ cd "$SCRIPT_DIR"
 
 # Kill any existing quickshell instances running our config
 echo "Killing existing hyprsphere processes..."
-pkill -f "quickshell.*shell.qml" 2>/dev/null || true
+pkill quickshell 2>/dev/null; sleep 1
+# Also clean up any orphaned quickshell-logged instances
+pkill -f "/nix/store.*quickshell/bin/quickshell" 2>/dev/null || true
 sleep 1
 
 # Ensure the symlinks exist for IPC discovery
 mkdir -p "$HOME/.config/quickshell"
-ln -sf "$SCRIPT_DIR/hyprsphere.qml" "$HOME/.config/quickshell/shell.qml"
-ln -sf "$SCRIPT_DIR/lib"           "$HOME/.config/quickshell/lib"
+ln -sf "$SCRIPT_DIR/shell.qml"        "$HOME/.config/quickshell/shell.qml"
+rm -f  "$HOME/.config/quickshell/hyprsphere.json"
+ln -sf "$SCRIPT_DIR/hyprsphere.json" "$HOME/.config/quickshell/hyprsphere.json"
+rm -rf "$HOME/.config/quickshell/lib"
+ln -sf "$SCRIPT_DIR/lib"              "$HOME/.config/quickshell/lib"
 echo "Symlinks created:"
-echo "  $HOME/.config/quickshell/shell.qml -> hyprsphere.qml"
-echo "  $HOME/.config/quickshell/lib       -> lib/"
+echo "  $HOME/.config/quickshell/shell.qml        -> shell.qml"
+echo "  $HOME/.config/quickshell/hyprsphere.json  -> hyprsphere.json"
+echo "  $HOME/.config/quickshell/lib              -> lib/"
 
 # Locate the Qt5Compat QML import path for Quickshell
 # This is typically provided by a system package (e.g. qt5compat on Nix).

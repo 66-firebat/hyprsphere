@@ -207,11 +207,133 @@ This unmaps and remaps the surface to force the compositor to re-grant
 keyboard focus. It only runs when the overlay is already visible, so it
 doesn't interact with the Phase 10 changes.
 
+### 7. Fullscreen on activate (configurable toggle)
+
+**Objective:** When `fullscreenOnActivate` is set to `true` in
+`hyprsphere.json`, any window committed via the overlay (Alt release,
+double-click, or Ctrl+Enter spawn → Alt release) is automatically
+maximized immediately after focus.
+
+**Mode:** `"maximized"` — keeps the title bar and window decorations
+visible while filling the workspace. This is the same mode used by the
+`Alt + F` keybind in `keymaps.lua` (`hl.dsp.window.fullscreen({ mode =
+"maximized" })`).
+
+**Idempotency:** Uses `action = "set"` so that if the window is already
+maximized, the dispatch is a no-op. This prevents accidental
+un-maximizing when cycling back to an already-maximized window.
+
+#### 7.1 Config
+
+Add a single boolean toggle to `hyprsphere.json`:
+
+```json
+"fullscreenOnActivate": true
+```
+
+When `false` or absent, behavior is unchanged from the current
+implementation (no fullscreen on commit).
+
+#### 7.2 Path A — Normal window focus (address-based)
+
+In `commitSelection()`, after the focus dispatch for existing windows
+(layer 0 app groups and layer 1/2 window nodes):
+
+```qml
+// Focus the target window using Lua dispatch format.
+var prefix = addr.indexOf("0x") === 0 ? "" : "0x";
+Quickshell.execDetached(["hyprctl", "dispatch", 'hl.dsp.focus({window="address:' + prefix + addr + '"})']);
+
+// Fullscreen on activate (if configured)
+if (window.cfg.fullscreenOnActivate) {
+    Quickshell.execDetached(["hyprctl", "dispatch",
+        'hl.dsp.window.fullscreen({ mode = "maximized", action = "set", window = "address:' + prefix + addr + '" })']);
+}
+```
+
+**Why pass the address to fullscreen too?** Because the focus and
+fullscreen are separate `hyprctl` calls (two `execDetached` invocations).
+If we relied on "active window" state, the focus might not have taken
+effect by the time the fullscreen call ran. Passing the address directly
+makes the fullscreen target explicit and eliminates the race condition.
+
+#### 7.3 Path B — Whitelist placeholder launch
+
+In `commitSelection()`, after the focus dispatch for whitelisted apps
+(not yet running):
+
+**Before:**
+```qml
+var sh = node.exec + ' & sleep 0.3 && hyprctl dispatch '
+    + "'hl.dsp.focus({window=\\\"class:" + node.appId + "\\\"})'" + ' &';
+Quickshell.execDetached(["bash", "-c", sh]);
+```
+
+**After (with fullscreenOnActivate):**
+```qml
+var sh = node.exec + ' & sleep 0.3 && hyprctl dispatch '
+    + "'hl.dsp.focus({window=\\\"class:" + node.appId + "\\\"})'"
+    + (cfg.fullscreenOnActivate
+        ? ' && hyprctl dispatch ' + "'hl.dsp.window.fullscreen({ mode = \\\"maximized\\\", action = \\\"set\\\" })'"
+        : '')
+    + ' &';
+Quickshell.execDetached(["bash", "-c", sh]);
+```
+
+For Path B, the window doesn't exist yet at commit time, so we can't
+pass an address. Instead we rely on the `sleep 0.3 && focus` chain:
+the sleep gives the app time to spawn, the focus targets by class, and
+by the time the fullscreen dispatch runs the window is active. No
+address parameter is passed to the fullscreen dispatcher, so it uses
+the active window (which is the one we just focused).
+
+#### 7.4 Edge case: Already fullscreen
+
+The `action = "set"` parameter in the dispatcher means:
+- If the window is NOT already maximized → set it maximized
+- If the window IS already maximized → no-op
+
+This is important because `fullscreen()` and `fullscreenstate()` without
+`action = "set"` act as toggles — they would un-maximize an already
+maximized window when you cycle back to it in the switcher. The `set`
+action ensures idempotent behavior: commit always leaves the window
+maximized, never toggles it off.
+
+#### 7.5 Edge case: Config absent or false
+
+When `fullscreenOnActivate` is not present in the config JSON (or is
+set to `false`), the conditional guards evaluate to falsy and the
+fullscreen dispatches are skipped. Zero behavioral change for existing
+users.
+
+#### 7.6 Interaction with gated visibility (Phase 10 main fix)
+
+Both focus dispatches happen inside `commitSelection()`, which is only
+reachable via Alt release, double-click, or the IPC `commit` handler.
+The overlay is already visible at that point, so the Phase 10 changes
+(visibility gating in `finishOpenSwitcher()`) don't interact with this
+feature at all.
+
 ---
 
 ## Config
 
-No new config fields.
+### New field: `fullscreenOnActivate`
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `fullscreenOnActivate` | boolean | `false` | When `true`, any window
+  committed via the overlay is automatically maximized immediately after
+  focus. Uses `mode = "maximized"` with `action = "set"` — if the window
+  is already maximized, the dispatch is a no-op. |
+
+Placed at the top level of `hyprsphere.json`:
+```json
+{
+  "fullscreenOnActivate": true,
+  ...existing config...
+}
+```
 
 ---
 
@@ -234,3 +356,17 @@ No new config fields.
 9. **All existing features** continue to work: Tab cycling, `;` drill-down,
    search, Ctrl+C close, Ctrl+Enter spawn, Alt release commit, mouse
    interaction
+10. **`fullscreenOnActivate: true`** — committing a window (Alt release)
+    maximises it immediately after focus, at all layers (0, 1, 2)
+11. **`fullscreenOnActivate: true`** — double-click commit also maximises
+12. **`fullscreenOnActivate: true`** — Ctrl+Enter spawn then Alt release
+    also maximises the spawned window
+13. **`fullscreenOnActivate: true`** — whitelisted app launch then commit
+    also maximises the launched window
+14. **Window already maximised** — committing it again does NOT un-maximise
+    it (idempotent due to `action = "set"`)
+15. **`fullscreenOnActivate: false`** (or absent) — no fullscreen dispatch
+    occurs, existing behavior is preserved
+16. **Race condition** — the fullscreen dispatch targets the committed
+    window by address (not "active window"), so it works correctly even
+    if a different window gains focus between the two `hyprctl` calls

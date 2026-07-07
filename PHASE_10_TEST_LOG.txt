@@ -1,0 +1,18 @@
+=== PHASE 10 TESTS Mon Jul  6 10:12:35 PM MDT 2026 ===
+
+--- Automated checks (gated visibility) ---
+C1 (openSwitcher no visible=true): 0
+C2 (openSwitcher no introPhaseAnim): 0
+C3 (openSwitcher no forceActiveFocus): 0
+C4 (finishOpenSwitcher has visible=true): 0
+C5 (finishOpenSwitcher has overlayActive guard): 1
+
+--- Automated checks (fullscreen on activate) ---
+C6 (fullscreenOnActivate config ref): 2
+C7 (Path A fullscreen in commitSelection): 1
+C8 (Path B fullscreen in whitelist chain): 1
+C9 (mode=maximized dispatch): 2
+C10 (action=set dispatch): 2
+
+--- Config verification ---
+fullscreenOnActivate in hyprsphere.json: 1
