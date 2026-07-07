@@ -145,6 +145,60 @@ if (mruMethod === "window" && globalWindowMru.length >= 2) {
 
 This ensures the sphere dynamically follows window opens and closes.
 
+**Important:** The recalculation is **skipped** when `_pendingSpawnAppId` is
+set (a Ctrl+Enter spawn is in progress), so the spawn auto-selection takes
+priority and doesn't get overwritten.
+
+### Spawn override in `commitSelection()`
+
+When a window was just spawned via Ctrl+Enter, `_pendingSpawnAppId` is set.
+The layer-0 commit path checks this BEFORE any `mruMethod` logic:
+
+```javascript
+if (window._pendingSpawnAppId === node.appId) {
+    // Focus the MRU-most window via appWindowMru (updated immediately
+    // by the openwindow handler, unlike node.windows which depends
+    // on async toplevel refresh).
+    var spawnMru = appWindowMru[node.appId] || [];
+    addr = spawnMru.length >= 1 ? spawnMru[0] : "";
+}
+```
+
+This handles the case where `onActiveToplevelChanged` hasn't fired (because
+the overlay has keyboard focus, not the spawned window), so `globalWindowMru`
+and `node.windows` in the sphere model are both stale.
+
+### Drill-down pre-selection (layer 1)
+
+When drilling down into the pre-selected app (`app.appId ===
+_preSelectedAppId`), `drillDown()` sorts windows by `appWindowMru[appId]`
+then sets `selectedAppIndex` to the index of `globalWindowMru[1]` rather
+than the default `0`. This ensures the satellite card shows the window
+that would be focused on commit (Ghostty-A in the M21 scenario), not the
+MRU-most window of that app (Ghostty-B).
+
+### `0x` prefix normalization in `globalWindowMru`
+
+Window addresses from `t.address` in `onActiveToplevelChanged` do NOT
+include the `0x` hex prefix, but addresses from `buildLayer0()`
+(`Hyprland.toplevels`) also omit it. Comparisons against `sphereModel`
+normalize both sides to include `0x`. To avoid mismatches, all addresses
+are normalized to include `0x` when they enter `globalWindowMru`:
+
+```javascript
+var gwAddr = addr.indexOf("0x") === 0 ? addr : "0x" + addr;
+```
+
+### State cleanup in `openSwitcher()`
+
+`_pendingSpawnAppId` is cleared at the start of each overlay session to
+prevent stale spawn state from a previous session affecting commit logic:
+
+```javascript
+window._pendingSpawnAppId = "";
+window._preSelectedAppId = "";
+```
+
 ### Whitelisted apps
 
 Whitelisted apps (placeholders without windows) always appear after all
@@ -180,6 +234,9 @@ pre-selection falls to index 0.
 | `globalWindowMru[1]` closed while overlay open | `closewindow` cleanup shifts the array; next rebuild picks up the new index-1 |
 | `globalWindowMru[1]` belongs to a special-workspace window | `buildLayer0()` skips special workspaces, so the app isn't in `sphereModel`; fall back to index 0 |
 | User Tabs away from pre-selected app | Commit uses `appWindowMru[appId][0]` — current behaviour for non-pre-selected apps |
+| Ctrl+Enter spawns a window of the pre-selected app | `_pendingSpawnAppId` diverts commit to `appWindowMru[appId][0]` (the spawned window) instead of `globalWindowMru[1]` |
+| Ctrl+Enter spawn + rebuild | MRU recalculation is skipped when `_pendingSpawnAppId` is set, so the spawn auto-selection is not overwritten |
+| Drill-down from pre-selected app | Pre-selects the window at `globalWindowMru[1]` (not MRU-most index 0) so the satellite card matches what commit would focus |
 | `mruMethod` not in config | Defaults to `"app"` — zero behavioural change |
 | Next Alt+Tab after committing via `mruMethod="window"` | The committed window is now at `globalWindowMru[0]` (current), and the window that was current before it is now at `globalWindowMru[1]` (previous) |
 

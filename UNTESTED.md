@@ -4,6 +4,17 @@ Tests that were deferred during manual testing. These are edge cases
 that are rare enough to not block shipping, but should be revisited when making
 changes that touch the relevant code paths.
 
+## Phase 10
+
+### M25. mruMethod defaults to "app" when absent
+
+With `"mruMethod": "app"` (or absent), the pre-selection should use
+`appMru[1]` (app-level MRU) rather than `globalWindowMru[1]` (window-level
+MRU).
+
+**Reason skipped:** Not interested in testing `"app"` mode at this time.
+All development focus is on `"window"` mode.
+
 ## Phase 9
 
 ### M7. No-op on unresolvable app
