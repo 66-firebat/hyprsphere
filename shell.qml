@@ -974,9 +974,21 @@ if (window.layer === 2 && window.searchQuery !== "") {
         // Build exec command: whitelist exec → execMap → appId fallback
         var execCmd = node.exec || window.resolveExec(appId) || appId;
 
-        // Launch the app
+        // If fullscreen on activate is on, use exec_cmd with a PID-tracked
+        // maximize rule (same as the whitelist commit path). Some apps like
+        // Blender override our one-shot openwindow dispatch during init, but
+        // the compositor-enforced rule persists through their entire startup.
+        // Otherwise, launch via bash -c (original behaviour).
+        if (cfg.fullscreenOnActivate) {
+            window._pendingFullscreenAppId = appId;
+            Quickshell.execDetached(["hyprctl", "dispatch",
+                'hl.dsp.exec_cmd("' + execCmd + '", { maximize = true })']);
+        } else {
+            Quickshell.execDetached(["bash", "-c", execCmd]);
+        }
+
+        // Launch tracking for auto-selection
         window._pendingSpawnAppId = appId;
-        Quickshell.execDetached(["bash", "-c", execCmd]);
     }
 
     function rebuildToLayer0(raw) {
