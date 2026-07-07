@@ -319,6 +319,149 @@ running.
 
 ---
 
+## mruMethod tests
+
+**Prerequisites:**
+- Set `"mruMethod": "window"` in `hyprsphere.json` before running M18–M24
+- For M25, set `"mruMethod": "app"` (or remove it)
+- Restart quickshell after each config change
+- These tests require **two windows of the same app** (e.g. two Ghostty
+  terminals or two Firefox windows) AND a second app with at least one
+  window
+
+---
+
+### M18. Basic window MRU — same app, two windows
+
+**Setup:** Two windows of App A (e.g. Ghostty-A and Ghostty-B), one window
+of App B (e.g. Firefox). `mruMethod: "window"`.
+
+1. Focus Ghostty-A
+2. Focus Ghostty-B (now Ghostty-B is current, Ghostty-A is previous)
+3. Press **Alt+Tab**
+4. **Verify:** The overlay shows Ghostty pre-selected (the app group
+   containing the previous window Ghostty-A)
+5. Release **Alt** to commit
+6. **Verify:** Ghostty-A is focused (the exact previous window, not
+   Ghostty-B)
+7. Press **Alt+Tab** again
+8. **Verify:** Ghostty-B is now pre-selected (because it was just focused)
+9. Release **Alt**
+10. **Verify:** Ghostty-B is focused (cycling back to the original window)
+
+---
+
+### M19. Window MRU across different apps
+
+**Setup:** Ghostty-A, Ghostty-B (same app), Firefox (different app).
+`mruMethod: "window"`.
+
+1. Focus Ghostty-A
+2. Focus Firefox
+3. Focus Ghostty-B (now Ghostty-B is current, Firefox is previous)
+4. Press **Alt+Tab**
+5. **Verify:** Firefox is pre-selected (Firefox was the previous window
+   before Ghostty-B)
+6. Release **Alt**
+7. **Verify:** Firefox is focused (the exact previous window from a
+   different app)
+
+---
+
+### M20. Tab away from pre-selection
+
+**Setup:** Ghostty-A, Ghostty-B, Firefox. `mruMethod: "window"`.
+
+1. Focus Ghostty-A
+2. Focus Ghostty-B (prep: B is current, A is previous)
+3. Press **Alt+Tab**
+4. **Verify:** Ghostty is pre-selected (owns window MRU[1] = Ghostty-A)
+5. Press **Tab** to cycle to Firefox (different app)
+6. Release **Alt**
+7. **Verify:** Firefox is focused, and it's the MRU-most Firefox window
+   (`appWindowMru["firefox"][0]`), not window MRU[1] (which is Ghostty-A)
+
+---
+
+### M21. Window close shifts pre-selection mid-session
+
+**Setup:** Ghostty-A, Ghostty-B, Firefox. `mruMethod: "window"`.
+
+1. Focus Ghostty-A
+2. Focus Firefox (prep: Firefox is previous, Ghostty-A is older)
+3. Focus Ghostty-B (now Ghostty-B is current, Firefox is previous)
+4. Press **Alt+Tab**
+5. **Verify:** Firefox is pre-selected (window MRU[1] = Firefox)
+6. **Without closing the overlay**, externally close the Firefox window
+   (e.g. Ctrl+W or `hyprctl dispatch closewindow address:0x...`)
+7. **Verify:** The sphere rebuilds and Ghostty is now pre-selected
+   (Ghostty-A is now window MRU[1] after Firefox was removed)
+8. Release **Alt**
+9. **Verify:** Ghostty-A is focused
+
+---
+
+### M22. New window during overlay open
+
+**Setup:** Ghostty-A only (single window). `mruMethod: "window"`.
+
+1. Focus Ghostty-A
+2. Press **Alt+Tab**
+3. **Verify:** Ghostty is pre-selected (only window, index 0)
+4. Without closing the overlay, open a new window (e.g. Firefox or a
+   second Ghostty via Ctrl+Enter)
+5. **Verify:** The sphere rebuilds with the new window. The pre-selection
+   may change depending on whether the new window was focused.
+
+---
+
+### M23. Single window — no-op commit
+
+**Setup:** Only one window open (e.g. Ghostty-A). `mruMethod: "window"`.
+
+1. Press **Alt+Tab**
+2. **Verify:** Ghostty is pre-selected (only window, `globalWindowMru`
+   length is 1, so uses index 0)
+3. Release **Alt**
+4. **Verify:** Ghostty-A stays focused (no-op, stays on same window)
+5. Press **Alt+Tab** again
+6. Tab to a whitelisted placeholder app (e.g. Blender)
+7. Release **Alt**
+8. **Verify:** The whitelisted app launches (placeholders work normally)
+
+---
+
+### M24. Whitelisted apps after running apps
+
+**Setup:** Ghostty-A (one window), whitelisted apps configured.
+`mruMethod: "window"`.
+
+1. Press **Alt+Tab**
+2. **Verify:** Ghostty is pre-selected (the only running app)
+3. Press **Tab** past Ghostty
+4. **Verify:** Whitelisted placeholders appear after all running apps
+5. Tab to a whitelisted app and release **Alt**
+6. **Verify:** The whitelisted app launches (focus by class still works)
+
+---
+
+### M25. mruMethod defaults to "app" when absent
+
+**Setup:** Ghostty-A, Ghostty-B, Firefox. Remove `mruMethod` from
+`hyprsphere.json` (or set `"mruMethod": "app"`). Restart quickshell.
+
+1. Focus Ghostty-A
+2. Focus Ghostty-B
+3. Press **Alt+Tab**
+4. **Verify:** The pre-selected app is the one at `appMru[1]` (the
+   previous APP, which is Firefox or whatever was before Ghostty in
+   app-level MRU — NOT Ghostty-A)
+5. Release **Alt**
+6. **Verify:** The MRU-most window of that app is focused (current
+   behaviour)
+
+---
+
 ## Running all tests
 
 ```bash
@@ -360,4 +503,17 @@ echo "M14 (idempotency — already maximized):" >> PHASE_10_TEST_LOG.txt
 echo "M15 (disabled — false/absent):" >> PHASE_10_TEST_LOG.txt
 echo "M16 (double-click commit):" >> PHASE_10_TEST_LOG.txt
 echo "M17 (Ctrl+Enter spawn):" >> PHASE_10_TEST_LOG.txt
+echo "" >> PHASE_10_TEST_LOG.txt
+echo "--- Manual tests (mruMethod) ---" >> PHASE_10_TEST_LOG.txt
+echo "Set '\"'mruMethod': '\"'window'\"'" in hyprsphere.json before running M18-M24." >> PHASE_10_TEST_LOG.txt
+echo "For M25, set '\"'mruMethod': '\"'app'\"'" (or remove it)." >> PHASE_10_TEST_LOG.txt
+echo "" >> PHASE_10_TEST_LOG.txt
+echo "M18 (same app, two windows):" >> PHASE_10_TEST_LOG.txt
+echo "M19 (window MRU across apps):" >> PHASE_10_TEST_LOG.txt
+echo "M20 (tab away from pre-selection):" >> PHASE_10_TEST_LOG.txt
+echo "M21 (window close shifts pre-selection):" >> PHASE_10_TEST_LOG.txt
+echo "M22 (new window during overlay):" >> PHASE_10_TEST_LOG.txt
+echo "M23 (single window no-op):" >> PHASE_10_TEST_LOG.txt
+echo "M24 (whitelisted apps after running):" >> PHASE_10_TEST_LOG.txt
+echo "M25 (defaults to app when absent):" >> PHASE_10_TEST_LOG.txt
 ```

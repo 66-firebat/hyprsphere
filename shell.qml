@@ -197,6 +197,10 @@ PanelWindow {
     // launch session, so duplicate openwindow events don't re-dispatch.
     property var _fullscreenedAddresses: ({})
 
+    // ── PATCH 1: mruMethod — window-level MRU tracking ──
+    property var globalWindowMru: []
+    property string _preSelectedAppId: ""
+
     function buildLayer0() {
         var groups = {};
         var tls = Hyprland.toplevels;
@@ -238,6 +242,7 @@ PanelWindow {
         window.overlayActive = true;
         window._pendingFullscreenAppId = "";
         window._fullscreenedAddresses = {};
+        window._preSelectedAppId = "";
 
         // Enter Hyprland submap so letter keys pass through to QML
         // NOTE: must use hyprctl eval, not dispatch (submap is Lua-only)
@@ -277,7 +282,38 @@ PanelWindow {
             : mruSorted;
 
         if (sphereModel.length > 0 && !sphereModel[0].isPlaceholder) {
-            selectedAppIndex = (appMru.length >= 2) ? 1 : 0;
+            if (cfg.mruMethod === "window") {
+                // Pre-select the app that owns globalWindowMru[1]
+                window._preSelectedAppId = "";
+                if (window.globalWindowMru.length >= 2) {
+                    var wTargetAddr = window.globalWindowMru[1];
+                    for (var wsi = 0; wsi < sphereModel.length; wsi++) {
+                        var wApp = sphereModel[wsi];
+                        if (wApp.isPlaceholder || wApp.isWhitelistPlaceholder) continue;
+                        for (var wwi = 0; wwi < (wApp.windows || []).length; wwi++) {
+                            var wWa = wApp.windows[wwi].address || "";
+                            if (wWa.indexOf("0x") !== 0) wWa = "0x" + wWa;
+                            if (wWa === wTargetAddr) {
+                                window._preSelectedAppId = wApp.appId;
+                                break;
+                            }
+                        }
+                        if (window._preSelectedAppId) break;
+                    }
+                }
+                if (window._preSelectedAppId) {
+                    for (var wsi = 0; wsi < sphereModel.length; wsi++) {
+                        if (sphereModel[wsi].appId === window._preSelectedAppId) {
+                            selectedAppIndex = wsi;
+                            break;
+                        }
+                    }
+                } else {
+                    selectedAppIndex = 0;
+                }
+            } else {
+                selectedAppIndex = (appMru.length >= 2) ? 1 : 0;
+            }
             if (selectedAppIndex < sphereModel.length) {
                 centerOnApp(selectedAppIndex);
             }
@@ -654,6 +690,40 @@ PanelWindow {
                     'hl.dsp.window.fullscreen({ mode = "maximized", action = "set", window = "address:' + rebuildPrefix + rebuildAddr + '" })']);
                 window._pendingFullscreenAddr = "";
             }
+            // PATCH 1: mruMethod="window" — recalculate pre-selection
+            // dynamically so the sphere follows window opens/closes.
+            if (cfg.mruMethod === "window" && window.visible) {
+                window._preSelectedAppId = "";
+                if (window.globalWindowMru.length >= 2) {
+                    var rsTargetAddr = window.globalWindowMru[1];
+                    for (var rsi = 0; rsi < (window.sphereModel || []).length; rsi++) {
+                        var rsApp = window.sphereModel[rsi];
+                        if (rsApp.isPlaceholder || rsApp.isWhitelistPlaceholder) continue;
+                        for (var rwi = 0; rwi < (rsApp.windows || []).length; rwi++) {
+                            var rAddr = rsApp.windows[rwi].address || "";
+                            if (rAddr.indexOf("0x") !== 0) rAddr = "0x" + rAddr;
+                            if (rAddr === rsTargetAddr) {
+                                window._preSelectedAppId = rsApp.appId;
+                                break;
+                            }
+                        }
+                        if (window._preSelectedAppId) break;
+                    }
+                }
+                // If the current selection is no longer valid (its appId doesn't
+                // match the new pre-selection), update to the pre-selected app.
+                var curApp = window.sphereModel && window.sphereModel.length > window.selectedAppIndex
+                    ? window.sphereModel[window.selectedAppIndex] : null;
+                if (window._preSelectedAppId && (!curApp || curApp.appId !== window._preSelectedAppId)) {
+                    for (var rsi = 0; rsi < (window.sphereModel || []).length; rsi++) {
+                        if (window.sphereModel[rsi].appId === window._preSelectedAppId) {
+                            window.selectedAppIndex = rsi;
+                            window.centerOnApp(rsi);
+                            break;
+                        }
+                    }
+                }
+            }
             // After any sphere rebuild, ensure overlay still has keyboard focus
             focusGrabber.forceActiveFocus();
         });
@@ -686,9 +756,23 @@ PanelWindow {
             });
 
             selectedAppIndex = 0;
+            // PATCH 1: mruMethod="window" — drill-down from pre-selected app
+            // should pre-select the window at globalWindowMru[1] (the window
+            // that would be focused on commit), not the MRU-most window.
+            if (cfg.mruMethod === "window" && app.appId === window._preSelectedAppId && window.globalWindowMru.length >= 2) {
+                var drillTarget = window.globalWindowMru[1];
+                for (var di = 0; di < sphereModel.length; di++) {
+                    var dAddr = sphereModel[di].address || "";
+                    if (dAddr.indexOf("0x") !== 0) dAddr = "0x" + dAddr;
+                    if (dAddr === drillTarget) {
+                        selectedAppIndex = di;
+                        break;
+                    }
+                }
+            }
             projDirty = true;
             rebuildProjCache();
-            centerOnApp(0);
+            centerOnApp(selectedAppIndex);
         } else if (window.layer === 2) {
             // Layer 2 → drill into app → Layer 1
             var node = sphereModel[selectedAppIndex];
@@ -807,19 +891,26 @@ PanelWindow {
 
         var addr;
         if (window.layer === 0 || (window.layer === 2 && !node.isWindowNode)) {
-            // Layer 0 or layer 2 app node: focus MRU-most window
-            var winMru = appWindowMru[node.appId] || [];
-            var best = null;
-            for (var m = 0; m < winMru.length; m++) {
-                for (var w = 0; w < node.windows.length; w++) {
-                    if (node.windows[w].address === winMru[m]) {
-                        best = winMru[m];
-                        break;
+            // PATCH 1: mruMethod="window" — focus exact previous window
+            if (cfg.mruMethod === "window" && node.appId === window._preSelectedAppId) {
+                addr = window.globalWindowMru.length >= 2
+                    ? window.globalWindowMru[1]
+                    : (node.windows[0] ? node.windows[0].address : "");
+            } else {
+                // Layer 0 or layer 2 app node: focus MRU-most window
+                var winMru = appWindowMru[node.appId] || [];
+                var best = null;
+                for (var m = 0; m < winMru.length; m++) {
+                    for (var w = 0; w < node.windows.length; w++) {
+                        if (node.windows[w].address === winMru[m]) {
+                            best = winMru[m];
+                            break;
+                        }
                     }
+                    if (best) break;
                 }
-                if (best) break;
+                addr = best || node.windows[0].address;
             }
-            addr = best || node.windows[0].address;
         } else {
             // Layer 1 or layer 2 window node: focus specific address
             addr = node.address;
@@ -930,6 +1021,16 @@ PanelWindow {
             }
             appWindowMru[appId] = [addr].concat(winFiltered);
 
+            // PATCH 1: mruMethod="window" — maintain global window MRU
+            if (cfg.mruMethod === "window" && addr) {
+                var gwAddr = addr.indexOf("0x") === 0 ? addr : "0x" + addr;
+                var gwFiltered = [];
+                for (var gi = 0; gi < globalWindowMru.length; gi++) {
+                    if (globalWindowMru[gi] !== gwAddr) gwFiltered.push(globalWindowMru[gi]);
+                }
+                globalWindowMru = [gwAddr].concat(gwFiltered);
+            }
+
             // Fullscreen on activate for whitelisted app launches.
             // Fires on every active-toplevel change while the launch flag is
             // set. Most apps are handled by the immediate openwindow dispatch,
@@ -1032,6 +1133,17 @@ PanelWindow {
                     break;
                 }
             }
+
+            // PATCH 1: mruMethod="window" — clean closed address from global MRU
+            if (cfg.mruMethod === "window") {
+                var gwNorm = addr.indexOf("0x") === 0 ? addr : "0x" + addr;
+                var gwNew = [];
+                for (var gi = 0; gi < globalWindowMru.length; gi++) {
+                    if (globalWindowMru[gi] !== gwNorm) gwNew.push(globalWindowMru[gi]);
+                }
+                globalWindowMru = gwNew;
+            }
+
             if (window.visible) {
                 // Unmap and remap overlay to force compositor to re-grant
                 // keyboard focus to the exclusive layer surface.
