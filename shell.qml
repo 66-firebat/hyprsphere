@@ -698,14 +698,16 @@ if (window.layer === 2 && window.searchQuery !== "") {
             });
 
             selectedAppIndex = 0;
-            // Drill-down from pre-selected app pre-selects the window at
-            // globalWindowMru[1] (the window that would be focused on commit).
-            if (app.appId === window._preSelectedAppId && window.globalWindowMru.length >= 2) {
-                var drillTarget = window.globalWindowMru[1];
+            // Pre-select the second MRU-most window (index 1) so the drill-down
+            // shows the window the user is likely to switch to, not the one
+            // they're already on (which is what they'd get at layer 0).
+            if (winMru.length >= 2) {
+                var secondTarget = winMru[1];
+                if (secondTarget.indexOf("0x") !== 0) secondTarget = "0x" + secondTarget;
                 for (var di = 0; di < sphereModel.length; di++) {
                     var dAddr = sphereModel[di].address || "";
                     if (dAddr.indexOf("0x") !== 0) dAddr = "0x" + dAddr;
-                    if (dAddr === drillTarget) {
+                    if (dAddr === secondTarget) {
                         selectedAppIndex = di;
                         break;
                     }
@@ -745,6 +747,19 @@ if (window.layer === 2 && window.searchQuery !== "") {
             });
 
             selectedAppIndex = 0;
+            // Same second-MRU rule for layer-2 drill-down
+            if (winMru.length >= 2) {
+                var secondTarget = winMru[1];
+                if (secondTarget.indexOf("0x") !== 0) secondTarget = "0x" + secondTarget;
+                for (var di = 0; di < sphereModel.length; di++) {
+                    var dAddr = sphereModel[di].address || "";
+                    if (dAddr.indexOf("0x") !== 0) dAddr = "0x" + dAddr;
+                    if (dAddr === secondTarget) {
+                        selectedAppIndex = di;
+                        break;
+                    }
+                }
+            }
             projDirty = true;
             rebuildProjCache();
             centerOnApp(0);
