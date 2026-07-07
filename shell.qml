@@ -413,6 +413,7 @@ PanelWindow {
                 ],
                 threshold: cfg.search?.fuseThreshold ?? 0.4,
                 minMatchCharLength: cfg.search?.fuseMinMatchCharLength ?? 1,
+                ignoreLocation: cfg.search?.ignoreLocation ?? true,
                 includeScore: true,
                 shouldSort: true
             });

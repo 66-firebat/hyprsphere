@@ -365,6 +365,7 @@ organized by section.
 | `maxResults` | `30` | Maximum results returned from Fuse.js |
 | `fuseThreshold` | `0.4` | Fuse.js match threshold (0=perfect, 1=anything) |
 | `fuseMinMatchCharLength` | `1` | Minimum character length for a Fuse.js match |
+| `ignoreLocation` | `true` | When `true`, search terms can match anywhere in the text — no penalty for distance from the start of the string. Crucial for long window titles. |
 | `layer2Zoom` | `1.5` | Zoom level applied to the sphere during search (layer 2) |
 
 ### `appCard` — Sphere card appearance

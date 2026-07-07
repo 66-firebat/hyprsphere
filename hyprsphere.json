@@ -104,6 +104,7 @@
     "maxResults": 30,
     "fuseThreshold": 0.4,
     "fuseMinMatchCharLength": 1,
+    "ignoreLocation": true,
     "layer2Zoom": 1.5
   },
 
