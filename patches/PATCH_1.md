@@ -191,10 +191,17 @@ But after closing the most recent window, the user expects to go to the
 window they were on BEFORE it — which is now at `globalWindowMru[0]`, not
 `globalWindowMru[1]`.
 
-**Fix:** A `_windowClosedThisSession` flag is set when a closewindow
-handler removes an address from `globalWindowMru[0]`. The flag is cleared
-in `openSwitcher()`. In `commitSelection()`, when this flag is true, the
-commit uses `globalWindowMru[0]` instead of `globalWindowMru[1]`:
+**Fix:** A `_windowClosedThisSession` flag is set in two cases when
+a window is closed:
+
+1. The closed window was at `globalWindowMru[0]` (the most recently
+   focused window) — detected in the `globalWindowMru` cleanup block.
+2. The closed window belongs to the pre-selected app (`appId ===
+   _preSelectedAppId`) — detected in the `appWindowMru` cleanup block.
+
+The flag is cleared in `openSwitcher()`. In `commitSelection()`, when
+this flag is true, the commit uses `globalWindowMru[0]` instead of
+`globalWindowMru[1]`:
 
 ```javascript
 var wmruIdx = window._windowClosedThisSession ? 0 : 1;

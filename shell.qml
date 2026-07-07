@@ -1127,6 +1127,11 @@ if (window.layer === 2 && window.searchQuery !== "") {
                     if (list[k] === addr) { idx = k; break; }
                 }
                 if (idx !== -1) {
+                    // PATCH 1: if the closed window belongs to the
+                    // pre-selected app, commit should use index 0.
+                    if (cfg.mruMethod === "window" && appId === window._preSelectedAppId) {
+                        window._windowClosedThisSession = true;
+                    }
                     var newList = [];
                     for (var k2 = 0; k2 < list.length; k2++) {
                         if (k2 !== idx) newList.push(list[k2]);
