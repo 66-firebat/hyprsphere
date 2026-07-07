@@ -242,6 +242,7 @@ PanelWindow {
         window.overlayActive = true;
         window._pendingFullscreenAppId = "";
         window._fullscreenedAddresses = {};
+        window._pendingSpawnAppId = "";
         window._preSelectedAppId = "";
 
         // Enter Hyprland submap so letter keys pass through to QML
@@ -692,7 +693,8 @@ PanelWindow {
             }
             // PATCH 1: mruMethod="window" — recalculate pre-selection
             // dynamically so the sphere follows window opens/closes.
-            if (cfg.mruMethod === "window" && window.visible) {
+            // Don't override the spawn auto-selection though.
+            if (cfg.mruMethod === "window" && window.visible && !window._pendingSpawnAppId) {
                 window._preSelectedAppId = "";
                 if (window.globalWindowMru.length >= 2) {
                     var rsTargetAddr = window.globalWindowMru[1];
@@ -891,8 +893,15 @@ PanelWindow {
 
         var addr;
         if (window.layer === 0 || (window.layer === 2 && !node.isWindowNode)) {
-            // PATCH 1: mruMethod="window" — focus exact previous window
-            if (cfg.mruMethod === "window" && node.appId === window._preSelectedAppId) {
+            // Spawn override: if a window was just spawned for this app,
+            // focus it directly. appWindowMru is updated immediately by
+            // the openwindow handler, unlike node.windows in the sphere
+            // model which depends on async toplevel refresh.
+            if (window._pendingSpawnAppId === node.appId) {
+                var spawnMru = appWindowMru[node.appId] || [];
+                addr = spawnMru.length >= 1 ? spawnMru[0] : "";
+            } else if (cfg.mruMethod === "window" && node.appId === window._preSelectedAppId) {
+                // Normal previous-window targeting.
                 addr = window.globalWindowMru.length >= 2
                     ? window.globalWindowMru[1]
                     : (node.windows[0] ? node.windows[0].address : "");
