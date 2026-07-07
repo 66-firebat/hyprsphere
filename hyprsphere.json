@@ -197,7 +197,6 @@
   ],
 
   "fullscreenOnActivate": true,
-  "mruMethod": "window",
 
   "misc": {}
 }

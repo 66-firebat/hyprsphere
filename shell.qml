@@ -196,10 +196,25 @@ PanelWindow {
     // launch session, so duplicate openwindow events don't re-dispatch.
     property var _fullscreenedAddresses: ({})
 
-    // ── PATCH 1: mruMethod — window-level MRU tracking ──
+    // ── Global window-level MRU tracking ──
     property var globalWindowMru: []
     property string _preSelectedAppId: ""
     property bool _windowClosedThisSession: false
+
+    function _findAppForAddress(addr) {
+        if (!addr) return "";
+        var normAddr = addr.indexOf("0x") === 0 ? addr : "0x" + addr;
+        for (var i = 0; i < (window.sphereModel || []).length; i++) {
+            var app = window.sphereModel[i];
+            if (app.isPlaceholder || app.isWhitelistPlaceholder) continue;
+            for (var j = 0; j < (app.windows || []).length; j++) {
+                var wAddr = app.windows[j].address || "";
+                if (wAddr.indexOf("0x") !== 0) wAddr = "0x" + wAddr;
+                if (wAddr === normAddr) return app.appId;
+            }
+        }
+        return "";
+    }
 
     function buildLayer0() {
         var groups = {};
@@ -284,37 +299,19 @@ PanelWindow {
             : mruSorted;
 
         if (sphereModel.length > 0 && !sphereModel[0].isPlaceholder) {
-            if (cfg.mruMethod === "window") {
-                // Pre-select the app that owns globalWindowMru[1]
-                window._preSelectedAppId = "";
-                if (window.globalWindowMru.length >= 2) {
-                    var wTargetAddr = window.globalWindowMru[1];
-                    for (var wsi = 0; wsi < sphereModel.length; wsi++) {
-                        var wApp = sphereModel[wsi];
-                        if (wApp.isPlaceholder || wApp.isWhitelistPlaceholder) continue;
-                        for (var wwi = 0; wwi < (wApp.windows || []).length; wwi++) {
-                            var wWa = wApp.windows[wwi].address || "";
-                            if (wWa.indexOf("0x") !== 0) wWa = "0x" + wWa;
-                            if (wWa === wTargetAddr) {
-                                window._preSelectedAppId = wApp.appId;
-                                break;
-                            }
-                        }
-                        if (window._preSelectedAppId) break;
+            window._preSelectedAppId = "";
+            if (window.globalWindowMru.length >= 2) {
+                window._preSelectedAppId = window._findAppForAddress(window.globalWindowMru[1]);
+            }
+            if (window._preSelectedAppId) {
+                for (var wsi = 0; wsi < sphereModel.length; wsi++) {
+                    if (sphereModel[wsi].appId === window._preSelectedAppId) {
+                        selectedAppIndex = wsi;
+                        break;
                     }
-                }
-                if (window._preSelectedAppId) {
-                    for (var wsi = 0; wsi < sphereModel.length; wsi++) {
-                        if (sphereModel[wsi].appId === window._preSelectedAppId) {
-                            selectedAppIndex = wsi;
-                            break;
-                        }
-                    }
-                } else {
-                    selectedAppIndex = 0;
                 }
             } else {
-                selectedAppIndex = (appMru.length >= 2) ? 1 : 0;
+                selectedAppIndex = 0;
             }
             if (selectedAppIndex < sphereModel.length) {
                 centerOnApp(selectedAppIndex);
@@ -656,29 +653,14 @@ if (window.layer === 2 && window.searchQuery !== "") {
                 }
                 window._pendingSpawnAddr = "";
             }
-// PATCH 1: mruMethod="window" — recalculate pre-selection
-            // dynamically so the sphere follows window opens/closes.
+            // Recalculate pre-selection so the sphere follows window opens/closes.
             // Don't override the spawn auto-selection though.
-            if (cfg.mruMethod === "window" && window.visible && !window._pendingSpawnAppId) {
+            if (window.visible && !window._pendingSpawnAppId) {
                 window._preSelectedAppId = "";
                 if (window.globalWindowMru.length >= 2) {
-                    var rsTargetAddr = window.globalWindowMru[1];
-                    for (var rsi = 0; rsi < (window.sphereModel || []).length; rsi++) {
-                        var rsApp = window.sphereModel[rsi];
-                        if (rsApp.isPlaceholder || rsApp.isWhitelistPlaceholder) continue;
-                        for (var rwi = 0; rwi < (rsApp.windows || []).length; rwi++) {
-                            var rAddr = rsApp.windows[rwi].address || "";
-                            if (rAddr.indexOf("0x") !== 0) rAddr = "0x" + rAddr;
-                            if (rAddr === rsTargetAddr) {
-                                window._preSelectedAppId = rsApp.appId;
-                                break;
-                            }
-                        }
-                        if (window._preSelectedAppId) break;
-                    }
+                    window._preSelectedAppId = window._findAppForAddress(window.globalWindowMru[1]);
                 }
-                // If the current selection is no longer valid (its appId doesn't
-                // match the new pre-selection), update to the pre-selected app.
+                // If the current selection is no longer valid, update to the pre-selected app.
                 var curApp = window.sphereModel && window.sphereModel.length > window.selectedAppIndex
                     ? window.sphereModel[window.selectedAppIndex] : null;
                 if (window._preSelectedAppId && (!curApp || curApp.appId !== window._preSelectedAppId)) {
@@ -723,10 +705,9 @@ if (window.layer === 2 && window.searchQuery !== "") {
             });
 
             selectedAppIndex = 0;
-            // PATCH 1: mruMethod="window" — drill-down from pre-selected app
-            // should pre-select the window at globalWindowMru[1] (the window
-            // that would be focused on commit), not the MRU-most window.
-            if (cfg.mruMethod === "window" && app.appId === window._preSelectedAppId && window.globalWindowMru.length >= 2) {
+            // Drill-down from pre-selected app pre-selects the window at
+            // globalWindowMru[1] (the window that would be focused on commit).
+            if (app.appId === window._preSelectedAppId && window.globalWindowMru.length >= 2) {
                 var drillTarget = window.globalWindowMru[1];
                 for (var di = 0; di < sphereModel.length; di++) {
                     var dAddr = sphereModel[di].address || "";
@@ -867,7 +848,7 @@ if (window.layer === 2 && window.searchQuery !== "") {
             if (window._pendingSpawnAppId === node.appId) {
                 var spawnMru = appWindowMru[node.appId] || [];
                 addr = spawnMru.length >= 1 ? spawnMru[0] : "";
-            } else if (cfg.mruMethod === "window" && node.appId === window._preSelectedAppId) {
+            } else if (node.appId === window._preSelectedAppId) {
                 // Normal previous-window targeting, unless a window was
                 // just closed — then the target shifts to the new index 0.
                 var wmruIdx = window._windowClosedThisSession ? 0 : 1;
@@ -895,10 +876,9 @@ if (window.layer === 2 && window.searchQuery !== "") {
             addr = node.address;
         }
 
-        // Hide overlay FIRST so it doesn't steal focus back after dispatch.
-        // But update globalWindowMru FIRST — onActiveToplevelChanged might
-        // not fire until the overlay reopens (QML engine pauses on hide).
-        if (cfg.mruMethod === "window" && addr) {
+        // Update globalWindowMru synchronously before hiding overlay —
+        // onActiveToplevelChanged may not fire until overlay reopens.
+        if (addr) {
             var commitNorm = addr.indexOf("0x") === 0 ? addr : "0x" + addr;
             var commitFiltered = [];
             for (var ci = 0; ci < globalWindowMru.length; ci++) {
@@ -1036,8 +1016,8 @@ if (window.layer === 2 && window.searchQuery !== "") {
             }
             appWindowMru[appId] = [addr].concat(winFiltered);
 
-            // PATCH 1: mruMethod="window" — maintain global window MRU
-            if (cfg.mruMethod === "window" && addr) {
+            // Maintain global window MRU on every focus change
+            if (addr) {
                 var gwAddr = addr.indexOf("0x") === 0 ? addr : "0x" + addr;
                 var gwFiltered = [];
                 for (var gi = 0; gi < globalWindowMru.length; gi++) {
@@ -1141,7 +1121,7 @@ if (window.layer === 2 && window.searchQuery !== "") {
                 if (idx !== -1) {
                     // PATCH 1: if the closed window belongs to the
                     // pre-selected app, commit should use index 0.
-                    if (cfg.mruMethod === "window" && appId === window._preSelectedAppId) {
+                    if (appId === window._preSelectedAppId) {
                         window._windowClosedThisSession = true;
                     }
                     var newList = [];
@@ -1162,21 +1142,19 @@ if (window.layer === 2 && window.searchQuery !== "") {
                 }
             }
 
-            // PATCH 1: mruMethod="window" — clean closed address from global MRU
-            if (cfg.mruMethod === "window") {
-                var gwNorm = addr.indexOf("0x") === 0 ? addr : "0x" + addr;
-                var gwNew = [];
-                for (var gi = 0; gi < globalWindowMru.length; gi++) {
-                    if (globalWindowMru[gi] !== gwNorm) gwNew.push(globalWindowMru[gi]);
-                }
-                // If the closed window was at index 0, the remaining index 0
-                // now holds the window the user was on before it — commit
-                // should target that window, not the older one at index 1.
-                if (globalWindowMru.length >= 1 && globalWindowMru[0] === gwNorm) {
-                    window._windowClosedThisSession = true;
-                }
-                globalWindowMru = gwNew;
+            // Remove closed address from global window MRU
+            var gwNorm = addr.indexOf("0x") === 0 ? addr : "0x" + addr;
+            var gwNew = [];
+            for (var gi = 0; gi < globalWindowMru.length; gi++) {
+                if (globalWindowMru[gi] !== gwNorm) gwNew.push(globalWindowMru[gi]);
             }
+            // If the closed window was at index 0, the remaining index 0
+            // now holds the window the user was on before it — commit
+            // should target that window, not the older one at index 1.
+            if (globalWindowMru.length >= 1 && globalWindowMru[0] === gwNorm) {
+                window._windowClosedThisSession = true;
+            }
+            globalWindowMru = gwNew;
 
             if (window.visible) {
                 // Unmap and remap overlay to force compositor to re-grant
