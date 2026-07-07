@@ -689,12 +689,77 @@ Some applications (notably Firefox) have multiple `Exec=` lines in their
 window, profile manager). The icon reader only captures the **first**
 `Exec=` line to avoid launching the wrong action.
 
-### Address format variance
+### Window Address Normalization
 
-Window addresses from Hyprland may or may not include the `0x` hex prefix
-depending on the source (event data vs toplevel properties). All internal
-comparisons normalize addresses to include `0x` to prevent silent
-mismatches.
+Hyprland provides window addresses in **two different formats** depending on
+the API, which caused subtle, hard-to-reproduce bugs throughout development.
+
+#### The problem
+
+| Source | Format | Example |
+|---|---|---|
+| `t.address` (toplevels / activeToplevel) | **RAW** (no prefix) | `"101839840165184"` |
+| `event.data` (raw events) | **0x-prefixed** | `"0x5cb8a4e2a040"` |
+
+Both formats circulate through the codebase. If a comparison expects `0x` but
+receives raw, or vice versa, the match silently fails — an address that should
+be found in an MRU list is missed, a window that should be removed from a
+container is left behind, or the drill-down view selects the wrong window.
+
+#### The six entry points
+
+Every window address enters the system through one of six paths. Each must
+normalise to the canonical `0x`-prefixed format:
+
+| # | Function | Source | Status |
+|---|---|---|---|
+| 1 | `initWindowIndices()` | `t.address` (toplevels on startup) | Normalised |
+| 2 | `buildLayer0()` | `t.address` (toplevels on rebuild) | Normalised |
+| 3 | `buildSearchDatabase()` | `t.address` / `t2.address` | Normalised |
+| 4 | `onActiveToplevelChanged()` | `t.address` (focus change) | Normalised |
+| 5 | `onRawEvent` openwindow | `parts[0]` (new window event) | Normalised |
+| 6 | `onRawEvent` closewindow | `event.data` (close event) | Normalised |
+
+#### The rule
+
+**Normalise on ingest, strip on dispatch.** Every address is converted to
+`0x`-prefixed form as soon as it enters the system — at the assignment, not
+at the comparison site. This means:
+
+- All internal containers (`globalWindowMru`, `appWindowMru`,
+  `sphereModel[].address`, `_appOpeningOrder`) consistently store `0x`-prefixed
+  addresses
+- All comparisons are direct `===` matches with no ad-hoc normalisation
+- Addresses are only stripped of `0x` when sent to Hyprland's IPC dispatcher
+  (which expects raw addresses in certain contexts, though the dispatch calls
+  in hyprsphere always ensure `0x` is present via the `prefix` pattern shown
+  below)
+
+```javascript
+// hyprctl dispatch expects the address WITH 0x prefix:
+var prefix = addr.indexOf("0x") === 0 ? "" : "0x";
+Quickshell.execDetached(["hyprctl", "dispatch",
+    'hl.dsp.focus({window="address:' + prefix + addr + '"})']);
+```
+
+#### Bug symptoms
+
+If address normalisation is missing or inconsistent, you may see:
+
+- **Drill-down selects the wrong window** — the second-MRU window isn't found,
+  falls back to index 0 (MRU-most)
+- **Window close doesn't update MRU** — the closed address doesn't match any
+  entry in `appWindowMru`, so the window is never removed from the per-app
+  MRU list
+- **Opening-order badges are wrong** — the badge lookup against
+  `_appOpeningOrder` fails due to format mismatch, showing incorrect window
+  indices
+- **Spawned window doesn't auto-select** — the pending spawn address doesn't
+  match the sphere model entry
+
+All of these manifest as intermittent, hard-to-reproduce failures because the
+format an address arrives in depends on whether a window was opened vs.
+focused, and whether it was present at startup vs. spawned later.
 
 ### Layer-0 vs layer-1/2 auto-selection
 

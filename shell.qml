@@ -225,7 +225,9 @@ PanelWindow {
             var wl = t.wayland;
             var appId = (wl && wl.appId) ? wl.appId : "unknown";
             if (!groups[appId]) groups[appId] = { appId: appId, label: window.resolveName(appId), icon: window.resolveIcon(appId), windows: [] };
-            groups[appId].windows.push({ address: t.address, title: t.title });
+            var wAddr = t.address || "";
+            if (wAddr.indexOf("0x") !== 0) wAddr = "0x" + wAddr;
+            groups[appId].windows.push({ address: wAddr, title: t.title });
             groups[appId].windowCount = groups[appId].windows.length;
         }
         var whitelist = cfg.whitelist || [];
@@ -363,7 +365,9 @@ PanelWindow {
             }
             for (var d = 0; d < db.length; d++) {
                 if (db[d].appId === appId && db[d].type === "running-app") {
-                    db[d].windows.push({ address: t.address, title: t.title });
+                    var sAddr1 = t.address || "";
+                    if (sAddr1.indexOf("0x") !== 0) sAddr1 = "0x" + sAddr1;
+                    db[d].windows.push({ address: sAddr1, title: t.title });
                     break;
                 }
             }
@@ -379,7 +383,7 @@ PanelWindow {
             var appId2 = (wl2 && wl2.appId) ? wl2.appId : "unknown";
             db.push({
                 type: "window", appId: appId2, label: window.resolveName(appId2), icon: window.resolveIcon(appId2),
-                address: t2.address, title: t2.title || appId2
+                address: (t2.address && t2.address.indexOf("0x") === 0 ? t2.address : "0x" + (t2.address || "")), title: t2.title || appId2
             });
         }
 
@@ -991,6 +995,7 @@ if (window.layer === 2 && window.searchQuery !== "") {
             var appId = (t.wayland && t.wayland.appId) ? t.wayland.appId : "unknown";
 
             var addr = t.address || "";
+            if (addr.indexOf("0x") !== 0) addr = "0x" + addr;
 
             // When a real appId resolves, clean up any stale "unknown" entry
             if (appId !== "unknown") {
@@ -1018,12 +1023,11 @@ if (window.layer === 2 && window.searchQuery !== "") {
 
             // Maintain global window MRU on every focus change
             if (addr) {
-                var gwAddr = addr.indexOf("0x") === 0 ? addr : "0x" + addr;
                 var gwFiltered = [];
                 for (var gi = 0; gi < globalWindowMru.length; gi++) {
-                    if (globalWindowMru[gi] !== gwAddr) gwFiltered.push(globalWindowMru[gi]);
+                    if (globalWindowMru[gi] !== addr) gwFiltered.push(globalWindowMru[gi]);
                 }
-                globalWindowMru = [gwAddr].concat(gwFiltered);
+                globalWindowMru = [addr].concat(gwFiltered);
             }
 
 
@@ -1077,12 +1081,12 @@ if (window.layer === 2 && window.searchQuery !== "") {
             if (event.name !== "closewindow") return;
             var addr = event.data || "";
             if (!addr) return;
+            if (addr.indexOf("0x") !== 0) addr = "0x" + addr;
 
             // Remove from per-app opening order (compacts that app's indices)
-            var normAddr = addr.indexOf("0x") === 0 ? addr : "0x" + addr;
             for (var aid in window._appOpeningOrder) {
                 var list = window._appOpeningOrder[aid];
-                var oi = list.indexOf(normAddr);
+                var oi = list.indexOf(addr);
                 if (oi !== -1) {
                     list.splice(oi, 1);
                     if (list.length === 0) delete window._appOpeningOrder[aid];
@@ -1116,10 +1120,9 @@ if (window.layer === 2 && window.searchQuery !== "") {
             }
 
             // Remove closed address from global window MRU
-            var gwNorm = addr.indexOf("0x") === 0 ? addr : "0x" + addr;
             var gwNew = [];
             for (var gi = 0; gi < globalWindowMru.length; gi++) {
-                if (globalWindowMru[gi] !== gwNorm) gwNew.push(globalWindowMru[gi]);
+                if (globalWindowMru[gi] !== addr) gwNew.push(globalWindowMru[gi]);
             }
             globalWindowMru = gwNew;
 
