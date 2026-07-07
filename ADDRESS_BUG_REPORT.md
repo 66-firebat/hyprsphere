@@ -1,87 +1,103 @@
-# Bug Report: Inconsistent window address format across Hyprland IPC APIs
+# Bug Report: Inconsistent window address format across Quickshell's Hyprland IPC module
+
+**Note:** This is a **Quickshell** issue, not a Hyprland issue. The
+underlying Hyprland APIs are consistent — it is Quickshell's IPC module
+that introduces the inconsistency.
 
 ## Summary
 
-Window addresses returned by different Hyprland IPC APIs use different
-formats — some return the raw decimal form, others return the hexadecimal
-form with a `0x` prefix. This forces consumers to implement fragile
-ad-hoc normalisation that is easy to get wrong, leading to silent failures
-in window matching, MRU tracking, and event handling.
+Quickshell's `Quickshell.Hyprland._Ipc` module bridges between two
+Hyprland subsystems: the **JSON IPC** (used by `j/clients` to enumerate
+toplevels) and the **event socket** (used by `openwindow`/`closewindow`
+events). These two subsystems return window addresses in different formats,
+and Quickshell surfaces them both without normalisation, forcing
+consumers to implement fragile ad-hoc format detection.
 
-## Affected APIs
+## Affected APIs within Quickshell
 
-### 1. Toplevel properties (`Hyprland.toplevels`, `Hyprland.activeToplevel`)
+### 1. `Hyprland.activeToplevel.address` / `Hyprland.toplevels[].address`
 
-The `address` field of toplevel objects returns addresses in **raw decimal
-format** (no prefix):
+Populated from Hyprland's `j/clients` JSON IPC response, which returns
+addresses as **raw decimal strings** (no prefix, no hex indication):
 
-```
-t.address → "101839840165184"
-t.address → "108519689291328"
-```
-
-### 2. Raw events (`openwindow`, `closewindow`)
-
-The `event.data` field for `openwindow` and `closewindow` events returns
-addresses in **0x-prefixed hexadecimal format**:
-
-```
-openwindow event data  → "0x5cb8a4e2a040,0x5cb8a4e2a040,firefox"
-closewindow event data → "0x5cb8a4e2a040"
+```qml
+Hyprland.activeToplevel.address → "101839840165184"
 ```
 
-### 3. `clients` IPC response (from `j/clients`)
+These are exposed via Quickshell's `HyprlandToplevel::addressStr()` C++
+property, which reads the address directly from the parsed JSON without
+transforming it.
 
-Addresses in the `j/clients` Hyprland IPC response are in raw decimal
-format (matching toplevel properties):
+### 2. `onRawEvent` event data (`openwindow`/`closewindow`)
 
-```json
-{
-  "address": "101839840165184",
-  ...
-}
+Quickshell surfaces Hyprland's raw event socket data as-is. The Hyprland
+event socket uses **0x-prefixed hexadecimal format**:
+
+```qml
+// openwindow event data:
+"0x5cb8a4e2a040,0x5cb8a4e2a040,firefox"
+
+// closewindow event data:
+"0x5cb8a4e2a040"
 ```
+
+### Root cause
+
+Both formats originate from Hyprland and are internally consistent within
+their respective subsystems:
+
+| Hyprland subsystem | Address format | Example |
+|---|---|---|
+| `j/clients` JSON IPC | Decimal | `"101839840165184"` |
+| Event socket | `0x`-prefixed hex | `"0x5cb8a4e2a040"` |
+
+Quickshell's IPC module exposes both without normalising, so a QML
+consumer that listens to both sources receives addresses in two different
+formats.
 
 ## Impact
 
-When a consumer maintains an internal MRU list by merging data from
-multiple APIs (e.g., initialising from `j/clients` on startup, updating
-from `openwindow` events for new windows, and from `activeToplevel`
-changes for focus tracking), the format mismatch causes several classes
-of silent failure:
+When a QML consumer maintains internal state by merging data from both
+sources (e.g., building an MRU list from `j/clients` on startup,
+tracking focus changes via `onActiveToplevelChanged`, and handling
+window opens/closes via `onRawEvent`), the format mismatch causes
+silent failures:
 
 | Operation | Source format | Stored format | Comparison | Result |
 |---|---|---|---|---|
 | Add window from `openwindow` event | `0x`-prefixed | `0x`-prefixed | — | OK |
-| Add window from `activeToplevel` change | raw decimal | stored as-is (no prefix) | — | OK in isolation |
+| Add window from `activeToplevel` change | raw decimal | stored as-is | — | OK in isolation |
 | Match against stored list | depends on source | **mixed** | `===` | **Silent miss** |
 | Remove window on `closewindow` event | `0x`-prefixed | mixed | `indexOf()` | **Silent miss** |
 
-The result is that windows may silently accumulate in MRU lists (never
-removed on close), fail to match during search/drill-down, or cause
-incorrect targeting when switching between windows.
-
 ## Expected behaviour
 
-All IPC APIs should return window addresses in a **consistent format**.
-The hexadecimal `0x`-prefixed format is preferred because:
-
-1. It is the standard format used by Hyprland's own dispatch commands
-   (`hl.dsp.focus({window="address:0x..."})`)
-2. It is unambiguous about being a hex value
-3. It is consistent with how addresses appear in `hyprctl` output
+`HyprlandToplevel::address()` should return addresses in `0x`-prefixed
+hexadecimal format, matching the event socket format. This way all
+addresses within Quickshell's Hyprland module use a single, consistent
+format.
 
 ## Proposed fix
 
-Normalise `t.address` and the address field in `j/clients` responses to
-include the `0x` prefix, matching the format used by raw events and
-dispatch commands. Alternatively, if the raw decimal format is preferred,
-normalise `event.data` in the opposite direction.
+In Quickshell's `HyprlandToplevel` C++ class, normalise the address when
+it is parsed from the `j/clients` JSON response:
 
-The key requirement is **one format, everywhere** — consumers should not
-need to inspect every address to determine which format it arrived in.
+```cpp
+// In HyprlandToplevel::addressStr() or the JSON parse site:
+QString address = obj["address"].toString();
+if (!address.startsWith("0x"))
+    address = "0x" + address;
+```
 
-## Workaround (for downstream consumers)
+This would make `t.address` consistent with `event.data` without
+changing any consumer code — callers that already work with the decimal
+form would need to remove their own normalisation, but that is a minor
+cleanup compared to the silent bugs the mismatch currently causes.
+
+## Workaround (for downstream QML consumers)
+
+Until the fix is in Quickshell, consumers must normalise at every entry
+point:
 
 ```javascript
 function normaliseAddress(addr) {
@@ -90,13 +106,7 @@ function normaliseAddress(addr) {
 }
 ```
 
-This must be applied at every point an address enters the system:
-
-| Entry point | Source | Apply normalisation |
-|---|---|---|
-| Toplevel properties | `t.address` | `normaliseAddress(t.address)` |
-| Raw events | `event.data` | Already `0x`-prefixed (no-op) |
-| `j/clients` IPC response | `"address"` field | `normaliseAddress(item.address)` |
-
-This is fragile — a new API endpoint or a change in an existing one would
-require updating every normalisation site.
+| Entry point | Apply normalisation |
+|---|---|
+| `t.address` from toplevel properties | `normaliseAddress(t.address)` |
+| `event.data` from raw events | No-op (already `0x`-prefixed) |
