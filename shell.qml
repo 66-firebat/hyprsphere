@@ -191,6 +191,10 @@ PanelWindow {
     property bool searchFocused: false
     property string _pendingSpawnAppId: ""
     property string _pendingSpawnAddr: ""
+    property string _pendingFullscreenAppId: ""
+    // Tracks which window addresses have been fullscreened during a whitelist
+    // launch session, so duplicate openwindow events don't re-dispatch.
+    property var _fullscreenedAddresses: ({})
 
     function buildLayer0() {
         var groups = {};
@@ -231,6 +235,8 @@ PanelWindow {
 
         window.focusable = true;
         window.overlayActive = true;
+        window._pendingFullscreenAppId = "";
+        window._fullscreenedAddresses = {};
 
         // Enter Hyprland submap so letter keys pass through to QML
         // NOTE: must use hyprctl eval, not dispatch (submap is Lua-only)
@@ -744,13 +750,11 @@ PanelWindow {
             var sh = node.exec + ' & sleep 0.3 && hyprctl dispatch ' + "'hl.dsp.focus({window=\\\"class:" + node.appId + "\\\"})'" + ' &';
             Quickshell.execDetached(["bash", "-c", sh]);
 
-            // Fullscreen on activate — dispatched separately with a small delay
-            // to give the app time to create its window, then targeted by class.
+            // Fullscreen on activate — set a flag so the openwindow event
+            // handler fires the fullscreen dispatch with the window's address
+            // as soon as Hyprland reports it, no delay needed.
             if (cfg.fullscreenOnActivate) {
-                // Wrap hyprctl argument in single quotes so bash doesn't
-                // interpret ( ) and { } as shell metacharacters.
-                Quickshell.execDetached(["bash", "-c",
-                    'sleep 1 && hyprctl dispatch ' + "'hl.dsp.window.fullscreen({ mode = \"maximized\", action = \"set\", window = \"class:" + node.appId + "\" })'" ]);
+                window._pendingFullscreenAppId = node.appId;
             }
             closeSequence.start();
             // Reset Hyprland submap so next ALT+Tab works
@@ -912,6 +916,19 @@ PanelWindow {
                     if (window._pendingSpawnAppId === appId) {
                         window._pendingSpawnAddr = addr;
                         if (window.visible) window.scheduleRebuild();
+                    }
+
+                    // Fullscreen on activate for whitelisted app launches.
+                    // Dispatched on every openwindow event matching the appId
+                    // so multi-window apps (Blender opens 4-5) all get
+                    // fullscreened. The flag is cleared in openSwitcher().
+                    // Duplicate openwindow events for the same address are
+                    // skipped to avoid flicker.
+                    if (window._pendingFullscreenAppId === appId && !window._fullscreenedAddresses[addr]) {
+                        window._fullscreenedAddresses[addr] = true;
+                        var fsAddr = addr.indexOf("0x") === 0 ? addr : "0x" + addr;
+                        Quickshell.execDetached(["hyprctl", "dispatch",
+                            'hl.dsp.window.fullscreen({ mode = "maximized", action = "set", window = "address:' + fsAddr + '" })']);
                     }
                 }
                 return;
@@ -1234,6 +1251,7 @@ PanelWindow {
         window.savedLayer2Model = [];
         window.savedLayer2Query = "";
         window.overlayActive = false;
+        window._pendingFullscreenAppId = "";
         closeSequence.start();
         // Reset Hyprland submap so normal bindings work again
         // NOTE: must use hyprctl eval, not dispatch (submap is Lua-only)

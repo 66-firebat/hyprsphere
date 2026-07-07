@@ -272,20 +272,25 @@ Quickshell.execDetached(["bash", "-c", sh]);
 **After (with fullscreenOnActivate):**
 ```qml
 var sh = node.exec + ' & sleep 0.3 && hyprctl dispatch '
-    + "'hl.dsp.focus({window=\\\"class:" + node.appId + "\\\"})'"
-    + (cfg.fullscreenOnActivate
-        ? ' && hyprctl dispatch ' + "'hl.dsp.window.fullscreen({ mode = \\\"maximized\\\", action = \\\"set\\\" })'"
-        : '')
-    + ' &';
+    + "'hl.dsp.focus({window=\"class:" + node.appId + "\"})'" + ' &';
 Quickshell.execDetached(["bash", "-c", sh]);
+
+// Fullscreen on activate — set a flag so the openwindow event
+// handler fires the fullscreen dispatch with the window's address
+// as soon as Hyprland reports it, no delay needed.
+if (cfg.fullscreenOnActivate) {
+    window._pendingFullscreenAppId = node.appId;
+}
 ```
 
 For Path B, the window doesn't exist yet at commit time, so we can't
-pass an address. Instead we rely on the `sleep 0.3 && focus` chain:
-the sleep gives the app time to spawn, the focus targets by class, and
-by the time the fullscreen dispatch runs the window is active. No
-address parameter is passed to the fullscreen dispatcher, so it uses
-the active window (which is the one we just focused).
+pass an address at commit time. Instead, we set a `_pendingFullscreenAppId`
+flag. When Hyprland fires the `openwindow` raw event (handled in
+`onRawEvent`), we match the event's `appId` against this flag. On match,
+we dispatch fullscreen using the **exact window address** from the event
+— the same address-targeting approach as Path A. This is zero-delay:
+the dispatch fires on the same event tick that Hyprland reports the new
+window. No sleep, no polling, no race condition.
 
 #### 7.4 Edge case: Already fullscreen
 
