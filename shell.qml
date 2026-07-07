@@ -872,11 +872,13 @@ PanelWindow {
             // Keep fade animation — overlay can't steal focus since
             // focusable is false. Dispatch by class to ensure focus.
             if (cfg.fullscreenOnActivate) {
-                // Launch via exec_cmd with a PID-tracked maximize rule that
-                // is enforced by the compositor continuously. Unlike a one-shot
-                // dispatch, Blender's init cannot override this.
+                // Launch via exec_cmd with a PID-tracked maximize rule. Also
+                // set _pendingFullscreenAppId as a fallback so the openwindow
+                // event handler dispatches fullscreen by address — some apps
+                // (like GIMP) don't respond to the PID-tracked rule.
                 Quickshell.execDetached(["hyprctl", "dispatch",
                     'hl.dsp.exec_cmd("' + node.exec + '", { maximize = true })']);
+                window._pendingFullscreenAppId = node.appId;
                 // Focus by class after a small delay
                 Quickshell.execDetached(["bash", "-c",
                     'sleep 0.5 && hyprctl dispatch hl.dsp.focus({window="class:' + node.appId + '"}) &']);
@@ -1090,13 +1092,10 @@ PanelWindow {
                         var fsAddr = addr.indexOf("0x") === 0 ? addr : "0x" + addr;
                         window._pendingFullscreenAddr = addr;
                         // Immediate dispatch on openwindow (works for most apps).
+                        // The whitelist commit also uses exec_cmd with a
+                        // PID-tracked maximize rule for persistent enforcement.
                         Quickshell.execDetached(["hyprctl", "dispatch",
                             'hl.dsp.window.fullscreen({ mode = "maximized", action = "set", window = "address:' + fsAddr + '" })']);
-                        // Also trigger scheduleRebuild which will dispatch again
-                        // after the retry loop confirms the window is registered
-                        // in Hyprland.toplevels (catches apps like Blender that
-                        // override the fullscreen state during init).
-                        window.scheduleRebuild();
                     }
                 }
                 return;
