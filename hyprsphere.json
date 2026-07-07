@@ -147,12 +147,6 @@
     "nonMatchOpacity": 0.15
   },
 
-  "stars": {
-    "count": 50,
-    "opacityMin": 0.08,
-    "opacityMax": 0.12
-  },
-
   "whitelist": [
     {
       "appId": "blender",

@@ -281,11 +281,19 @@ organized by section.
 | `strutHeight` | `4` | Height of decorative struts |
 | `antennaHeight` | `16` | Height of decorative antenna |
 | `thrusterHeight` | `11` | Height of decorative thruster |
+| `radius12` | `10` | Corner radius (12px base) for hull elements |
+| `radius8` | `7` | Corner radius (8px base) for panel elements |
+| `radius4` | `3` | Corner radius (4px base) for fine details |
+| `antBall` | `6` | Diameter of the antenna tip ball |
+| `antStick` | `2` | Width of the antenna mast |
+| `antOffX` | `14` | Horizontal offset of the antenna from center |
 | `screenMargin` | `8` | Margin inside the card for screen content |
 | `innerMargin` | `10` | Inner margin for content layout |
 | `iconSize` | `160` | Size of the satellite card's app icon |
 | `fontSize` | `10` | Font size of the satellite card label |
+| `thrusterBase` | `16` | Width of the thruster base |
 | `spacing` | `5` | Spacing between satellite card elements |
+| `extraHeight` | `11` | Additional height above the hull for decorative elements |
 | `hullBorderWidth` | `1.5` | Border width of the satellite card hull |
 | `selectedBackground` | `false` | Show SVG decoration behind the satellite icon |
 
@@ -339,11 +347,15 @@ organized by section.
 | `borderRadius` | `28` | Corner radius of the search bar (pill shape) |
 | `bottomMargin` | `63` | Distance from the search bar to the bottom of the screen |
 | `borderWidth` | `1.5` | Border width of the search bar |
-| `backgroundOpacity` | `0.92` | Background opacity of the search bar |
+| `backgroundColor` | `"#ff4400"` | Background color of the search bar (used with `backgroundOpacity`) |
+| `backgroundOpacity` | `0.3` | Background opacity of the search bar (0-1) |
+| `borderColor` | `"#2b2b2b"` | Border color when search is empty |
+| `activeBorderColor` | `"#ff4400"` | Border color when search has text |
+| `textColor` | `"#ff4400"` | Color of typed search text |
 | `shadowOpacity` | `0.4` | Opacity of the drop shadow below the search bar |
 | `shadowBlur` | `1.5` | Blur radius of the drop shadow |
 | `placeholderText` | `"Search apps and windows..."` | Placeholder text when search is empty |
-| `placeholderColor` | `"#6c7086"` | Color of the placeholder text |
+| `placeholderColor` | `"#ff4400"` | Color of the placeholder text |
 
 ### `search` — Fuse.js fuzzy search
 
@@ -363,7 +375,7 @@ organized by section.
 | `nonSelectedIconSize` | `110` | Size of the app icon on non-selected sphere cards |
 | `appIconOpacity` | `1.0` | Opacity of app group icons on non-selected cards (layer 0). Range 0–1. |
 | `cardBorderColor` | `"transparent"` | Border colour of non-selected cards on hover. Set to a hex like `"#45475a"` to show a coloured border on hover, or keep `"transparent"` for no border. |
-| `windowIconOpacity` | `0.75` | Opacity of icons on window nodes (layer 1/layer 2) — app icons are full opacity unless overridden by `appIconOpacity` |
+| `windowIconOpacity` | `1.0` | Opacity of icons on window nodes (layer 1/layer 2) — app icons use `appIconOpacity` |
 | `satelliteAppLabel` | `false` | Show label on the satellite card for app nodes (window nodes always show) |
 | `labelBgColor` | `"#ff4400"` | Background color of the label rectangle on non-selected cards and satellite |
 | `labelTextColor` | `"#2b2b2b"` | Text color of the label rectangle |
