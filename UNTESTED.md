@@ -6,6 +6,15 @@ changes that touch the relevant code paths.
 
 ## PATCH_2 (Window-level MRU only)
 
+### M15. fullscreenOnActivate: false
+
+When `fullscreenOnActivate` is set to `false`, no window should be maximised
+on commit. This was tested and verified as working correctly.
+
+**Tested:** PASS — committed windows remain un-maximised when the flag is off.
+
+---
+
 ### CTRL+C close with multiple Firefox windows
 
 When multiple Firefox windows are open and CTRL+C is used to close them,
