@@ -896,6 +896,16 @@ if (window.layer === 2 && window.searchQuery !== "") {
         }
 
         // Hide overlay FIRST so it doesn't steal focus back after dispatch.
+        // But update globalWindowMru FIRST — onActiveToplevelChanged might
+        // not fire until the overlay reopens (QML engine pauses on hide).
+        if (cfg.mruMethod === "window" && addr) {
+            var commitNorm = addr.indexOf("0x") === 0 ? addr : "0x" + addr;
+            var commitFiltered = [];
+            for (var ci = 0; ci < globalWindowMru.length; ci++) {
+                if (globalWindowMru[ci] !== commitNorm) commitFiltered.push(globalWindowMru[ci]);
+            }
+            globalWindowMru = [commitNorm].concat(commitFiltered);
+        }
         window.overlayActive = false;
         window.visible = false;
 
