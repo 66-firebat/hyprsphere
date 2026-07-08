@@ -482,6 +482,29 @@ of `hyprsphere.qml`.
 
 ---
 
+## Known Limitations
+
+### Held Tab does not cycle when `focusOnTab` is enabled
+
+When `focusOnTab: true`, each Tab press dispatches `hyprctl dispatch focus`
+to preview the target window behind the overlay. To prevent the target window
+from stealing keyboard focus from the overlay, the overlay briefly hides and
+reappears via a visibility toggle (`visible=false` → `visible=true`). During
+this toggle cycle, the compositor cannot deliver key events to the overlay
+surface. Any Tab key events received during this window are either lost or
+intercepted by Hyprland's global keybinds, causing the resulting IPC
+`advance()` call to be blocked by the `_togglingVisibility` guard.
+
+The practical effect is that **holding Tab to rapidly cycle through the
+sphere does not work** when `focusOnTab` is enabled. Each advance requires
+a distinct press-release-press cycle of the Tab key.
+
+**Workaround:** Press and release Tab individually for each advance.
+Or set `"focusOnTab": false` to disable live preview and restore
+held-Tab cycling (at the cost of losing the live window preview).
+
+---
+
 ## Fuzzy Searching Mechanism
 
 hyprsphere uses **Fuse.js v7.0.0** (bundled at `lib/fuse.js`) for
