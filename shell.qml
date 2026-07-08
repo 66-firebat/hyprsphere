@@ -328,7 +328,7 @@ PanelWindow {
             return;
         }
 
-        var mruSorted = sortByMru(raw);
+        var mruSorted = sortByWindowMru(raw);
         sphereModel = mruSorted.length === 0
             ? [{ label: "No windows", icon: "", appId: "", windows: [], isPlaceholder: true }]
             : mruSorted;
@@ -351,6 +351,7 @@ PanelWindow {
             if (selectedAppIndex < sphereModel.length) {
                 centerOnApp(selectedAppIndex);
             }
+            console.log("[dbg] finishOpen: gWM=" + window.globalWindowMru + " preId=" + window._preSelectedAppId + " selIdx=" + selectedAppIndex + " sphere=" + JSON.stringify(sphereModel.map(function(a){return a.appId;})));
         }
 
         projDirty = true;
@@ -380,19 +381,43 @@ PanelWindow {
         Qt.callLater(function() { scheduleRebuild(); });
     }
 
-    function sortByMru(raw) {
-        var sorted = [];
-        for (var m = 0; m < appMru.length; m++) {
-            for (var r = 0; r < raw.length; r++) {
-                if (raw[r].appId === appMru[m]) {
-                    sorted.push(raw[r]);
-                    break;
-                }
+    function sortByWindowMru(raw) {
+        // Build address → appId lookup from raw data
+        var addrToApp = {};
+        for (var r = 0; r < raw.length; r++) {
+            var app = raw[r];
+            for (var w = 0; w < (app.windows || []).length; w++) {
+                var a = app.windows[w].address || "";
+                if (a.indexOf("0x") !== 0) a = "0x" + a;
+                addrToApp[a] = app.appId;
             }
         }
-        for (var r2 = 0; r2 < raw.length; r2++) {
-            if (sorted.indexOf(raw[r2]) === -1) sorted.push(raw[r2]);
+
+        // Build rawByApp for quick lookup
+        var rawByApp = {};
+        for (var r = 0; r < raw.length; r++) {
+            rawByApp[raw[r].appId] = raw[r];
         }
+
+        // Walk globalWindowMru in order, collecting app groups
+        var seen = {};
+        var sorted = [];
+        for (var i = 0; i < window.globalWindowMru.length; i++) {
+            var addr = window.globalWindowMru[i];
+            var appId = addrToApp[addr];
+            if (appId && !seen[appId] && rawByApp[appId]) {
+                seen[appId] = true;
+                sorted.push(rawByApp[appId]);
+            }
+        }
+
+        // Append unseen apps (whitelisted placeholders, etc.)
+        for (var r = 0; r < raw.length; r++) {
+            if (!seen[raw[r].appId]) {
+                sorted.push(raw[r]);
+            }
+        }
+
         return sorted;
     }
 
@@ -566,7 +591,7 @@ PanelWindow {
         window.layer = 0;
         sphereModel = raw.length === 0
             ? [{ label: "No windows", icon: "", appId: "", windows: [], isPlaceholder: true }]
-            : sortByMru(raw);
+            : sortByWindowMru(raw);
         sphereZoom = 1.0;
         projDirty = true;
         rebuildProjCache();
@@ -859,7 +884,7 @@ if (window.layer === 2 && window.searchQuery !== "") {
                 var raw = buildLayer0();
                 sphereModel = raw.length === 0
                     ? [{ label: "No windows", icon: "", appId: "", windows: [], isPlaceholder: true }]
-                    : sortByMru(raw);
+                    : sortByWindowMru(raw);
                 projDirty = true;
                 rebuildProjCache();
 
@@ -918,6 +943,7 @@ if (window.layer === 2 && window.searchQuery !== "") {
         }
 
         var addr = window._targetAddrForNode(node);
+        console.log("[dbg] commitSel node=" + (node ? node.appId : "null") + " addr=" + (addr || "none") + " layer=" + window.layer);
 
         // Update globalWindowMru synchronously before hiding overlay —
         // onActiveToplevelChanged may not fire until overlay reopens.
@@ -1019,7 +1045,7 @@ if (window.layer === 2 && window.searchQuery !== "") {
             selectedAppIndex = 0;
             return;
         }
-        sphereModel = sortByMru(raw);
+        sphereModel = sortByWindowMru(raw);
         selectedAppIndex = Math.min(sphereModel.length - 1, selectedAppIndex);
         centerOnApp(selectedAppIndex);
     }
@@ -1193,6 +1219,7 @@ if (window.layer === 2 && window.searchQuery !== "") {
         }
         selectedAppIndex = next;
         centerOnApp(next);
+        console.log("[dbg] advance dir=" + dir + " newIdx=" + selectedAppIndex + " app=" + sphereModel[selectedAppIndex].appId);
         // FocusOnTab: focus the newly selected node's target window
         if (cfg.focusOnTab) {
             window._previewFocus(window._targetAddrForNode(sphereModel[selectedAppIndex]));
@@ -1449,6 +1476,16 @@ if (window.layer === 2 && window.searchQuery !== "") {
         window.savedLayer2Model = [];
         window.savedLayer2Query = "";
         window.overlayActive = false;
+        // FocusOnTab: restore focus to the origin window (the one the user
+        // was on before pressing Alt+Tab) before unfreezing MRU, so the
+        // compositor doesn't leave the last preview-focused window active.
+        if (cfg.focusOnTab && globalWindowMru.length >= 1) {
+            var originAddr = globalWindowMru[0];
+            console.log("[dbg] cancelSwitch restoring focus to " + originAddr);
+            var originPrefix = originAddr.indexOf("0x") === 0 ? "" : "0x";
+            Quickshell.execDetached(["hyprctl", "dispatch",
+                'hl.dsp.focus({window="address:' + originPrefix + originAddr + '"})']);
+        }
         window._mruFrozen = false;
         closeSequence.start();
         // Reset Hyprland submap so normal bindings work again
@@ -1890,7 +1927,9 @@ if (window.layer === 2 && window.searchQuery !== "") {
                             window.centerOnApp(index);
                             // FocusOnTab: focus the clicked node
                             if (cfg.focusOnTab) {
-                                window._previewFocus(window._targetAddrForNode(window.sphereModel[index]));
+                                var clickNode = window.sphereModel[index];
+                                console.log("[dbg] click idx=" + index + " app=" + (clickNode ? clickNode.appId : "null"));
+                                window._previewFocus(window._targetAddrForNode(clickNode));
                             }
                         }
 
