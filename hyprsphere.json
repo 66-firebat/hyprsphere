@@ -120,7 +120,7 @@
     "windowCountBadge": {
       "satellite": true,
       "nonSelected": false,
-      "offsetY": 55,
+      "offsetY": 57,
       "offsetX": 0,
       "fontSize": 18,
       "padding": 14,
