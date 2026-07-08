@@ -831,37 +831,63 @@ the API, which caused subtle, hard-to-reproduce bugs throughout development.
 
 | Source | Format | Example |
 |---|---|---|
-| `t.address` (toplevels / activeToplevel) | **RAW** (no prefix) | `"101839840165184"` |
-| `event.data` (raw events) | **0x-prefixed** | `"0x5cb8a4e2a040"` |
+| `t.address` (toplevels / activeToplevel) | **Decimal string** | `"109758992184752"` |
+| `event.data` (closewindow) | **Hex without 0x** | `"63d341b2fcf0"` |
+| `event.data` (openwindow) | **Hex with 0x** | `"0x5cb8a4e2a040"` |
+| `hyprctl clients -j` | **Hex** | `"0x63d341b2fcf0"` |
 
-Both formats circulate through the codebase. If a comparison expects `0x` but
-receives raw, or vice versa, the match silently fails — an address that should
-be found in an MRU list is missed, a window that should be removed from a
-container is left behind, or the drill-down view selects the wrong window.
+The critical mismatch: `t.address` from Quickshell's `j/clients` parser returns
+a **decimal** string, while all event-socket data uses **hex**. Simply
+prepending `"0x"` to the decimal string (e.g., `"0x109758992184752"`) produces
+a **different address** than the correct hex (`"0x63d341b2fcf0"`), since
+`0x109758992184752` in hex equals `4663441176908114` in decimal — not the
+original `109758992184752`.
 
-#### The six entry points
+#### The fix: a shared `normalizeAddress()` function
 
-Every window address enters the system through one of six paths. Each must
-normalise to the canonical `0x`-prefixed format:
+A single entry point (`shell.qml` line ~89) handles all address ingestion:
 
-| # | Function | Source | Status |
+```javascript
+function normalizeAddress(addr) {
+    if (!addr) return "";
+    if (addr.indexOf("0x") === 0) return addr;
+    // Quickshell may return address as decimal string (from j/clients)
+    // OR as hex string without 0x prefix (from event-socket fallback).
+    // Try decimal first; if it fails, treat as raw hex.
+    var num = Number(addr);
+    if (!isNaN(num)) return "0x" + num.toString(16);
+    // Already hex without 0x — just add the prefix
+    return "0x" + addr;
+}
+```
+
+This properly converts decimal `"109758992184752"` → `"0x63d341b2fcf0"` by
+parsing as a number and converting to hex, while also handling hex-without-0x
+inputs gracefully via the `isNaN` fallback.
+
+#### The five entry points (decimal ingest)
+
+Every address from `t.address` (Quickshell's j/clients) now goes through
+`normalizeAddress()`. The event-socket paths (openwindow / closewindow) keep
+their simple `"0x" + addr` since they already receive hex data:
+
+| # | Function | Before (broken) | After (fixed) |
 |---|---|---|---|
-| 1 | `initWindowIndices()` | `t.address` (toplevels on startup) | Normalised |
-| 2 | `buildLayer0()` | `t.address` (toplevels on rebuild) | Normalised |
-| 3 | `buildSearchDatabase()` | `t.address` / `t2.address` | Normalised |
-| 4 | `onActiveToplevelChanged()` | `t.address` (focus change) | Normalised |
-| 5 | `onRawEvent` openwindow | `parts[0]` (new window event) | Normalised |
-| 6 | `onRawEvent` closewindow | `event.data` (close event) | Normalised |
+| 1 | `initWindowIndices()` | `"0x" + addr` | `normalizeAddress(addr)` |
+| 2 | `buildLayer0()` | `"0x" + wAddr` | `normalizeAddress(wAddr)` |
+| 3 | `buildSearchDatabase()` (app) | `"0x" + sAddr1` | `normalizeAddress(sAddr1)` |
+| 4 | `buildSearchDatabase()` (window) | ternary with `"0x"` | `normalizeAddress(t2.address)` |
+| 5 | `onActiveToplevelChanged()` | `"0x" + addr` | `normalizeAddress(addr)` |
 
 #### The rule
 
 **Normalise on ingest, strip on dispatch.** Every address is converted to
-`0x`-prefixed form as soon as it enters the system — at the assignment, not
+`0x`-prefixed hex as soon as it enters the system — at the assignment, not
 at the comparison site. This means:
 
 - All internal containers (`globalWindowMru`, `appWindowMru`,
   `sphereModel[].address`, `_appOpeningOrder`) consistently store `0x`-prefixed
-  addresses
+  hex addresses
 - All comparisons are direct `===` matches with no ad-hoc normalisation
 - Addresses are only stripped of `0x` when sent to Hyprland's IPC dispatcher
   (which expects raw addresses in certain contexts, though the dispatch calls
@@ -879,11 +905,17 @@ Quickshell.execDetached(["hyprctl", "dispatch",
 
 If address normalisation is missing or inconsistent, you may see:
 
-- **Drill-down selects the wrong window** — the second-MRU window isn't found,
-  falls back to index 0 (MRU-most)
+- **Stale windows accumulate as "unknown"** — the most visible symptom.
+  Closewindow events can't match addresses in `appWindowMru`, so cleanup
+  never runs. Stale entries persist in `globalWindowMru` and `appWindowMru`,
+  while `buildLayer0()` sees windows in transitional closing states that fall
+  through to `appId = "unknown"`. These appear with the purple/black QML
+  broken-image icon (`"application-x-executable"` not found in icon theme).
 - **Window close doesn't update MRU** — the closed address doesn't match any
   entry in `appWindowMru`, so the window is never removed from the per-app
-  MRU list
+  MRU list. Next overlay open may reference closed windows.
+- **Drill-down selects the wrong window** — the second-MRU window isn't found,
+  falls back to index 0 (MRU-most)
 - **Opening-order badges are wrong** — the badge lookup against
   `_appOpeningOrder` fails due to format mismatch, showing incorrect window
   indices
