@@ -186,6 +186,12 @@
       "exec": "anki"
     },
     {
+      "appId": "com.mitchellh.ghostty",
+      "label": "Ghostty",
+      "icon": "com.mitchellh.ghostty",
+      "exec": "ghostty"
+    },
+    {
       "appId": "gimp",
       "label": "GIMP",
       "icon": "gimp",

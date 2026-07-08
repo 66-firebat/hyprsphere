@@ -60,7 +60,7 @@ IPC (`qs ipc call`) to work. The `-p` flag breaks IPC, so we use symlinks:
 
 ```bash
 mkdir -p ~/.config/quickshell
-ln -sf /home/fireshark/hyprsphere/hyprsphere.qml ~/.config/quickshell/shell.qml
+ln -sf /path/to/hyprsphere/shell.qml ~/.config/quickshell/shell.qml
 ln -sf /home/fireshark/hyprsphere/lib ~/.config/quickshell/lib
 ```
 
@@ -182,7 +182,7 @@ Add to your Hyprland Lua config:
 ```lua
 hl.on("hyprland.start", function()
     hl.exec_cmd("bash -c '"
-        .. "ln -sf /path/to/hyprsphere/hyprsphere.qml $HOME/.config/quickshell/shell.qml; "
+        .. "ln -sf /path/to/hyprsphere/shell.qml $HOME/.config/quickshell/shell.qml; "
         .. "ln -sf /path/to/hyprsphere/lib $HOME/.config/quickshell/lib; "
         .. "export QML2_IMPORT_PATH=\"${QML2_IMPORT_PATH:+$QML2_IMPORT_PATH:}/path/to/qt5compat/lib/qt-6/qml\"; "
         .. "quickshell'")
@@ -420,7 +420,7 @@ is deduplicated and shown in its normal MRU position.
 | `appId` | App identifier (must match Hyprland's `wayland.appId` for dedup) |
 | `label` | Human-readable label displayed on the card |
 | `icon` | Freedesktop icon name (fed to `image://icon/...`) |
-| `exec` | Shell command to launch the app (e.g., `"firefox"`) |
+| `exec` | Shell command to launch the app (e.g., `"firefox"`). This is the **primary** launch command — if the command contains double quotes, they must be escaped for Lua (`\"`) in the JSON value (see [Exec quoting for Lua dispatch](#exec-quoting-for-lua-dispatch) below). |
 
 #### Example
 ```json
@@ -431,6 +431,40 @@ is deduplicated and shown in its normal MRU position.
   "exec": "firefox"
 }
 ```
+
+### Exec quoting for Lua dispatch
+
+When a whitelisted entry is committed, the `exec` command is passed to
+Hyprland's Lua API via `exec_cmd("...")`. This means the command string
+appears inside Lua double-quote delimiters:
+
+```lua
+hl.dsp.exec_cmd("<command>", { maximize = true })
+```
+
+If your `exec` command contains **double quotes** (e.g., `"$XDG_RUNTIME_DIR"`
+or `"(my/eat-new)"`), they must be escaped so Lua treats them as literal
+characters rather than string terminators. In the JSON value, write `\\"`
+for each embedded double quote:
+
+| Intended character | Write in JSON | Lua sees |
+|---|---|---|
+| `"` (literal double quote) | `\\"` | `\"` (escaped, kept as part of string) |
+
+**Example:** A desktop file `Exec=` line like:
+```
+Exec=ghostty -e bash -lc 'until [ -S "$XDG_RUNTIME_DIR/emacs/server" ]; ...'
+```
+
+Would be written in `hyprsphere.json` as:
+```json
+"exec": "ghostty -e bash -lc 'until [ -S \\\"$XDG_RUNTIME_DIR/emacs/server\\\" ]; ...'"
+```
+
+Where:
+- `\\"` in JSON → `"` in the parsed JavaScript string
+- `"` in the JavaScript string → terminated Lua string (WRONG)
+- `\\"` in JSON → `\"` in JavaScript → Lua sees `\"` as escaped quote inside string (CORRECT)
 
 ---
 
@@ -463,7 +497,7 @@ icon.
 Make sure:
 1. Quickshell was started **without** the `-p` flag
 2. The symlink `~/.config/quickshell/shell.qml` exists and points to
-   `hyprsphere.qml`
+   the repository's `shell.qml`
 3. Quickshell is running (`qs list --all`)
 
 ### ALT + Tab opens overlay but letter keys still trigger Hyprland binds
@@ -478,7 +512,7 @@ The submap is not being entered. Check:
 ### After committing a whitelisted app or placeholder, ALT + Tab doesn't work
 The submap wasn't reset. This was a known bug fixed by adding `hyprctl eval`
 calls in the QML commit paths. Make sure you're running the latest version
-of `hyprsphere.qml`.
+of the repository's `shell.qml`.
 
 ---
 
@@ -529,7 +563,7 @@ Quickshell resolves `lib/fuse.js` relative to the **symlink parent**
 (`~/.config/quickshell/`), not the actual file location. The chain is:
 
 ```
-~/.config/quickshell/shell.qml  →  /path/to/hyprsphere/hyprsphere.qml
+~/.config/quickshell/shell.qml  →  /path/to/hyprsphere/shell.qml
 ~/.config/quickshell/lib        →  /path/to/hyprsphere/lib/
                                          └── fuse.js  ← resolved here
 ```
