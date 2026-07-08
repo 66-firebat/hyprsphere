@@ -83,6 +83,21 @@ PanelWindow {
         return execMap[appId] || null;
     }
 
+    // Normalize a decimal address (from Quickshell's j/clients toplevels)
+    // to 0x-prefixed hex format matching Hyprland's event socket format.
+    // See ADDRESS_BUG_REPORT.md for the full rationale.
+    function normalizeAddress(addr) {
+        if (!addr) return "";
+        if (addr.indexOf("0x") === 0) return addr;
+        // Quickshell may return address as decimal string (from j/clients)
+        // OR as hex string without 0x prefix (from event-socket fallback).
+        // Try decimal first; if it fails, treat as raw hex.
+        var num = Number(addr);
+        if (!isNaN(num)) return "0x" + num.toString(16);
+        // Already hex without 0x — just add the prefix
+        return "0x" + addr;
+    }
+
     function showNonSelectedLabel() {
         var layers = cfg.appCard?.nonSelectedLayerLabels;
         if (!layers) return true;
@@ -171,7 +186,7 @@ PanelWindow {
             if (!t) continue;
             var addr = t.address || "";
             if (!addr) continue;
-            if (addr.indexOf("0x") !== 0) addr = "0x" + addr;
+            addr = window.normalizeAddress(addr);
             var appId = (t.wayland && t.wayland.appId) ? t.wayland.appId : "unknown";
             if (!window._appOpeningOrder[appId]) window._appOpeningOrder[appId] = [];
             if (window._appOpeningOrder[appId].indexOf(addr) === -1) {
@@ -269,8 +284,7 @@ PanelWindow {
             var wl = t.wayland;
             var appId = (wl && wl.appId) ? wl.appId : "unknown";
             if (!groups[appId]) groups[appId] = { appId: appId, label: window.resolveName(appId), icon: window.resolveIcon(appId), windows: [] };
-            var wAddr = t.address || "";
-            if (wAddr.indexOf("0x") !== 0) wAddr = "0x" + wAddr;
+            var wAddr = window.normalizeAddress(t.address);
             groups[appId].windows.push({ address: wAddr, title: t.title });
             groups[appId].windowCount = groups[appId].windows.length;
         }
@@ -447,8 +461,7 @@ PanelWindow {
             }
             for (var d = 0; d < db.length; d++) {
                 if (db[d].appId === appId && db[d].type === "running-app") {
-                    var sAddr1 = t.address || "";
-                    if (sAddr1.indexOf("0x") !== 0) sAddr1 = "0x" + sAddr1;
+                    var sAddr1 = window.normalizeAddress(t.address);
                     db[d].windows.push({ address: sAddr1, title: t.title });
                     break;
                 }
@@ -465,7 +478,7 @@ PanelWindow {
             var appId2 = (wl2 && wl2.appId) ? wl2.appId : "unknown";
             db.push({
                 type: "window", appId: appId2, label: window.resolveName(appId2), icon: window.resolveIcon(appId2),
-                address: (t2.address && t2.address.indexOf("0x") === 0 ? t2.address : "0x" + (t2.address || "")), title: t2.title || appId2
+                address: window.normalizeAddress(t2.address), title: t2.title || appId2
             });
         }
 
@@ -1061,9 +1074,7 @@ if (window.layer === 2 && window.searchQuery !== "") {
             if (!t) return;
             var appId = (t.wayland && t.wayland.appId) ? t.wayland.appId : "unknown";
 
-            var addr = t.address || "";
-            if (addr.indexOf("0x") !== 0) addr = "0x" + addr;
-
+            var addr = window.normalizeAddress(t.address);
             // MRU freeze: when the overlay is open (focusOnTab), block focus
             // tracking to prevent feedback loops from preview focus dispatches.
             if (window._mruFrozen) return;
