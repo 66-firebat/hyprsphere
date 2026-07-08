@@ -568,38 +568,88 @@ Quickshell resolves `lib/fuse.js` relative to the **symlink parent**
                                          └── fuse.js  ← resolved here
 ```
 
-### Index construction (once per overlay open)
+### Search database — `buildSearchDatabase()`
 
-When the overlay opens, `initFuseIndex()` is called once:
+When the overlay opens, `initFuseIndex()` calls `buildSearchDatabase()` which
+builds a flat array of every searchable item. It contains **three types of
+entries**:
+
+#### 1. Running apps (`type: "running-app"`)
+
+One entry per unique `appId` from `Hyprland.toplevels` (the same data source
+as the layer 0 sphere). Special workspace windows (`special:*`) are excluded.
+Apps are grouped so that typing the app name surfaces a single result rather
+than every window:
 
 ```qml
-function initFuseIndex() {
-    var db = buildSearchDatabase();
-    fuseIndex = new FuseJs.Fuse(db, {
-        keys: [
-            { name: "label", weight: 0.5 },
-            { name: "title", weight: 0.4 },
-            { name: "appId", weight: 0.1 }
-        ],
-        threshold: cfg.search?.fuseThreshold ?? 0.4,
-        minMatchCharLength: cfg.search?.fuseMinMatchCharLength ?? 1,
-        includeScore: true,
-        shouldSort: true
-    });
-}
+{ type: "running-app", appId: "firefox", label: "Firefox",
+  icon: "firefox", windows: [{ address: "0x...", title: "Mozilla Firefox" }, ...] }
 ```
 
-`buildSearchDatabase()` builds a flat array of every searchable item:
-- Running apps (grouped by appId, one entry per app)
-- Individual windows (one entry per window, for title search)
-- Whitelisted apps (entries for apps not currently running)
+The `windows` array stores every individual window's address and title — used
+by drill-down but not for Fuse matching.
 
-Each item has a `type` field (`"running-app"`, `"window"`, or
-`"whitelisted-app"`) which is used later for sorting results.
+#### 2. Individual windows (`type: "window"`)
 
-The Fuse index is stored in the `fuseIndex` property and survives for the
-entire overlay session. It is only rebuilt when:
-- A window closes while the overlay is open and layer 2 is active
+A second pass over the same toplevel array adds a **separate entry per window**
+for title-based search:
+
+```qml
+{ type: "window", appId: "firefox", label: "Firefox", icon: "firefox",
+  address: "0x63d341ce8290", title: "Mozilla Firefox" }
+```
+
+This is what lets you type part of a window title and have that specific
+window appear in results.
+
+#### 3. Whitelisted placeholders (`type: "whitelisted-app"`)
+
+Whitelist entries whose `appId` isn't currently running are added so they
+appear in search results too:
+
+```qml
+{ type: "whitelisted-app", appId: "blender", label: "Blender",
+  icon: "blender", exec: "blender", windows: [], windowCount: 0 }
+```
+
+**Yes — the search matches against ALL windows currently alive in Hyprland**
+(plus whitelisted-but-dormant apps). The same `j/clients` data that powers
+the sphere also feeds the search index.
+
+### Fuse index construction
+
+The flat database is passed to Fuse.js with weighted keys:
+
+| Key | Weight | Purpose |
+|---|---|---|
+| `label` | 0.5 | Resolved display name (e.g. `"Firefox"`, `"Ghostty"`) |
+| `title` | 0.4 | Window title (e.g. `"Mozilla Firefox"`, `"π - hyprsphere"`) |
+| `appId` | 0.1 | Raw app identifier (e.g. `"com.mitchellh.ghostty"`) |
+
+```qml
+fuseIndex = new FuseJs.Fuse(db, {
+    keys: [
+        { name: "label", weight: 0.5 },
+        { name: "title", weight: 0.4 },
+        { name: "appId", weight: 0.1 }
+    ],
+    threshold: 0.4,
+    minMatchCharLength: 1,
+    ignoreLocation: true,   // ← match anywhere in the string, no distance penalty
+    includeScore: true,
+    shouldSort: true
+});
+```
+
+Key settings:
+- **`ignoreLocation: true`** — Crucial for window titles. Typing `"fox"` matches
+  `"Firefox"` even though the match starts at character 4.
+- **`threshold: 0.4`** — Fairly lenient. Allows typos and partial matches.
+- **`weight`** — Labels are most important, then window titles, then raw appIds.
+
+The Fuse index is built **once** when the overlay opens (in `finishOpenSwitcher()`)
+and survives for the entire session. It is only rebuilt when:
+- A window opens or closes while the overlay is open and layer 2 is active
   (`scheduleRebuild()` calls `initFuseIndex()` then re-runs the search)
 - The overlay is closed and reopened (`openSwitcher()` →
   `finishOpenSwitcher()` → `initFuseIndex()`)
@@ -624,35 +674,46 @@ already-built index. No new Fuse object is created per keystroke — typing
 "firefox" character-by-character runs 7 `.search()` calls on the same
 cached index.
 
-### Result processing pipeline
+### Building the layer 2 sphere
+
+Results from Fuse arrive as `[{ item, score }, ...]` sorted by Fuse's
+internal scoring. The pipeline transforms them into a layer 2 sphere:
 
 ```
-fuseIndex.search("fire")
+fuseIndex.search("fox")
     │
     ▼
-results: [{ item: {...}, score: 0.12 }, { item: {...}, score: 0.35 }, ...]
-    │  (Fuse result objects with .score metadata)
-    ▼
-top = results.slice(0, maxResults)      ← keep top 30
+Results are sliced to maxResults (default 30)
     │
     ▼
-Sort into buckets by item.type:
-    ├── runApps[]        (type === "running-app")
-    ├── whitelistApps[]  (type === "whitelisted-app")
-    └── winNodes[]       (type === "window")
+Sorted into three buckets by item.type:
+    ├── runApps[]        (type === "running-app")     ← app groups first
+    ├── whitelistApps[]  (type === "whitelisted-app") ← then dormant apps
+    └── winNodes[]       (type === "window")          ← individual windows last
     │
     ▼
-Build layer2Model[] = runApps + whitelistApps + winNodes  ← ordered
+layer2Model = runApps.concat(whitelistApps).concat(winNodes)
     │
     ▼
-sphereModel = layer2Model    ← assigned to Repeater model, sphere re-renders
+sphereModel = layer2Model              ← overwrites the layer 0 sphere
+sphereZoom  = cfg.search.layer2Zoom     ← zooms in (default 1.5×)
 ```
 
-Each result from Fuse contains `{ item, score }`. The `.score` metadata
-is discarded after sorting — only the raw `.item` data is preserved in the
-buckets. A new `layer2Model` array is built with cleaned-up node objects
-(the shape expected by the sphere's delegate) and assigned to
-`sphereModel`, which triggers a QML re-render.
+The sort order is strict: **app groups first → whitelisted apps → individual
+windows**. Within each bucket, Fuse's score order is preserved (best match
+first). The `.score` metadata is discarded — only the raw `.item` data is
+carried into the layer 2 model.
+
+Each search result node gets `isSearchResult: true` so the sphere delegate
+can distinguish it from layer 0 nodes. The sphere zoom increases to
+`layer2Zoom` (configurable, default 1.5×) so fewer nodes are visible at
+once, making the results easier to scan.
+
+### Cancelling search
+
+Backspace to empty or Escape calls `cancelSearch()`, which rebuilds
+`buildLayer0()`, re-sorts by MRU, restores `sphereZoom` to 1.0, and
+centres the sphere on the pre-selected app.
 
 ### Memory lifecycle per keystroke
 
