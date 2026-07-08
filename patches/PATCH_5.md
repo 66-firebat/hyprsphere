@@ -140,32 +140,10 @@ From the first sphere item, Shift+Tab goes to the last (oldest history).
 
 #### Change 1 — Replace `sortByMru()` with `sortByWindowMru()`
 
-Replace the function definition entirely. The new function iterates
-`globalWindowMru` and deduplicates app groups.
-
-#### Change 2 — Update all call sites
-
-`sortByMru` is called in:
-
-| Location | Change |
-|---|---|
-| `finishOpenSwitcher()` — building initial sphere | `sortByMru(raw)` → `sortByWindowMru(raw)` |
-| `cancelSearch()` — returning from layer 2 to layer 0 | `sortByMru(raw)` → `sortByWindowMru(raw)` |
-| `drillDown()` — layer 1 → layer 0 return path | `sortByMru(raw)` → `sortByWindowMru(raw)` |
-| `rebuildToLayer0()` — layer 0 rebuild | `sortByMru(raw)` → `sortByWindowMru(raw)` |
-
-#### Change 3 — Remove `_findAppForAddress()` dependency issue
-
-`_findAppForAddress()` searches `sphereModel` for the address. But
-`sortByWindowMru()` needs to search BEFORE the sphere is built. We need
-`_findAppForAddress` to search the raw data (`buildLayer0` output) instead
-of `sphereModel`.
-
-**Fix:** Add a parameter `_findAppForAddress(addr, source)` where `source`
-defaults to `window.sphereModel` but can be set to the raw array.
-
-OR: Build a temporary `appIdByAddress` map in `sortByWindowMru()` from the
-raw input, avoiding `_findAppForAddress` entirely.
+Replace the function definition entirely. The new function builds an
+`addrToApp` lookup directly from the raw data (avoiding a dependency on
+`_findAppForAddress` which searches `sphereModel`), then walks
+`globalWindowMru` in order, deduplicating by appId:
 
 ```javascript
 function sortByWindowMru(raw) {
@@ -180,17 +158,15 @@ function sortByWindowMru(raw) {
         }
     }
 
-    // Build rawByApp lookup
     var rawByApp = {};
     for (var r = 0; r < raw.length; r++) {
         rawByApp[raw[r].appId] = raw[r];
     }
 
-    // Walk globalWindowMru
     var seen = {};
     var sorted = [];
-    for (var i = 0; i < globalWindowMru.length; i++) {
-        var addr = globalWindowMru[i];
+    for (var i = 0; i < window.globalWindowMru.length; i++) {
+        var addr = window.globalWindowMru[i];
         var appId = addrToApp[addr];
         if (appId && !seen[appId] && rawByApp[appId]) {
             seen[appId] = true;
@@ -198,19 +174,88 @@ function sortByWindowMru(raw) {
         }
     }
 
-    // Append unseen (whitelisted placeholders, etc.)
     for (var r = 0; r < raw.length; r++) {
         if (!seen[raw[r].appId]) {
             sorted.push(raw[r]);
         }
     }
-
     return sorted;
 }
 ```
 
-This avoids `_findAppForAddress` entirely and builds the lookup from the
-raw data that's already available.
+#### Change 2 — Update all call sites
+
+`sortByMru` is called in:
+
+| Location | Change |
+|---|---|
+| `finishOpenSwitcher()` — building initial sphere | `sortByMru(raw)` → `sortByWindowMru(raw)` |
+| `cancelSearch()` — returning from layer 2 to layer 0 | `sortByMru(raw)` → `sortByWindowMru(raw)` |
+| `drillDown()` — layer 1 → layer 0 return path | `sortByMru(raw)` → `sortByWindowMru(raw)` |
+| `rebuildToLayer0()` — layer 0 rebuild | `sortByMru(raw)` → `sortByWindowMru(raw)` |
+
+#### Change 3 — Fix drill-down pre-selection (field-tested fix)
+
+The drill-down needs to select the window the user would switch TO, not the
+window they'd land on if they committed at the app node level. The original
+approach used `winMru[1]` (second entry in per-app MRU), which was fragile
+when `appWindowMru` and `globalWindowMru` disagreed on ordering.
+
+**Final working logic:** Compare each window in the sorted layer-1 list
+against the commit target (`globalWindowMru[1]`). Select whichever window
+is NOT the commit target. For a 2-window app, this always gives the "other"
+window regardless of MRU ordering disagreements:
+
+```javascript
+if (sphereModel.length >= 2) {
+    var commitAddr = window.globalWindowMru.length >= 2
+        ? window.globalWindowMru[1] : "";
+    if (sphereModel[0].address === commitAddr) {
+        selectedAppIndex = 1;
+    } else if (sphereModel[1].address === commitAddr) {
+        selectedAppIndex = 0;
+    } else {
+        selectedAppIndex = 1;
+    }
+}
+```
+
+This replaces all previous approaches (neither `winMru` index lookup nor
+simple index-1 selection). Applied to both drill-down paths (layer 0 →
+layer 1 and layer 2 → layer 1).
+
+#### Change 4 — Fix spurious `advance()` during visibility toggle
+
+**The bug:** `_previewFocus()` uses a visibility toggle (`visible=false` →
+`visible=true` via `Qt.callLater`) to prevent the target window from
+stealing keyboard focus. During the brief period when the overlay is
+hidden, the compositor re-fires the Alt+Tab keybind, which dispatches
+`qs ipc call hyprsphere toggle`. Since `overlayActive` is still `true`,
+the IPC handler calls `advance(1)`, which overrides the drill-down
+selection.
+
+**The fix:** Add a `_togglingVisibility` flag that is set before the
+visibility toggle and cleared after. The IPC handler checks this flag
+and skips the `advance(1)` when the toggle is in progress.
+
+```javascript
+// New property:
+property bool _togglingVisibility: false
+
+// In _previewFocus():
+window._togglingVisibility = true;
+window.visible = false;
+Qt.callLater(function() {
+    window.visible = true;
+    window._togglingVisibility = false;
+});
+
+// In IPC toggle() handler:
+if (window.overlayActive && !window._togglingVisibility) {
+    window.advance(1);
+    return;
+}
+```
 
 ---
 
@@ -328,6 +373,10 @@ grep -c 'sortByMru' shell.qml
 # C3: All call sites updated
 grep -c 'sortByWindowMru' shell.qml
 # Expected: at least 4 (definition + 4 call sites = 5)
+
+# C4: Drill-down uses sphereModel.length instead of winMru
+grep -A 2 'selectedAppIndex = 1' shell.qml | grep -c 'sphereModel.length >= 2'
+# Expected: at least 2 (layer 0 + layer 2 paths)
 ```
 
 ---

@@ -197,17 +197,21 @@ PanelWindow {
     property var globalWindowMru: []
     property string _preSelectedAppId: ""
     property bool _mruFrozen: false
+    property bool _togglingVisibility: false
 
     function _previewFocus(addr) {
         if (!addr) return;
         if (!cfg.focusOnTab) return;
+        console.log("[dbg] previewFocus addr=" + addr);
         var prefix = addr.indexOf("0x") === 0 ? "" : "0x";
         Quickshell.execDetached(["hyprctl", "dispatch",
             'hl.dsp.focus({window="address:' + prefix + addr + '"})']);
         if (window.visible) {
+            window._togglingVisibility = true;
             window.visible = false;
             Qt.callLater(function() {
                 window.visible = true;
+                window._togglingVisibility = false;
             });
         }
     }
@@ -232,6 +236,7 @@ PanelWindow {
             }
             return node.windows[0] ? node.windows[0].address : "";
         } else {
+            console.log("[dbg] targetForNode winNode app=" + node.appId + " addr=" + (node.address || "none") + " layer=" + window.layer);
             return node.address || "";
         }
     }
@@ -781,20 +786,19 @@ if (window.layer === 2 && window.searchQuery !== "") {
 
             selectedAppIndex = 0;
             // Pre-select the second MRU-most window (index 1) so the drill-down
-            // shows the window the user is likely to switch to, not the one
-            // they're already on (which is what they'd get at layer 0).
-            if (winMru.length >= 2) {
-                var secondTarget = winMru[1];
-                if (secondTarget.indexOf("0x") !== 0) secondTarget = "0x" + secondTarget;
-                for (var di = 0; di < sphereModel.length; di++) {
-                    var dAddr = sphereModel[di].address || "";
-                    if (dAddr.indexOf("0x") !== 0) dAddr = "0x" + dAddr;
-                    if (dAddr === secondTarget) {
-                        selectedAppIndex = di;
-                        break;
-                    }
+            // Select the window that is NOT the commit target, so drill-down
+            // always shows the "other" window the user would switch to.
+            if (sphereModel.length >= 2) {
+                var commitAddr = window.globalWindowMru.length >= 2 ? window.globalWindowMru[1] : "";
+                if (sphereModel[0].address === commitAddr) {
+                    selectedAppIndex = 1;
+                } else if (sphereModel[1].address === commitAddr) {
+                    selectedAppIndex = 0;
+                } else {
+                    selectedAppIndex = 1;
                 }
             }
+            console.log("[dbg] drillDown0: len=" + sphereModel.length + " sel=" + selectedAppIndex + " titles=" + JSON.stringify(sphereModel.map(function(s){return s.title;})));
             projDirty = true;
             rebuildProjCache();
             centerOnApp(selectedAppIndex);
@@ -833,19 +837,18 @@ if (window.layer === 2 && window.searchQuery !== "") {
             });
 
             selectedAppIndex = 0;
-            // Same second-MRU rule for layer-2 drill-down
-            if (winMru.length >= 2) {
-                var secondTarget = winMru[1];
-                if (secondTarget.indexOf("0x") !== 0) secondTarget = "0x" + secondTarget;
-                for (var di = 0; di < sphereModel.length; di++) {
-                    var dAddr = sphereModel[di].address || "";
-                    if (dAddr.indexOf("0x") !== 0) dAddr = "0x" + dAddr;
-                    if (dAddr === secondTarget) {
-                        selectedAppIndex = di;
-                        break;
-                    }
+            // Same select-the-other-window rule for layer-2 drill-down
+            if (sphereModel.length >= 2) {
+                var commitAddr = window.globalWindowMru.length >= 2 ? window.globalWindowMru[1] : "";
+                if (sphereModel[0].address === commitAddr) {
+                    selectedAppIndex = 1;
+                } else if (sphereModel[1].address === commitAddr) {
+                    selectedAppIndex = 0;
+                } else {
+                    selectedAppIndex = 1;
                 }
             }
+            console.log("[dbg] drillDown2: len=" + sphereModel.length + " sel=" + selectedAppIndex);
             projDirty = true;
             rebuildProjCache();
             centerOnApp(0);
@@ -1231,7 +1234,7 @@ if (window.layer === 2 && window.searchQuery !== "") {
     IpcHandler {
         target: "hyprsphere"
         function toggle(): void {
-            if (window.overlayActive) {
+            if (window.overlayActive && !window._togglingVisibility) {
                 // Hyprland consumed the Tab key (ALT+Tab bind), so focusGrabber
                 // never saw it. Advance via IPC instead.
                 window.advance(1);
