@@ -194,6 +194,7 @@
   ],
 
   "fullscreenOnActivate": true,
+  "focusOnTab": true,
 
   "misc": {}
 }

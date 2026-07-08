@@ -196,6 +196,45 @@ PanelWindow {
     // ── Global window-level MRU tracking ──
     property var globalWindowMru: []
     property string _preSelectedAppId: ""
+    property bool _mruFrozen: false
+
+    function _previewFocus(addr) {
+        if (!addr) return;
+        if (!cfg.focusOnTab) return;
+        var prefix = addr.indexOf("0x") === 0 ? "" : "0x";
+        Quickshell.execDetached(["hyprctl", "dispatch",
+            'hl.dsp.focus({window="address:' + prefix + addr + '"})']);
+        if (window.visible) {
+            window.visible = false;
+            Qt.callLater(function() {
+                window.visible = true;
+            });
+        }
+    }
+
+    function _targetAddrForNode(node) {
+        if (!node || node.isPlaceholder || node.isWhitelistPlaceholder) return "";
+        if (window.layer === 0 || (window.layer === 2 && !node.isWindowNode)) {
+            if (window._pendingSpawnAppId === node.appId) {
+                var spawnMru = appWindowMru[node.appId] || [];
+                return spawnMru.length >= 1 ? spawnMru[0] : "";
+            }
+            if (node.appId === window._preSelectedAppId) {
+                return window.globalWindowMru.length >= 2
+                    ? window.globalWindowMru[1]
+                    : (node.windows[0] ? node.windows[0].address : "");
+            }
+            var winMru = appWindowMru[node.appId] || [];
+            for (var m = 0; m < winMru.length; m++) {
+                for (var w = 0; w < node.windows.length; w++) {
+                    if (node.windows[w].address === winMru[m]) return winMru[m];
+                }
+            }
+            return node.windows[0] ? node.windows[0].address : "";
+        } else {
+            return node.address || "";
+        }
+    }
 
     function _findAppForAddress(addr) {
         if (!addr) return "";
@@ -255,6 +294,7 @@ PanelWindow {
         window.overlayActive = true;
         window._pendingSpawnAppId = "";
         window._preSelectedAppId = "";
+        window._mruFrozen = true;
 
         // Enter Hyprland submap so letter keys pass through to QML
         // NOTE: must use hyprctl eval, not dispatch (submap is Lua-only)
@@ -318,6 +358,18 @@ PanelWindow {
 
         // Initialize Fuse index for search
         initFuseIndex();
+
+        // FocusOnTab: focus the pre-selected window behind the overlay
+        // before it becomes visible, so the user sees the target immediately.
+        if (cfg.focusOnTab && sphereModel.length > 0 && selectedAppIndex >= 0) {
+            var initNode = sphereModel[selectedAppIndex];
+            var initAddr = window._targetAddrForNode(initNode);
+            if (initAddr) {
+                var initPrefix = initAddr.indexOf("0x") === 0 ? "" : "0x";
+                Quickshell.execDetached(["hyprctl", "dispatch",
+                    'hl.dsp.focus({window="address:' + initPrefix + initAddr + '"})']);
+            }
+        }
 
         // Make overlay visible now that sphere data is ready.
         // The entrance fade animation and focus grab are triggered
@@ -721,6 +773,10 @@ if (window.layer === 2 && window.searchQuery !== "") {
             projDirty = true;
             rebuildProjCache();
             centerOnApp(selectedAppIndex);
+            // FocusOnTab: focus the drilled-down window
+            if (cfg.focusOnTab) {
+                window._previewFocus(window._targetAddrForNode(sphereModel[selectedAppIndex]));
+            }
         } else if (window.layer === 2) {
             // Layer 2 → drill into app → Layer 1
             var node = sphereModel[selectedAppIndex];
@@ -769,6 +825,10 @@ if (window.layer === 2 && window.searchQuery !== "") {
             rebuildProjCache();
             centerOnApp(0);
             sphereZoom = 1.0;
+            // FocusOnTab: focus the drilled-down window
+            if (cfg.focusOnTab) {
+                window._previewFocus(window._targetAddrForNode(sphereModel[selectedAppIndex]));
+            }
         } else {
             // Layer 1 → back to previous layer
             if (savedLayer2Model.length > 0) {
@@ -789,6 +849,10 @@ if (window.layer === 2 && window.searchQuery !== "") {
                 centerOnApp(selectedAppIndex);
                 window.drilledAppId = "";
                 sphereZoom = cfg.search?.layer2Zoom ?? 1.5;
+                // FocusOnTab: focus the returned-to app's target
+                if (cfg.focusOnTab) {
+                    window._previewFocus(window._targetAddrForNode(sphereModel[selectedAppIndex]));
+                }
             } else {
                 // Normal layer 1 → layer 0
                 window.layer = 0;
@@ -806,6 +870,10 @@ if (window.layer === 2 && window.searchQuery !== "") {
                 selectedAppIndex = prevIdx >= 0 ? prevIdx : 0;
                 centerOnApp(selectedAppIndex);
                 window.drilledAppId = "";
+                // FocusOnTab: focus the returned-to app's target
+                if (cfg.focusOnTab) {
+                    window._previewFocus(window._targetAddrForNode(sphereModel[selectedAppIndex]));
+                }
             }
         }
     }
@@ -814,6 +882,7 @@ if (window.layer === 2 && window.searchQuery !== "") {
         // Guard: sphere not ready yet (buildLayer0 hasn't returned data)
         if (!window.overlayActive) return;
         if (closeSequence.running) return;
+        window._mruFrozen = false;
 
         var node = sphereModel[selectedAppIndex];
         if (!node || node.isPlaceholder) {
@@ -848,39 +917,7 @@ if (window.layer === 2 && window.searchQuery !== "") {
             return;
         }
 
-        var addr;
-        if (window.layer === 0 || (window.layer === 2 && !node.isWindowNode)) {
-            // Spawn override: if a window was just spawned for this app,
-            // focus it directly. appWindowMru is updated immediately by
-            // the openwindow handler, unlike node.windows in the sphere
-            // model which depends on async toplevel refresh.
-            if (window._pendingSpawnAppId === node.appId) {
-                var spawnMru = appWindowMru[node.appId] || [];
-                addr = spawnMru.length >= 1 ? spawnMru[0] : "";
-            } else if (node.appId === window._preSelectedAppId) {
-                // Target the previous window (globalWindowMru[1])
-                addr = window.globalWindowMru.length >= 2
-                    ? window.globalWindowMru[1]
-                    : (node.windows[0] ? node.windows[0].address : "");
-            } else {
-                // Layer 0 or layer 2 app node: focus MRU-most window
-                var winMru = appWindowMru[node.appId] || [];
-                var best = null;
-                for (var m = 0; m < winMru.length; m++) {
-                    for (var w = 0; w < node.windows.length; w++) {
-                        if (node.windows[w].address === winMru[m]) {
-                            best = winMru[m];
-                            break;
-                        }
-                    }
-                    if (best) break;
-                }
-                addr = best || node.windows[0].address;
-            }
-        } else {
-            // Layer 1 or layer 2 window node: focus specific address
-            addr = node.address;
-        }
+        var addr = window._targetAddrForNode(node);
 
         // Update globalWindowMru synchronously before hiding overlay —
         // onActiveToplevelChanged may not fire until overlay reopens.
@@ -997,6 +1034,10 @@ if (window.layer === 2 && window.searchQuery !== "") {
 
             var addr = t.address || "";
             if (addr.indexOf("0x") !== 0) addr = "0x" + addr;
+
+            // MRU freeze: when the overlay is open (focusOnTab), block focus
+            // tracking to prevent feedback loops from preview focus dispatches.
+            if (window._mruFrozen) return;
 
             // When a real appId resolves, clean up any stale "unknown" entry
             if (appId !== "unknown") {
@@ -1152,6 +1193,10 @@ if (window.layer === 2 && window.searchQuery !== "") {
         }
         selectedAppIndex = next;
         centerOnApp(next);
+        // FocusOnTab: focus the newly selected node's target window
+        if (cfg.focusOnTab) {
+            window._previewFocus(window._targetAddrForNode(sphereModel[selectedAppIndex]));
+        }
     }
 
     property bool overlayActive: false
@@ -1404,6 +1449,7 @@ if (window.layer === 2 && window.searchQuery !== "") {
         window.savedLayer2Model = [];
         window.savedLayer2Query = "";
         window.overlayActive = false;
+        window._mruFrozen = false;
         closeSequence.start();
         // Reset Hyprland submap so normal bindings work again
         // NOTE: must use hyprctl eval, not dispatch (submap is Lua-only)
@@ -1842,6 +1888,10 @@ if (window.layer === 2 && window.searchQuery !== "") {
                         onClicked: {
                             window.selectedAppIndex = index;
                             window.centerOnApp(index);
+                            // FocusOnTab: focus the clicked node
+                            if (cfg.focusOnTab) {
+                                window._previewFocus(window._targetAddrForNode(window.sphereModel[index]));
+                            }
                         }
 
                         onDoubleClicked: {
