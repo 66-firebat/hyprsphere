@@ -62,11 +62,28 @@
       "minRadius": 160,
       "maxNodeCount": 20
     },
-    "effects": {
+    "transitionEffects": {
       "mode": "launch",
       "durationMs": 500,
       "slingDistance": -2.0,
       "landBounce": 2.0
+    },
+    "perpetualEffects": {
+      "heartbeat": {
+        "enabled": true,
+        "bpm": 54,
+        "amplitude": 24,
+        "layers": {
+          "layer_1": {
+            "frequency": 1.5,
+            "amplitude": 36
+          },
+          "layer_2": {
+            "frequency": 2.0,
+            "amplitude": 48
+          }
+        }
+      }
     }
   },
 

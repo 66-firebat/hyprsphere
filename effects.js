@@ -77,6 +77,26 @@ function _applyLaunch(anim, config) {
     anim.duration = Math.floor(dur * (1 - lb * 0.5));
 }
 
+// ── Heartbeat Waveform ───────────────────────────────────────────────────
+// Returns a dilation factor ∈ [0, 1] at a normalized phase t ∈ [0, 1]
+// within one heartbeat cycle. Models a realistic cardiac pulse:
+//   • Sharp systolic spike ("lub")  ~8%
+//   • Gentler diastolic bump ("dub") ~28%
+//   • Rest plateau ~40%–100%
+
+function heartbeatAtPhase(t) {
+    // Systolic spike: quick sharp Gaussian
+    var lub = Math.exp(-Math.pow((t - 0.08) / 0.025, 2));
+
+    // Diastolic bump: gentler, lower Gaussian
+    var dub = 0.5 * Math.exp(-Math.pow((t - 0.28) / 0.045, 2));
+
+    // Small tension ripple after dub
+    var ripple = 0.12 * Math.exp(-Math.pow((t - 0.42) / 0.06, 2));
+
+    return Math.max(0, lub + dub + ripple);
+}
+
 // ── Reset animation to defaults ───────────────────────────────────────────
 
 function resetAnimation(anim) {

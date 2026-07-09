@@ -174,6 +174,7 @@ function commitSelection(window, closeSequence) {
 
     var node = window.sphereModel[window.selectedAppIndex];
     if (!node || node.isPlaceholder) {
+        window.stopPerpetual();
         window.overlayActive = false;
         window.log("commitSelection: placeholder unfreeze");
     window._mruFrozen = false;
@@ -184,6 +185,7 @@ function commitSelection(window, closeSequence) {
 
     if (node.isWhitelistPlaceholder) {
         window.focusable = false;
+        window.stopPerpetual();
         window.overlayActive = false;
         window.log("commitSelection: whitelist placeholder unfreeze");
     window._mruFrozen = false;
@@ -210,6 +212,7 @@ function commitSelection(window, closeSequence) {
         window.log("commitSelection: focusHistory[0..3] after moveToFront: " + window.focusHistory.slice(0,4).map(function(e){return e.appId.substring(0,10) + "-" + e.address.substring(e.address.length-4)}).join(", "));
     }
 
+    window.stopPerpetual();
     window.overlayActive = false;
     window.visible = false;
     window.dispatchFocus(addr);
@@ -274,6 +277,7 @@ function cancelSwitch(window, closeSequence) {
     window.layer = 0;
     window.drilledAppId = "";
     window.searchQuery = "";
+    window.stopPerpetual();
     window.overlayActive = false;
     window.visible = false;
     window.log("cancelSwitch: unfreeze MRU");

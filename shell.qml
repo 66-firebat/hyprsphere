@@ -610,6 +610,7 @@ PanelWindow {
         Qt.callLater(function() { scheduleRebuild(); });
 
         log("finishOpenSwitcher: " + sphereModel.length + " nodes, pre-selected index " + selectedAppIndex);
+        startPerpetual();
     }
 
     function scheduleRebuild() {
@@ -906,6 +907,49 @@ PanelWindow {
     Behavior on sphereZoom { NumberAnimation { duration: cfg.sphere?.zoomDurationMs ?? 400; easing.type: Easing.OutCubic } }
 
     property real sphereRadius: baseSphereRadius
+    // Perpetual effects offset — added to sphereRadius while overlay is active
+    property real _perpOffset: 0
+    property real _perpStartTime: 0
+    property bool _perpEnabled: false
+    Timer {
+        id: perpetualTimer
+        interval: 16  // ~60fps
+        repeat: true
+        running: false
+        onTriggered: {
+            if (!window._perpEnabled) { running = false; return; }
+            var pe = window.cfg.sphere?.perpetualEffects;
+            if (!pe || !pe.heartbeat || !pe.heartbeat.enabled) { running = false; return; }
+            var hb = pe.heartbeat;
+            var layerKey = "layer_" + window.layer;
+            var lc = hb.layers ? hb.layers[layerKey] : null;
+            var freqMult = (lc && lc.frequency !== undefined) ? lc.frequency : 1.0;
+            var amp = (lc && lc.amplitude !== undefined) ? lc.amplitude : (hb.amplitude || 8);
+            var bpm = (hb.bpm || 72) * freqMult;
+            var beatMs = 60000 / bpm;
+            var elapsed = Date.now() - window._perpStartTime;
+            var t = (elapsed % beatMs) / beatMs;
+            window._perpOffset = Effects.heartbeatAtPhase(t) * amp;
+            window.sphereRadius = window.baseSphereRadius + window._perpOffset;
+        }
+    }
+
+    function startPerpetual() {
+        var pe = window.cfg.sphere?.perpetualEffects;
+        if (!pe || !pe.heartbeat || !pe.heartbeat.enabled) return;
+        window._perpStartTime = Date.now();
+        window._perpOffset = 0;
+        window._perpEnabled = true;
+        perpetualTimer.start();
+    }
+
+    function stopPerpetual() {
+        window._perpEnabled = false;
+        perpetualTimer.running = false;
+        window._perpOffset = 0;
+        window.sphereRadius = window.baseSphereRadius;
+    }
+
     property real rotX: cfg.sphere?.initialRotX ?? -0.2
     property real rotY: cfg.sphere?.initialRotY ?? 0
 
@@ -997,8 +1041,8 @@ PanelWindow {
 
         searchRotXAnim.to = targetRotX;
         searchRotYAnim.to = window.rotY + diff;
-        Effects.setAnimation(searchRotXAnim, cfg.sphere?.effects);
-        Effects.setAnimation(searchRotYAnim, cfg.sphere?.effects);
+        Effects.setAnimation(searchRotXAnim, cfg.sphere?.transitionEffects);
+        Effects.setAnimation(searchRotYAnim, cfg.sphere?.transitionEffects);
         searchRotXAnim.restart();
         searchRotYAnim.restart();
     }

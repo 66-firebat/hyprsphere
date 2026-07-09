@@ -20,12 +20,16 @@ sleep 1
 # Ensure the symlinks exist for IPC discovery
 mkdir -p "$HOME/.config/quickshell"
 ln -sf "$SCRIPT_DIR/shell.qml"        "$HOME/.config/quickshell/shell.qml"
+ln -sf "$SCRIPT_DIR/binds.js"         "$HOME/.config/quickshell/binds.js"
+ln -sf "$SCRIPT_DIR/effects.js"       "$HOME/.config/quickshell/effects.js"
 rm -f  "$HOME/.config/quickshell/hyprsphere.json"
 ln -sf "$SCRIPT_DIR/hyprsphere.json" "$HOME/.config/quickshell/hyprsphere.json"
 rm -rf "$HOME/.config/quickshell/lib"
 ln -sf "$SCRIPT_DIR/lib"              "$HOME/.config/quickshell/lib"
 echo "Symlinks created:"
 echo "  $HOME/.config/quickshell/shell.qml        -> shell.qml"
+echo "  $HOME/.config/quickshell/binds.js         -> binds.js"
+echo "  $HOME/.config/quickshell/effects.js       -> effects.js"
 echo "  $HOME/.config/quickshell/hyprsphere.json  -> hyprsphere.json"
 echo "  $HOME/.config/quickshell/lib              -> lib/"
 
