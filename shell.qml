@@ -161,7 +161,7 @@ PanelWindow {
                 var entry = focusHistory[i];
                 focusHistory.splice(i, 1);
                 focusHistory.unshift(entry);
-                log("moveToFront: " + normAddr.substring(normAddr.length - 6) + " app=" + entry.appId);
+                log("moveToFront: " + normAddr.substring(normAddr.length - 6) + " app=" + entry.appId + " order=[" + focusHistory.map(function(e){return e.appId.substring(0,8) + "-" + e.address.substring(e.address.length-4);}).join(",") + "]");
                 return;
             }
         }
@@ -551,6 +551,8 @@ PanelWindow {
 
     property bool overlayActive: false
     property bool _togglingVisibility: false
+    property bool _mruFrozen: false
+    property string _commitAddr: ""
     property string _pendingSpawnAppId: ""
     property string _pendingSpawnAddr: ""
 
@@ -565,6 +567,9 @@ PanelWindow {
         window.searchQuery = "";
         window.focusable = true;
         window.overlayActive = true;
+        window._mruFrozen = true;
+        window._commitAddr = "";
+        window.log("openSwitcher: _mruFrozen=true");
         window._pendingSpawnAppId = "";
         window._pendingSpawnAddr = "";
 
@@ -715,8 +720,20 @@ PanelWindow {
             if (!t) return;
             var appId = (t.wayland && t.wayland.appId) ? t.wayland.appId : "unknown";
             var addr = window.normalizeAddress(t.address);
-            log("activeToplevelChanged: addr=" + addr.substring(addr.length-6) + " app=" + appId);
+            if (window._mruFrozen && addr !== window._commitAddr) {
+                log("activeToplevelChanged: BLOCKED addr=" + addr.substring(addr.length-6) + " app=" + appId + " commitAddr=" + (window._commitAddr ? window._commitAddr.substring(window._commitAddr.length-6) : "none"));
+                return;
+            }
+            // Committed window's focus arrived — unfreeze and clear guard
+            if (window._mruFrozen && addr === window._commitAddr) {
+                window._mruFrozen = false;
+                window._commitAddr = "";
+                log("activeToplevelChanged: UNFROZEN (commit arrived) addr=" + addr.substring(addr.length-6) + " app=" + appId);
+            }
+            var extra = window._mruFrozen ? " (ALLOWED commitAddr)" : "";
+            log("activeToplevelChanged:" + extra + " addr=" + addr.substring(addr.length-6) + " app=" + appId);
             window.moveToFront(addr);
+            log("focusHistory[0..3]: " + window.focusHistory.slice(0,4).map(function(e){return e.appId.substring(0,10) + "-" + e.address.substring(e.address.length-4)}).join(", "));
         }
     }
 
