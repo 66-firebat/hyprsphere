@@ -61,6 +61,14 @@
       "enabled": false,
       "minRadius": 160,
       "maxNodeCount": 20
+    },
+    "rotation": {
+      "mode": "figure8",
+      "config": {
+        "amplitudeX": 1.5,
+        "amplitudeY": 1.0,
+        "frequency": 0.001
+      }
     }
   },
 

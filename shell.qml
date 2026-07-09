@@ -10,6 +10,7 @@ import Quickshell.Wayland
 import Quickshell.Hyprland._Ipc
 import "lib/fuse.js" as FuseJs
 import "binds.js" as Binds
+import "rotations.js" as Rotations
 
 // ══════════════════════════════════════════════════════════════════════════════
 // hyprsphere — 3D window switcher for Hyprland/Quickshell
@@ -974,11 +975,27 @@ PanelWindow {
         easing.type: Easing.OutCubic
     }
 
+    // ── Rotation tick counter ──
+    property int _rotationTick: 0
+
     Timer {
         interval: cfg.animations?.sphereAutoRotateIntervalMs ?? 16
         running: !sceneMouse.pressed && !searchRotXAnim.running && !searchRotYAnim.running
         repeat: true
-        onTriggered: window.rotY -= window.rotationSpeed
+        onTriggered: {
+            var delta = Rotations.compute(cfg.sphere?.rotation, window._rotationTick, 1);
+            window.rotX += delta.x;
+            window.rotY += delta.y;
+            // rotZ not used on the 2D projection, but computed for future use
+            window._rotationTick++;
+        }
+    }
+
+    onOverlayActiveChanged: {
+        if (!window.overlayActive) {
+            window._rotationTick = 0;
+            Rotations.reset();
+        }
     }
 
     function centerOnApp(index) {
