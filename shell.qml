@@ -198,6 +198,23 @@ PanelWindow {
     }
 
     // ══════════════════════════════════════════════════════════════════════════
+    // TITLE RESOLUTION — look up window title from Hyprland.toplevels
+    // ══════════════════════════════════════════════════════════════════════════
+
+    function _resolveTitle(address) {
+        if (!address) return "";
+        var normAddr = address.indexOf("0x") === 0 ? address : "0x" + address;
+        var tls = Hyprland.toplevels;
+        var arr = (tls && tls.values) || [];
+        for (var i = 0; i < arr.length; i++) {
+            var t = arr[i];
+            if (t && t.title && window.normalizeAddress(t.address) === normAddr)
+                return t.title;
+        }
+        return "";
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
     // ADDRESS NORMALIZATION
     // ══════════════════════════════════════════════════════════════════════════
 
@@ -335,7 +352,7 @@ PanelWindow {
             var winAddrs = windowsForApp(appId);
             var winData = [];
             for (var j = 0; j < winAddrs.length; j++) {
-                // Find title from focusHistory
+                // Find title from focusHistory, fall back to toplevels
                 var title = "";
                 for (var k = 0; k < focusHistory.length; k++) {
                     if (focusHistory[k].address === winAddrs[j]) {
@@ -343,6 +360,7 @@ PanelWindow {
                         break;
                     }
                 }
+                if (!title) title = window._resolveTitle(winAddrs[j]);
                 winData.push({ address: winAddrs[j], title: title });
             }
             result.push({
@@ -370,7 +388,7 @@ PanelWindow {
             }
         }
 
-        log("buildLayer0: " + result.length + " groups, order=" + JSON.stringify(result.map(function(r){return r.appId;})));
+        log("buildLayer0: " + result.length + " groups, order=" + JSON.stringify(result.map(function(r){return r.appId + "(" + r.windowCount + ")";})));
         return result;
     }
 
@@ -385,6 +403,7 @@ PanelWindow {
                     break;
                 }
             }
+            if (!title) title = window._resolveTitle(winAddrs[i]);
             result.push({
                 address: winAddrs[i], title: title,
                 icon: window.resolveIcon(appId), label: window.resolveName(appId),
@@ -411,11 +430,12 @@ PanelWindow {
         // Individual windows
         for (var i = 0; i < focusHistory.length; i++) {
             var entry = focusHistory[i];
+            var sTitle = entry.title || window._resolveTitle(entry.address) || entry.appId;
             db.push({
                 type: "window", appId: entry.appId,
                 label: window.resolveName(entry.appId),
                 icon: window.resolveIcon(entry.appId),
-                address: entry.address, title: entry.title || entry.appId,
+                address: entry.address, title: sTitle,
             });
         }
         // Whitelisted placeholders not in focusHistory
@@ -599,6 +619,46 @@ PanelWindow {
             Hyprland.refreshToplevels();
             var raw = buildLayer0();
             rebuildToLayer(raw);
+            // Auto-select spawned window after rebuild
+            if (window._pendingSpawnAppId) {
+                log("spawnAutoSelect: pendingApp=" + window._pendingSpawnAppId + " pendingAddr=" + (window._pendingSpawnAddr ? window._pendingSpawnAddr.substring(window._pendingSpawnAddr.length-6) : "none") + " layer=" + window.layer + " sphereLen=" + window.sphereModel.length);
+                var _found = false;
+                for (var _si = 0; _si < window.sphereModel.length; _si++) {
+                    var _n = window.sphereModel[_si];
+                    if (_n.isPlaceholder || _n.isWhitelistPlaceholder) continue;
+                    if (window._pendingSpawnAddr) {
+                        if (_n.isWindowNode && _n.address === window._pendingSpawnAddr) {
+                            log("spawnAutoSelect: FOUND by address at idx=" + _si);
+                            window.selectedAppIndex = _si;
+                            window.centerOnApp(_si);
+                            _found = true;
+                            break;
+                        } else if (!_n.isWindowNode && _n.appId === window._pendingSpawnAppId) {
+                            log("spawnAutoSelect: FOUND appNode by appId at idx=" + _si);
+                            window.selectedAppIndex = _si;
+                            window.centerOnApp(_si);
+                            _found = true;
+                            break;
+                        }
+                    } else if (_n.appId === window._pendingSpawnAppId) {
+                        log("spawnAutoSelect: FOUND by appId at idx=" + _si);
+                        window.selectedAppIndex = _si;
+                        window.centerOnApp(_si);
+                        _found = true;
+                        break;
+                    }
+                }
+                if (!_found) log("spawnAutoSelect: NOT FOUND in sphereModel");
+                if (window.sphereModel.length > 0) {
+                    var _s0 = window.sphereModel[0];
+                    log("spawnAutoSelect: sphere[0] app=" + _s0.appId + " addr=" + (_s0.address ? _s0.address.substring(_s0.address.length-6) : "none") + " isWin=" + (_s0.isWindowNode ? "Y" : "N"));
+                }
+                window._pendingSpawnAddr = "";
+                window._pendingSpawnAppId = "";
+            }
+            // Force QML to re-evaluate the sphere model binding
+            window.projDirty = true;
+            window.rebuildProjCache();
             projDirty = true;
             rebuildProjCache();
             focusGrabber.forceActiveFocus();
