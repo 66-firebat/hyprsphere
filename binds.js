@@ -13,13 +13,15 @@
 
 function resolveTargetAddress(window, node) {
     if (!node || node.isPlaceholder || node.isWhitelistPlaceholder) return "";
-    if (window.layer === 0 || (window.layer === 2 && !node.isWindowNode)) {
-        // App node: target is the MRU-most window of this app
-        var addrs = window.windowsForApp ? window.windowsForApp(node.appId) : [];
-        return addrs.length >= 1 ? addrs[0] : "";
+    // Layer 0 and layer 2 now have individual window nodes (isWindowNode=true).
+    // For window nodes, target is the window itself. For app group nodes
+    // (layer 2 only, whitelisted placeholders), target is MRU-most window.
+    if (node.isWindowNode) {
+        return node.address || "";
     }
-    // Window node: target is the window itself
-    return node.address || "";
+    // App-level node (whitelisted placeholder at layer 2): target MRU-most
+    var addrs = window.windowsForApp ? window.windowsForApp(node.appId) : [];
+    return addrs.length >= 1 ? addrs[0] : "";
 }
 
 // ── Advance (Tab / Shift+Tab) ─────────────────────────────────────────────
@@ -62,34 +64,42 @@ function slashPreview(window, dir) {
 
 function drillDown(window) {
     if (window.layer === 0) {
-        var appNode = window.sphereModel[window.selectedAppIndex];
-        if (!appNode || appNode.isPlaceholder || appNode.isWhitelistPlaceholder) return;
-        if (appNode.windowCount === 0) return;
+        // Layer 0 → Layer 1: drill into this app's windows
+        var selNode = window.sphereModel[window.selectedAppIndex];
+        if (!selNode || selNode.isPlaceholder || selNode.isWhitelistPlaceholder) return;
+        var wasAddr = selNode.address;  // ← save for "other window" logic
 
         window.layer = 1;
-        window.drilledAppId = appNode.appId;
-        window.sphereModel = window.buildLayer1(appNode.appId);
+        window.drilledAppId = selNode.appId;
+        window.sphereModel = window.buildLayer1(selNode.appId);
 
+        // Pre-select the "other window" — the one NOT matching the address
+        // we were just on at layer 0.
         window.selectedAppIndex = 0;
-        if (window.sphereModel.length >= 2) {
-            var commitAddr = window.windowsForApp ? window.windowsForApp(appNode.appId)[0] : "";
-            if (window.sphereModel[0].address === commitAddr)
-                window.selectedAppIndex = 1;
-            else
-                window.selectedAppIndex = 1;
+        if (window.sphereModel.length >= 2 && wasAddr) {
+            var wasIdx = -1;
+            for (var i = 0; i < window.sphereModel.length; i++) {
+                if (window.sphereModel[i].address === wasAddr) {
+                    wasIdx = i;
+                    break;
+                }
+            }
+            if (wasIdx === 0) window.selectedAppIndex = 1;
+            else if (wasIdx === 1) window.selectedAppIndex = 0;
+            else window.selectedAppIndex = 1;
         }
 
         window.projDirty = true;
         window.rebuildProjCache();
         window.centerOnApp(window.selectedAppIndex);
-        window.log("drillDown 0→1: app=" + appNode.appId + " windows=" + window.sphereModel.length);
+        window.log("drillDown 0→1: app=" + selNode.appId + " wasAddr=" + (wasAddr ? wasAddr.substring(wasAddr.length-6) : "none") + " sel=" + window.selectedAppIndex);
 
     } else if (window.layer === 2) {
-        // Layer 2 → Layer 0: return to app list, select the app node
-        // corresponding to the search result we were on.
+        // Layer 2 → Layer 0: return to flat window list, select the same
+        // window by address that we were on in the search results.
         var searchNode = window.sphereModel[window.selectedAppIndex];
         if (!searchNode || searchNode.isPlaceholder) return;
-        var targetAppId = searchNode.appId;
+        var targetAddr = searchNode.address || "";
 
         window.layer = 0;
         window.drilledAppId = "";
@@ -102,11 +112,11 @@ function drillDown(window) {
         window.rebuildProjCache();
         window.sphereZoom = 1.0;
 
-        // Select the app node matching the search result's appId
+        // Select by address (exact window match)
         var matched = false;
-        if (targetAppId) {
+        if (targetAddr) {
             for (var _si = 0; _si < window.sphereModel.length; _si++) {
-                if (window.sphereModel[_si].appId === targetAppId) {
+                if (window.sphereModel[_si].address === targetAddr) {
                     window.selectedAppIndex = _si;
                     window.centerOnApp(_si);
                     matched = true;
@@ -118,11 +128,13 @@ function drillDown(window) {
             window.selectedAppIndex = 0;
             window.centerOnApp(0);
         }
-        window.log("drillDown 2→0: app=" + targetAppId + (matched ? " selected" : " not found, fallback to 0"));
+        window.log("drillDown 2→0: addr=" + (targetAddr ? targetAddr.substring(targetAddr.length-6) : "none") + (matched ? " selected" : " not found, fallback to 0"));
 
     } else {
-        // Layer 1 → Layer 0: return to app list, select the app we drilled from
-        var returnAppId = window.drilledAppId;
+        // Layer 1 → Layer 0: return to flat window list, select the same
+        // window we were viewing by address.
+        var returnAddr = window.sphereModel[window.selectedAppIndex]
+            ? window.sphereModel[window.selectedAppIndex].address : null;
         window.layer = 0;
         window.drilledAppId = "";
         var raw = window.buildLayer0();
@@ -133,11 +145,11 @@ function drillDown(window) {
         window.rebuildProjCache();
         window.sphereZoom = 1.0;
 
-        // Select the app node we were drilled into
+        // Select by address (exact window match)
         var matched = false;
-        if (returnAppId) {
+        if (returnAddr) {
             for (var _si = 0; _si < window.sphereModel.length; _si++) {
-                if (window.sphereModel[_si].appId === returnAppId) {
+                if (window.sphereModel[_si].address === returnAddr) {
                     window.selectedAppIndex = _si;
                     window.centerOnApp(_si);
                     matched = true;
@@ -149,7 +161,7 @@ function drillDown(window) {
             window.selectedAppIndex = 0;
             window.centerOnApp(0);
         }
-        window.log("drillDown 1→0: app=" + (returnAppId || "none") + (matched ? " selected" : " not found, fallback to 0"));
+        window.log("drillDown 1→0: addr=" + (returnAddr ? returnAddr.substring(returnAddr.length-6) : "none") + (matched ? " selected" : " not found, fallback to 0"));
     }
 }
 
@@ -208,11 +220,13 @@ function closeSelection(window) {
         return;
     }
 
-    if (window.layer === 0 || (window.layer === 2 && !node.isWindowNode)) {
+    if (node.isWindowNode) {
+        // Individual window node (layer 0, 1, or 2): close the specific window
+        window.dispatchClose(node.address);
+    } else {
+        // App-level node (layer 2 whitelisted placeholder): close all windows
         for (var w = 0; w < node.windows.length; w++)
             window.dispatchClose(node.windows[w].address);
-    } else {
-        window.dispatchClose(node.address);
     }
     window.log("closeSelection: app=" + node.appId + " layer=" + window.layer);
 }

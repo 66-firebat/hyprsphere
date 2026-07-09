@@ -342,33 +342,28 @@ PanelWindow {
     property string drilledAppId: ""
 
     function buildLayer0() {
-        var order = appOrder();
         var result = [];
         var whitelist = cfg.whitelist || [];
+        var seenCounts = {};
 
-        // Build app groups from focusHistory
-        for (var i = 0; i < order.length; i++) {
-            var appId = order[i];
-            var winAddrs = windowsForApp(appId);
-            var winData = [];
-            for (var j = 0; j < winAddrs.length; j++) {
-                // Find title from focusHistory, fall back to toplevels
-                var title = "";
-                for (var k = 0; k < focusHistory.length; k++) {
-                    if (focusHistory[k].address === winAddrs[j]) {
-                        title = focusHistory[k].title;
-                        break;
-                    }
-                }
-                if (!title) title = window._resolveTitle(winAddrs[j]);
-                winData.push({ address: winAddrs[j], title: title });
-            }
+        // One node per entry in focusHistory
+        for (var i = 0; i < focusHistory.length; i++) {
+            var entry = focusHistory[i];
+            var appId = entry.appId;
+            if (!seenCounts[appId]) seenCounts[appId] = 0;
+            seenCounts[appId]++;
+
+            var title = entry.title || window._resolveTitle(entry.address) || appId;
             result.push({
+                address: entry.address,
                 appId: appId,
+                title: title,
                 label: window.resolveName(appId),
                 icon: window.resolveIcon(appId),
-                windows: winData,
-                windowCount: winData.length,
+                isWindowNode: true,
+                badgeIndex: seenCounts[appId],
+                windows: [],
+                windowCount: 0,
             });
         }
 
@@ -376,8 +371,8 @@ PanelWindow {
         for (var w = 0; w < whitelist.length; w++) {
             var entry = whitelist[w];
             var alreadyPresent = false;
-            for (var a = 0; a < order.length; a++) {
-                if (order[a] === entry.appId) { alreadyPresent = true; break; }
+            for (var a = 0; a < focusHistory.length; a++) {
+                if (focusHistory[a].appId === entry.appId) { alreadyPresent = true; break; }
             }
             if (!alreadyPresent) {
                 result.push({
@@ -388,7 +383,7 @@ PanelWindow {
             }
         }
 
-        log("buildLayer0: " + result.length + " groups, order=" + JSON.stringify(result.map(function(r){return r.appId + "(" + r.windowCount + ")";})));
+        log("buildLayer0: " + result.length + " flat nodes, first=" + (result.length > 0 ? result[0].appId + "#" + result[0].badgeIndex : "empty"));
         return result;
     }
 
@@ -595,7 +590,7 @@ PanelWindow {
         sphereModel = raw;
         if (sphereModel.length > 0 && !sphereModel[0].isPlaceholder) {
             // Pre-select index 1 (previous app) if available
-            selectedAppIndex = appOrder().length >= 2 ? 1 : 0;
+            selectedAppIndex = focusHistory.length >= 2 ? 1 : 0;
             if (selectedAppIndex < sphereModel.length) {
                 centerOnApp(selectedAppIndex);
             }
@@ -1251,11 +1246,12 @@ PanelWindow {
                                     var n = window.sphereModel[index];
                                     if (!n) return "";
                                     if (n.isWindowNode) {
+                                        if (n.badgeIndex) return String(n.badgeIndex);
                                         var winList = window.windowsForApp ? window.windowsForApp(n.appId) : [];
                                         var oi = winList.indexOf(n.address || "");
                                         return String(oi >= 0 ? oi + 1 : "");
                                     }
-                                    return "+" + String(n.windowCount || 0);
+                                    return "";
                                 }
                                 font.family: "JetBrains Mono"
                                 font.pixelSize: window.s(cfg.appCard?.windowCountBadge?.fontSize ?? 18)
@@ -1393,11 +1389,12 @@ PanelWindow {
                                             var n = window.sphereModel[window.selectedAppIndex];
                                             if (!n) return "";
                                             if (n.isWindowNode) {
+                                                if (n.badgeIndex) return String(n.badgeIndex);
                                                 var winList = window.windowsForApp ? window.windowsForApp(n.appId) : [];
                                                 var oi = winList.indexOf(n.address || "");
                                                 return String(oi >= 0 ? oi + 1 : "");
                                             }
-                                            return "+" + String(n.windowCount || 0);
+                                            return "";
                                         }
                                         font.family: "JetBrains Mono"
                                         font.pixelSize: window.s(cfg.appCard?.windowCountBadge?.fontSize ?? 18)
