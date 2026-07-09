@@ -63,9 +63,10 @@
       "maxNodeCount": 20
     },
     "effects": {
-      "mode": "bounce",
-      "durationMs": 400,
-      "overshoot": 4.0
+      "mode": "launch",
+      "durationMs": 500,
+      "slingDistance": -3.0,
+      "landBounce": 0.3
     }
   },
 
