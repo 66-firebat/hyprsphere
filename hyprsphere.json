@@ -55,6 +55,7 @@
     "maxRotationX": 2.5,
     "maxRotationY": 1.45,
     "zoomFactorWeight": 0.45,
+    "layer1Zoom": 0.5,
     "normalizationConstant": 310.5,
     "autoRadius": {
       "enabled": false,
@@ -67,8 +68,8 @@
     "searchRotateDurationMs": 250,
     "sphereAutoRotateIntervalMs": 16,
     "sphereRotateSpeed": 0.002,
-    "sphereLayer1Multiplier": 2,
-    "sphereLayer2Multiplier": 8,
+    "sphereLayer1Multiplier": 4,
+    "sphereLayer2Multiplier": 16,
     "cardFadeDurationMs": 200,
     "cardScaleDurationMs": 200,
     "satelliteFadeDurationMs": 400,
@@ -107,7 +108,7 @@
     "fuseThreshold": 0.4,
     "fuseMinMatchCharLength": 1,
     "ignoreLocation": true,
-    "layer2Zoom": 1.5
+    "layer2Zoom": 0.25
   },
 
   "appCard": {

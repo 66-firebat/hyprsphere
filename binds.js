@@ -89,6 +89,7 @@ function drillDown(window) {
             else window.selectedAppIndex = 1;
         }
 
+        window.sphereZoom = window.cfg.sphere?.layer1Zoom ?? 0.5;
         window.projDirty = true;
         window.rebuildProjCache();
         window.centerOnApp(window.selectedAppIndex);
