@@ -9,6 +9,12 @@ import Quickshell.Io
 import Quickshell.Wayland
 import Quickshell.Hyprland._Ipc
 import "lib/fuse.js" as FuseJs
+import "binds.js" as Binds
+
+// ══════════════════════════════════════════════════════════════════════════════
+// hyprsphere — 3D window switcher for Hyprland/Quickshell
+// Architecture: 2D focus tracking (dimension 1 = apps, dimension 2 = windows)
+// ══════════════════════════════════════════════════════════════════════════════
 
 PanelWindow {
     id: window
@@ -16,23 +22,21 @@ PanelWindow {
 
     WlrLayershell.namespace: "applauncher-overlay"
     WlrLayershell.layer: WlrLayer.Overlay
-
     anchors.left: true
     anchors.right: true
     anchors.top: true
     anchors.bottom: true
-
     exclusiveZone: 0
     exclusionMode: ExclusionMode.Ignore
     color: "transparent"
-
     implicitWidth: Screen.width
     implicitHeight: Screen.height
 
-    // Config file path — resolved relative to shell.qml's directory
-    property string configPath: String(Qt.resolvedUrl("hyprsphere.json")).replace(/^file:\/\//, "")
+    // ══════════════════════════════════════════════════════════════════════════
+    // CONFIG
+    // ══════════════════════════════════════════════════════════════════════════
 
-    // Config loaded from hyprsphere.json
+    property string configPath: String(Qt.resolvedUrl("hyprsphere.json")).replace(/^file:\/\//, "")
     property var cfg: ({})
 
     Process {
@@ -43,66 +47,192 @@ PanelWindow {
                 var txt = this.text.trim();
                 if (txt.length > 0) {
                     try { window.cfg = JSON.parse(txt); }
-                    catch(e) { console.log("Config parse error:", String(e)); }
+                    catch(e) { console.log("[hyprsphere] Config parse error:", String(e)); }
                 }
             }
         }
     }
 
-    // ── Phase 1: app grouping ──
-    property var sphereModel: []
-    property var rebuildScheduled: false
-    property int selectedAppIndex: -1
+    // ══════════════════════════════════════════════════════════════════════════
+    // DEBUG LOGGING (configurable via hyprsphere.json "debug": true)
+    // ══════════════════════════════════════════════════════════════════════════
 
-    // ── Phase 4: two-layer state machine ──
-    property int layer: 0
-    property string drilledAppId: ""
+    function log(msg) {
+        if (cfg.debug === true)
+            console.log("[hyprsphere] " + msg);
+    }
 
-    // ── Phase 2: MRU tracking ──
-    property var appMru: []
-    property var appWindowMru: ({})
-    property var _appOpeningOrder: ({})
+    function logObj(label, obj) {
+        if (cfg.debug === true) {
+            try { console.log("[hyprsphere] " + label + " " + JSON.stringify(obj)); }
+            catch(e) { console.log("[hyprsphere] " + label + " [non-serializable]"); }
+        }
+    }
 
-    // ── Phase 7: Icon & name resolution ──
+    // ══════════════════════════════════════════════════════════════════════════
+    // CENTRALIZED HYPCTL DISPATCH (eliminates ad-hoc prefix handling)
+    // ══════════════════════════════════════════════════════════════════════════
+
+    function _prefix(addr) { return addr.indexOf("0x") === 0 ? "" : "0x"; }
+
+    function dispatchFocus(addr) {
+        if (!addr) { log("dispatchFocus: no addr"); return; }
+        var p = _prefix(addr);
+        Quickshell.execDetached(["hyprctl", "dispatch",
+            'hl.dsp.focus({window="address:' + p + addr + '"})']);
+    }
+
+    function dispatchFullscreen(addr) {
+        if (!addr) return;
+        var p = _prefix(addr);
+        Quickshell.execDetached(["hyprctl", "dispatch",
+            'hl.dsp.window.fullscreen({ mode = "maximized", action = "set", window = "address:' + p + addr + '" })']);
+    }
+
+    function dispatchClose(addr) {
+        if (!addr) return;
+        var p = _prefix(addr);
+        Quickshell.execDetached(["hyprctl", "dispatch",
+            'hl.dsp.window.close({window="address:' + p + addr + '"})']);
+    }
+
+    function dispatchExec(cmd) {
+        Quickshell.execDetached(["hyprctl", "dispatch",
+            'hl.dsp.exec_cmd("' + cmd + '", { maximize = true })']);
+    }
+
+    function dispatchFocusByClass(appId) {
+        Quickshell.execDetached(["bash", "-c",
+            'sleep 0.5 && hyprctl dispatch hl.dsp.focus({window="class:' + appId + '"}) &']);
+    }
+
+    function dispatchSubmap(name) {
+        Quickshell.execDetached(["hyprctl", "eval",
+            'hl.dispatch(hl.dsp.submap("' + name + '"))']);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // 2D FOCUS TRACKING — Single Source of Truth
+    //
+    // focusHistory[] — ordered list of { address, appId, title }
+    //   Each entry is one open window, sorted MRU-first.
+    //   Mutations: moveToFront (focus/commit), add (open), remove (close).
+    //
+    // Dimension 1 — appOrder() → [appId, ...]
+    //   Unique appIds in first-appearance order (for layer 0 navigation).
+    //
+    // Dimension 2 — windowsForApp(appId) → [address, ...]
+    //   Filtered addresses for a specific app (for layer 1 drill-down).
+    // ══════════════════════════════════════════════════════════════════════════
+
+    property var focusHistory: []
+
+    // --- Derivation: dimension 1 (app order) ---
+    function appOrder() {
+        var seen = {};
+        var order = [];
+        for (var i = 0; i < focusHistory.length; i++) {
+            var appId = focusHistory[i].appId;
+            if (!seen[appId]) {
+                seen[appId] = true;
+                order.push(appId);
+            }
+        }
+        return order;
+    }
+
+    // --- Derivation: dimension 2 (window order per app) ---
+    function windowsForApp(appId) {
+        var result = [];
+        for (var i = 0; i < focusHistory.length; i++) {
+            if (focusHistory[i].appId === appId)
+                result.push(focusHistory[i].address);
+        }
+        return result;
+    }
+
+    // --- Mutation: move to front (on focus or commit) ---
+    function moveToFront(address) {
+        if (!address) return;
+        var normAddr = address.indexOf("0x") === 0 ? address : "0x" + address;
+        for (var i = 0; i < focusHistory.length; i++) {
+            if (focusHistory[i].address === normAddr) {
+                var entry = focusHistory[i];
+                focusHistory.splice(i, 1);
+                focusHistory.unshift(entry);
+                log("moveToFront: " + normAddr.substring(normAddr.length - 6) + " app=" + entry.appId);
+                return;
+            }
+        }
+        log("moveToFront: address " + normAddr.substring(normAddr.length - 6) + " NOT FOUND in focusHistory");
+    }
+
+    // --- Mutation: add new entry (on window open) ---
+    function addToFront(address, appId, title) {
+        if (!address || !appId) return;
+        var normAddr = address.indexOf("0x") === 0 ? address : "0x" + address;
+        // Remove existing entry if present (dedup safeguard)
+        for (var i = 0; i < focusHistory.length; i++) {
+            if (focusHistory[i].address === normAddr) {
+                focusHistory.splice(i, 1);
+                break;
+            }
+        }
+        focusHistory.unshift({ address: normAddr, appId: appId, title: title || "" });
+        log("addToFront: " + normAddr.substring(normAddr.length - 6) + " app=" + appId);
+    }
+
+    // --- Mutation: remove entry (on window close) ---
+    function removeAddress(address) {
+        if (!address) return;
+        var normAddr = address.indexOf("0x") === 0 ? address : "0x" + address;
+        for (var i = 0; i < focusHistory.length; i++) {
+            if (focusHistory[i].address === normAddr) {
+                var appId = focusHistory[i].appId;
+                focusHistory.splice(i, 1);
+                log("removeAddress: " + normAddr.substring(normAddr.length - 6) + " app=" + appId);
+                return;
+            }
+        }
+        log("removeAddress: " + normAddr.substring(normAddr.length - 6) + " NOT FOUND in focusHistory");
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // ADDRESS NORMALIZATION
+    // ══════════════════════════════════════════════════════════════════════════
+
+    function normalizeAddress(addr) {
+        if (!addr) return "";
+        if (addr.indexOf("0x") === 0) return addr;
+        var num = Number(addr);
+        if (!isNaN(num)) return "0x" + num.toString(16);
+        return "0x" + addr;
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // ICON & NAME RESOLUTION
+    // ══════════════════════════════════════════════════════════════════════════
+
     property var iconMap: ({})
     property var nameMap: ({})
     property var execMap: ({})
 
     function resolveIcon(appId) {
-        if (!appId) return "application-x-executable";
-        return iconMap[appId] || "application-x-executable";
+        return (appId && iconMap[appId]) ? iconMap[appId] : "application-x-executable";
     }
 
     function resolveName(appId) {
-        if (!appId) return appId;
-        return nameMap[appId] || appId;
+        return (appId && nameMap[appId]) ? nameMap[appId] : (appId || "");
     }
 
     function resolveExec(appId) {
-        if (!appId) return null;
-        return execMap[appId] || null;
-    }
-
-    // Normalize a decimal address (from Quickshell's j/clients toplevels)
-    // to 0x-prefixed hex format matching Hyprland's event socket format.
-    // See ADDRESS_BUG_REPORT.md for the full rationale.
-    function normalizeAddress(addr) {
-        if (!addr) return "";
-        if (addr.indexOf("0x") === 0) return addr;
-        // Quickshell may return address as decimal string (from j/clients)
-        // OR as hex string without 0x prefix (from event-socket fallback).
-        // Try decimal first; if it fails, treat as raw hex.
-        var num = Number(addr);
-        if (!isNaN(num)) return "0x" + num.toString(16);
-        // Already hex without 0x — just add the prefix
-        return "0x" + addr;
+        return (appId && execMap[appId]) ? execMap[appId] : null;
     }
 
     function showNonSelectedLabel() {
         var layers = cfg.appCard?.nonSelectedLayerLabels;
         if (!layers) return true;
-        var key = "layer_" + window.layer;
-        return layers[key] !== false;
+        return layers["layer_" + window.layer] !== false;
     }
 
     Process {
@@ -119,56 +249,36 @@ PanelWindow {
         stdout: StdioCollector {
             onStreamFinished: {
                 var txt = this.text.trim();
-                console.log("[hyprsphere] Icon reader finished, got " + txt.length + " chars");
+                log("Icon reader finished, got " + txt.length + " chars");
                 if (txt.length > 0) window.parseIcons(txt);
             }
         }
     }
 
     function parseIcons(text) {
-        var map = {};
-        var nmap = {};
-        var emap = {};
+        var map = {}, nmap = {}, emap = {};
         var blocks = text.split('---');
         for (var b = 0; b < blocks.length; b++) {
             var lines = blocks[b].trim().split('\n');
             var id = null, icon = null, wmClass = null, name = null, exec = null;
             for (var i = 0; i < lines.length; i++) {
                 var line = lines[i].trim();
-                if (line.startsWith('[ID]')) {
-                    id = line.substring(4).trim();
-                } else if (line.startsWith('Name=')) {
-                    name = line.substring(5).trim();
-                } else if (line.startsWith('Icon=')) {
-                    icon = line.substring(5).trim();
-                } else if (line.startsWith('StartupWMClass=')) {
-                    wmClass = line.substring(15).trim();
-                } else if (line.startsWith('Exec=') && exec === null) {
-                    // Only use the first Exec= line (the default action)
+                if (line.startsWith('[ID]')) id = line.substring(4).trim();
+                else if (line.startsWith('Name=')) name = line.substring(5).trim();
+                else if (line.startsWith('Icon=')) icon = line.substring(5).trim();
+                else if (line.startsWith('StartupWMClass=')) wmClass = line.substring(15).trim();
+                else if (line.startsWith('Exec=') && exec === null) {
                     exec = line.substring(5).trim();
-                    // Strip freedesktop field codes: %u %U %f %F %i %c %k %%
                     exec = exec.replace(/%[uUfFick]/g, '').trim();
                     exec = exec.replace(/%%/g, '%');
                 }
             }
-            if (id && icon) {
-                map[id] = icon;
-                if (wmClass) map[wmClass] = icon;
-            }
-            if (id && name) {
-                nmap[id] = name;
-                if (wmClass) nmap[wmClass] = name;
-            }
-            if (id && exec) {
-                emap[id] = exec;
-                if (wmClass) emap[wmClass] = exec;
-            }
+            if (id && icon) { map[id] = icon; if (wmClass) map[wmClass] = icon; }
+            if (id && name) { nmap[id] = name; if (wmClass) nmap[wmClass] = name; }
+            if (id && exec) { emap[id] = exec; if (wmClass) emap[wmClass] = exec; }
         }
-        iconMap = map;
-        nameMap = nmap;
-        execMap = emap;
-        console.log("[hyprsphere] Icon map built: " + Object.keys(map).length + " entries, Name map built: " + Object.keys(nmap).length + " entries, Exec map built: " + Object.keys(emap).length + " entries");
-        // If overlay is already visible, refresh sphere with correct icons
+        iconMap = map; nameMap = nmap; execMap = emap;
+        log("Icon map: " + Object.keys(map).length + " Name map: " + Object.keys(nmap).length + " Exec map: " + Object.keys(emap).length);
         if (window.visible) scheduleRebuild();
     }
 
@@ -176,323 +286,154 @@ PanelWindow {
         var tls = Hyprland.toplevels;
         var arr = (tls && tls.values) || [];
         if (arr.length === 0) {
-            // Toplevels not populated yet — retry on next tick
             Qt.callLater(function() { window.initWindowIndices(); });
             return;
         }
-        window._appOpeningOrder = {};
+        var initList = [];
         for (var i = 0; i < arr.length; i++) {
             var t = arr[i];
             if (!t) continue;
-            var addr = t.address || "";
-            if (!addr) continue;
-            addr = window.normalizeAddress(addr);
-            var appId = (t.wayland && t.wayland.appId) ? t.wayland.appId : "unknown";
-            if (!window._appOpeningOrder[appId]) window._appOpeningOrder[appId] = [];
-            if (window._appOpeningOrder[appId].indexOf(addr) === -1) {
-                window._appOpeningOrder[appId].push(addr);
+            var ws = t.workspace;
+            if (ws && String(ws.name || "").startsWith("special:")) continue;
+            var wl = t.wayland;
+            var appId = (wl && wl.appId) ? wl.appId : "unknown";
+            var addr = window.normalizeAddress(t.address);
+            // Only add if not already in focusHistory (safeguard)
+            var found = false;
+            for (var j = 0; j < focusHistory.length; j++) {
+                if (focusHistory[j].address === addr) { found = true; break; }
+            }
+            if (!found) {
+                initList.push({ address: addr, appId: appId, title: t.title });
             }
         }
-        console.log("[hyprsphere] Per-app opening order initialized for " + Object.keys(window._appOpeningOrder).length + " apps");
+        // Prepend in reverse order so first window (index 0) ends up first
+        for (var k = initList.length - 1; k >= 0; k--) {
+            focusHistory.unshift(initList[k]);
+        }
+        log("initWindowIndices: focusHistory now has " + focusHistory.length + " entries");
     }
 
-    // ── Phase 6: Search / Layer 2 ──
+    // ══════════════════════════════════════════════════════════════════════════
+    // SPHERE BUILDING
+    // ══════════════════════════════════════════════════════════════════════════
+
+    property var sphereModel: []
+    property var rebuildScheduled: false
+    property int selectedAppIndex: -1
+    property int layer: 0           // 0=apps, 1=windows, 2=search
+    property string drilledAppId: ""
+
+    function buildLayer0() {
+        var order = appOrder();
+        var result = [];
+        var whitelist = cfg.whitelist || [];
+
+        // Build app groups from focusHistory
+        for (var i = 0; i < order.length; i++) {
+            var appId = order[i];
+            var winAddrs = windowsForApp(appId);
+            var winData = [];
+            for (var j = 0; j < winAddrs.length; j++) {
+                // Find title from focusHistory
+                var title = "";
+                for (var k = 0; k < focusHistory.length; k++) {
+                    if (focusHistory[k].address === winAddrs[j]) {
+                        title = focusHistory[k].title;
+                        break;
+                    }
+                }
+                winData.push({ address: winAddrs[j], title: title });
+            }
+            result.push({
+                appId: appId,
+                label: window.resolveName(appId),
+                icon: window.resolveIcon(appId),
+                windows: winData,
+                windowCount: winData.length,
+            });
+        }
+
+        // Append whitelisted placeholders (not already in focusHistory)
+        for (var w = 0; w < whitelist.length; w++) {
+            var entry = whitelist[w];
+            var alreadyPresent = false;
+            for (var a = 0; a < order.length; a++) {
+                if (order[a] === entry.appId) { alreadyPresent = true; break; }
+            }
+            if (!alreadyPresent) {
+                result.push({
+                    appId: entry.appId, label: entry.label, icon: entry.icon,
+                    exec: entry.exec, windows: [], windowCount: 0,
+                    isWhitelistPlaceholder: true,
+                });
+            }
+        }
+
+        log("buildLayer0: " + result.length + " groups, order=" + JSON.stringify(result.map(function(r){return r.appId;})));
+        return result;
+    }
+
+    function buildLayer1(appId) {
+        var winAddrs = windowsForApp(appId);
+        var result = [];
+        for (var i = 0; i < winAddrs.length; i++) {
+            var title = "";
+            for (var k = 0; k < focusHistory.length; k++) {
+                if (focusHistory[k].address === winAddrs[i]) {
+                    title = focusHistory[k].title;
+                    break;
+                }
+            }
+            result.push({
+                address: winAddrs[i], title: title,
+                icon: window.resolveIcon(appId), label: window.resolveName(appId),
+                appId: appId, isWindowNode: true,
+            });
+        }
+        log("buildLayer1(" + appId + "): " + result.length + " windows");
+        return result;
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // SEARCH (Layer 2) — Fuse.js fuzzy search
+    // Layer 2 shows only individual windows + whitelisted placeholders.
+    // No app groups in search results.
+    // ══════════════════════════════════════════════════════════════════════════
+
     property string searchQuery: ""
     property var fuseIndex: null
     property var searchDatabase: []
     property var searchTimer: null
-    property var savedLayer2Model: []
-    property string savedLayer2Query: ""
-    property bool searchFocused: false
-    property string _pendingSpawnAppId: ""
-    property string _pendingSpawnAddr: ""
 
-
-    // ── Global window-level MRU tracking ──
-    property var globalWindowMru: []
-    property string _preSelectedAppId: ""
-    property bool _mruFrozen: false
-    property bool _togglingVisibility: false
-
-    function _previewFocus(addr) {
-        if (!addr) return;
-        if (!cfg.focusOnTab) return;
-        console.log("[dbg] previewFocus addr=" + addr);
-        var prefix = addr.indexOf("0x") === 0 ? "" : "0x";
-        Quickshell.execDetached(["hyprctl", "dispatch",
-            'hl.dsp.focus({window="address:' + prefix + addr + '"})']);
-        if (window.visible) {
-            window._togglingVisibility = true;
-            window.visible = false;
-            Qt.callLater(function() {
-                window.visible = true;
-                window._togglingVisibility = false;
-            });
-        }
-    }
-
-    function _targetAddrForNode(node) {
-        if (!node || node.isPlaceholder || node.isWhitelistPlaceholder) return "";
-        if (window.layer === 0 || (window.layer === 2 && !node.isWindowNode)) {
-            if (window._pendingSpawnAppId === node.appId) {
-                var spawnMru = appWindowMru[node.appId] || [];
-                return spawnMru.length >= 1 ? spawnMru[0] : "";
-            }
-            if (node.appId === window._preSelectedAppId) {
-                return window.globalWindowMru.length >= 2
-                    ? window.globalWindowMru[1]
-                    : (node.windows[0] ? node.windows[0].address : "");
-            }
-            var winMru = appWindowMru[node.appId] || [];
-            for (var m = 0; m < winMru.length; m++) {
-                for (var w = 0; w < node.windows.length; w++) {
-                    if (node.windows[w].address === winMru[m]) return winMru[m];
-                }
-            }
-            return node.windows[0] ? node.windows[0].address : "";
-        } else {
-            console.log("[dbg] targetForNode winNode app=" + node.appId + " addr=" + (node.address || "none") + " layer=" + window.layer);
-            return node.address || "";
-        }
-    }
-
-    function _findAppForAddress(addr) {
-        if (!addr) return "";
-        var normAddr = addr.indexOf("0x") === 0 ? addr : "0x" + addr;
-        for (var i = 0; i < (window.sphereModel || []).length; i++) {
-            var app = window.sphereModel[i];
-            if (app.isPlaceholder || app.isWhitelistPlaceholder) continue;
-            for (var j = 0; j < (app.windows || []).length; j++) {
-                var wAddr = app.windows[j].address || "";
-                if (wAddr.indexOf("0x") !== 0) wAddr = "0x" + wAddr;
-                if (wAddr === normAddr) return app.appId;
-            }
-        }
-        return "";
-    }
-
-    function buildLayer0() {
-        var groups = {};
-        var tls = Hyprland.toplevels;
-        var arr = (tls && tls.values) || [];
-        for (var idx = 0; idx < arr.length; idx++) {
-            var t = arr[idx];
-            if (!t) continue;
-            var ws = t.workspace;
-            // Special ws check by name only (ws.id is -1 in IPC mode)
-            if (ws && String(ws.name || "").startsWith("special:")) continue;
-            var wl = t.wayland;
-            var appId = (wl && wl.appId) ? wl.appId : "unknown";
-            if (!groups[appId]) groups[appId] = { appId: appId, label: window.resolveName(appId), icon: window.resolveIcon(appId), windows: [] };
-            var wAddr = window.normalizeAddress(t.address);
-            groups[appId].windows.push({ address: wAddr, title: t.title });
-            groups[appId].windowCount = groups[appId].windows.length;
-        }
-        var whitelist = cfg.whitelist || [];
-        for (var entry of whitelist) {
-            if (groups[entry.appId]) continue;
-            groups[entry.appId] = {
-                appId: entry.appId, label: entry.label, icon: entry.icon,
-                exec: entry.exec, windows: [], windowCount: 0,
-                isWhitelistPlaceholder: true,
-            };
-        }
-        return Object.values(groups);
-    }
-
-    function openSwitcher() {
-        console.log("[hyprsphere] openSwitcher() called");
-
-        window.layer = 0;
-        window.drilledAppId = "";
-        window.searchQuery = "";
-        window.savedLayer2Model = [];
-        window.savedLayer2Query = "";
-
-        window.focusable = true;
-        window.overlayActive = true;
-        window._pendingSpawnAppId = "";
-        window._preSelectedAppId = "";
-        window._mruFrozen = true;
-
-        // Enter Hyprland submap so letter keys pass through to QML
-        // NOTE: must use hyprctl eval, not dispatch (submap is Lua-only)
-        Quickshell.execDetached(["hyprctl", "eval", 'hl.dispatch(hl.dsp.submap("hyprsphere"))']);
-
-        // Toplevel IPC data is not available synchronously (confirmed by
-        // Phase 1 testing: 2 event-loop ticks needed after refresh).
-        // Build asynchronously with retry.
-        Hyprland.refreshToplevels();
-        Qt.callLater(function() { finishOpenSwitcher(); });
-    }
-
-    function finishOpenSwitcher() {
-        // Guard: if the overlay was cancelled during async data gathering, abort
-        if (!window.overlayActive) return;
-
-        // Wait for icon map to be built before building sphere
-        // (iconReader Process runs async at startup)
-        var iconReady = Object.keys(iconMap).length > 0;
-        if (!iconReady) {
-            Qt.callLater(function() { finishOpenSwitcher(); });
-            return;
-        }
-
-        var raw = buildLayer0();
-        console.log("[hyprsphere] buildLayer0 returned " + raw.length + " groups");
-
-        if (raw.length === 0) {
-            // No data yet — retry on next tick
-            Qt.callLater(function() { finishOpenSwitcher(); });
-            return;
-        }
-
-        var mruSorted = sortByWindowMru(raw);
-        sphereModel = mruSorted.length === 0
-            ? [{ label: "No windows", icon: "", appId: "", windows: [], isPlaceholder: true }]
-            : mruSorted;
-
-        if (sphereModel.length > 0 && !sphereModel[0].isPlaceholder) {
-            window._preSelectedAppId = "";
-            if (window.globalWindowMru.length >= 2) {
-                window._preSelectedAppId = window._findAppForAddress(window.globalWindowMru[1]);
-            }
-            if (window._preSelectedAppId) {
-                for (var wsi = 0; wsi < sphereModel.length; wsi++) {
-                    if (sphereModel[wsi].appId === window._preSelectedAppId) {
-                        selectedAppIndex = wsi;
-                        break;
-                    }
-                }
-            } else {
-                selectedAppIndex = 0;
-            }
-            if (selectedAppIndex < sphereModel.length) {
-                centerOnApp(selectedAppIndex);
-            }
-            console.log("[dbg] finishOpen: gWM=" + window.globalWindowMru + " preId=" + window._preSelectedAppId + " selIdx=" + selectedAppIndex + " sphere=" + JSON.stringify(sphereModel.map(function(a){return a.appId;})));
-        }
-
-        projDirty = true;
-        rebuildProjCache();
-
-        // Initialize Fuse index for search
-        initFuseIndex();
-
-        // FocusOnTab: focus the pre-selected window behind the overlay
-        // before it becomes visible, so the user sees the target immediately.
-        if (cfg.focusOnTab && sphereModel.length > 0 && selectedAppIndex >= 0) {
-            var initNode = sphereModel[selectedAppIndex];
-            var initAddr = window._targetAddrForNode(initNode);
-            if (initAddr) {
-                var initPrefix = initAddr.indexOf("0x") === 0 ? "" : "0x";
-                Quickshell.execDetached(["hyprctl", "dispatch",
-                    'hl.dsp.focus({window="address:' + initPrefix + initAddr + '"})']);
-            }
-        }
-
-        // Make overlay visible now that sphere data is ready.
-        // The entrance fade animation and focus grab are triggered
-        // automatically by the onVisibleChanged handler.
-        window.visible = true;
-
-        // Refresh on next tick to catch pending appId resolutions.
-        Qt.callLater(function() { scheduleRebuild(); });
-    }
-
-    function sortByWindowMru(raw) {
-        // Build address → appId lookup from raw data
-        var addrToApp = {};
-        for (var r = 0; r < raw.length; r++) {
-            var app = raw[r];
-            for (var w = 0; w < (app.windows || []).length; w++) {
-                var a = app.windows[w].address || "";
-                if (a.indexOf("0x") !== 0) a = "0x" + a;
-                addrToApp[a] = app.appId;
-            }
-        }
-
-        // Build rawByApp for quick lookup
-        var rawByApp = {};
-        for (var r = 0; r < raw.length; r++) {
-            rawByApp[raw[r].appId] = raw[r];
-        }
-
-        // Walk globalWindowMru in order, collecting app groups
-        var seen = {};
-        var sorted = [];
-        for (var i = 0; i < window.globalWindowMru.length; i++) {
-            var addr = window.globalWindowMru[i];
-            var appId = addrToApp[addr];
-            if (appId && !seen[appId] && rawByApp[appId]) {
-                seen[appId] = true;
-                sorted.push(rawByApp[appId]);
-            }
-        }
-
-        // Append unseen apps (whitelisted placeholders, etc.)
-        for (var r = 0; r < raw.length; r++) {
-            if (!seen[raw[r].appId]) {
-                sorted.push(raw[r]);
-            }
-        }
-
-        return sorted;
-    }
-
-    // ── Phase 6: Search / Layer 2 ──
     function buildSearchDatabase() {
         var db = [];
-        var tls = Hyprland.toplevels;
-        var arr = (tls && tls.values) || [];
-        var seenApps = {};
-
-        // Collect running apps grouped
-        for (var i = 0; i < arr.length; i++) {
-            var t = arr[i];
-            if (!t) continue;
-            var ws = t.workspace;
-            if (ws && String(ws.name || "").startsWith("special:")) continue;
-            var wl = t.wayland;
-            var appId = (wl && wl.appId) ? wl.appId : "unknown";
-            if (!seenApps[appId]) {
-                seenApps[appId] = true;
-                db.push({ type: "running-app", appId: appId, label: window.resolveName(appId), icon: window.resolveIcon(appId), windows: [] });
-            }
-            for (var d = 0; d < db.length; d++) {
-                if (db[d].appId === appId && db[d].type === "running-app") {
-                    var sAddr1 = window.normalizeAddress(t.address);
-                    db[d].windows.push({ address: sAddr1, title: t.title });
-                    break;
-                }
-            }
-        }
-
-        // Add window-level entries for title search
-        for (var i2 = 0; i2 < arr.length; i2++) {
-            var t2 = arr[i2];
-            if (!t2) continue;
-            var ws2 = t2.workspace;
-            if (ws2 && String(ws2.name || "").startsWith("special:")) continue;
-            var wl2 = t2.wayland;
-            var appId2 = (wl2 && wl2.appId) ? wl2.appId : "unknown";
+        // Individual windows
+        for (var i = 0; i < focusHistory.length; i++) {
+            var entry = focusHistory[i];
             db.push({
-                type: "window", appId: appId2, label: window.resolveName(appId2), icon: window.resolveIcon(appId2),
-                address: window.normalizeAddress(t2.address), title: t2.title || appId2
+                type: "window", appId: entry.appId,
+                label: window.resolveName(entry.appId),
+                icon: window.resolveIcon(entry.appId),
+                address: entry.address, title: entry.title || entry.appId,
             });
         }
-
-        // Add whitelisted placeholder apps (not already running)
+        // Whitelisted placeholders not in focusHistory
         var whitelist = cfg.whitelist || [];
         for (var e = 0; e < whitelist.length; e++) {
-            var entry = whitelist[e];
-            if (seenApps[entry.appId]) continue;
-            db.push({
-                type: "whitelisted-app", appId: entry.appId, label: entry.label,
-                icon: entry.icon, exec: entry.exec, windows: [], windowCount: 0
-            });
+            var entry2 = whitelist[e];
+            var found = false;
+            for (var j = 0; j < focusHistory.length; j++) {
+                if (focusHistory[j].appId === entry2.appId) { found = true; break; }
+            }
+            if (!found) {
+                db.push({
+                    type: "whitelisted-app", appId: entry2.appId,
+                    label: entry2.label, icon: entry2.icon,
+                    exec: entry2.exec, windows: [], windowCount: 0,
+                });
+            }
         }
-
         return db;
     }
 
@@ -512,20 +453,18 @@ PanelWindow {
                 includeScore: true,
                 shouldSort: true
             });
-        } catch (e) {
-            console.log("[hyprsphere] Fuse init error:", String(e));
+        } catch(e) {
+            log("Fuse init error: " + String(e));
             fuseIndex = null;
         }
     }
 
     function _handleSearchInput(text) {
         searchQuery = text;
-
         if (searchQuery === "" && window.layer === 2) {
             cancelSearch();
             return;
         }
-
         if (searchTimer) searchTimer.running = false;
         searchTimer = Qt.createQmlObject(
             'import QtQuick; Timer { interval: ' + (cfg.search?.delayMs ?? 150)
@@ -536,58 +475,29 @@ PanelWindow {
 
     function _executeSearch() {
         if (searchQuery === "") return;
-        if (!fuseIndex) {
-            initFuseIndex();
-            if (!fuseIndex) return;
-        }
+        if (!fuseIndex) { initFuseIndex(); if (!fuseIndex) return; }
 
         var results = fuseIndex.search(searchQuery);
         var maxResults = cfg.search?.maxResults ?? 30;
         var top = results.slice(0, maxResults);
 
-        var runApps = [];
-        var whitelistApps = [];
-        var winNodes = [];
+        var layer2Model = [];
 
         for (var i = 0; i < top.length; i++) {
             var item = top[i].item;
-            if (item.type === "running-app") {
-                runApps.push(item);
+            if (item.type === "window") {
+                layer2Model.push({
+                    appId: item.appId, label: item.label, icon: item.icon,
+                    address: item.address, title: item.title,
+                    isWindowNode: true, isSearchResult: true,
+                });
             } else if (item.type === "whitelisted-app") {
-                whitelistApps.push(item);
-            } else if (item.type === "window") {
-                winNodes.push(item);
+                layer2Model.push({
+                    appId: item.appId, label: item.label, icon: item.icon,
+                    exec: item.exec, windows: [], windowCount: 0,
+                    isWhitelistPlaceholder: true, isSearchResult: true,
+                });
             }
-        }
-
-        // Build layer 2 model: running apps → whitelisted apps → windows
-        var layer2Model = [];
-
-        for (var r = 0; r < runApps.length; r++) {
-            var ra = runApps[r];
-            layer2Model.push({
-                appId: ra.appId, label: ra.label, icon: ra.icon,
-                windows: ra.windows, windowCount: ra.windows.length,
-                isSearchResult: true
-            });
-        }
-
-        for (var w = 0; w < whitelistApps.length; w++) {
-            var wa = whitelistApps[w];
-            layer2Model.push({
-                appId: wa.appId, label: wa.label, icon: wa.icon,
-                exec: wa.exec, windows: [], windowCount: 0,
-                isWhitelistPlaceholder: true, isSearchResult: true
-            });
-        }
-
-        for (var w2 = 0; w2 < winNodes.length; w2++) {
-            var wn = winNodes[w2];
-            layer2Model.push({
-                appId: wn.appId, label: wn.label, icon: wn.icon,
-                address: wn.address, title: wn.title,
-                isWindowNode: true, isSearchResult: true
-            });
         }
 
         window.layer = 2;
@@ -599,24 +509,86 @@ PanelWindow {
         rebuildProjCache();
         centerOnApp(0);
         sphereZoom = cfg.search?.layer2Zoom ?? 1.5;
+        log("_executeSearch: " + layer2Model.length + " results for \"" + searchQuery + "\"");
     }
 
     function cancelSearch() {
         searchQuery = "";
-        savedLayer2Model = [];
-        savedLayer2Query = "";
-        var raw = buildLayer0();
         window.layer = 0;
+        var raw = buildLayer0();
         sphereModel = raw.length === 0
             ? [{ label: "No windows", icon: "", appId: "", windows: [], isPlaceholder: true }]
-            : sortByWindowMru(raw);
+            : raw;
         sphereZoom = 1.0;
         projDirty = true;
         rebuildProjCache();
         if (sphereModel.length > 0 && !sphereModel[0].isPlaceholder) {
-            selectedAppIndex = Math.min(sphereModel.length - 1, selectedAppIndex);
-            centerOnApp(selectedAppIndex);
+            selectedAppIndex = 0;
+            centerOnApp(0);
         }
+        log("cancelSearch: returned to layer 0");
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // OVERLAY STATE
+    // ══════════════════════════════════════════════════════════════════════════
+
+    property bool overlayActive: false
+    property bool _togglingVisibility: false
+    property string _pendingSpawnAppId: ""
+    property string _pendingSpawnAddr: ""
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // OPEN / REBUILD
+    // ══════════════════════════════════════════════════════════════════════════
+
+    function openSwitcher() {
+        log("openSwitcher()");
+        window.layer = 0;
+        window.drilledAppId = "";
+        window.searchQuery = "";
+        window.focusable = true;
+        window.overlayActive = true;
+        window._pendingSpawnAppId = "";
+        window._pendingSpawnAddr = "";
+
+        dispatchSubmap("hyprsphere");
+        Hyprland.refreshToplevels();
+        Qt.callLater(function() { finishOpenSwitcher(); });
+    }
+
+    function finishOpenSwitcher() {
+        if (!window.overlayActive) return;
+
+        var iconReady = Object.keys(iconMap).length > 0;
+        if (!iconReady) {
+            Qt.callLater(function() { finishOpenSwitcher(); });
+            return;
+        }
+
+        var raw = buildLayer0();
+        if (raw.length === 0) {
+            Qt.callLater(function() { finishOpenSwitcher(); });
+            return;
+        }
+
+        sphereModel = raw;
+        if (sphereModel.length > 0 && !sphereModel[0].isPlaceholder) {
+            // Pre-select index 1 (previous app) if available
+            selectedAppIndex = appOrder().length >= 2 ? 1 : 0;
+            if (selectedAppIndex < sphereModel.length) {
+                centerOnApp(selectedAppIndex);
+            }
+        }
+
+        projDirty = true;
+        rebuildProjCache();
+        initFuseIndex();
+
+        window.visible = true;
+        Qt.callLater(function() { scheduleRebuild(); });
+
+        log("finishOpenSwitcher: " + sphereModel.length + " nodes, pre-selected index " + selectedAppIndex);
     }
 
     function scheduleRebuild() {
@@ -624,502 +596,77 @@ PanelWindow {
         rebuildScheduled = true;
         Qt.callLater(function() {
             rebuildScheduled = false;
-            // Run regardless of visibility — sphere data is cheap to rebuild
-            // and may be needed when overlay reappears after visible toggle.
             Hyprland.refreshToplevels();
             var raw = buildLayer0();
-
-            // If waiting for a spawned window and the data isn't ready yet, retry
-            if (window._pendingSpawnAddr && raw.length > 0) {
-                var spawnReady = false;
-                for (var ri = 0; ri < raw.length; ri++) {
-                    if (raw[ri].appId === window._pendingSpawnAppId
-                        && !raw[ri].isWhitelistPlaceholder) {
-                        // Verify the specific pending address is in the window list
-                        // (normalize both sides to handle 0x prefix mismatch)
-                        for (var wj = 0; wj < (raw[ri].windows || []).length; wj++) {
-                            var winAddr = raw[ri].windows[wj].address || "";
-                            if (winAddr.indexOf("0x") !== 0) winAddr = "0x" + winAddr;
-                            if (winAddr === window._pendingSpawnAddr) {
-                                spawnReady = true;
-                                break;
-                            }
-                        }
-                        break;
-                    }
-                }
-                if (!spawnReady) {
-                    // Toplevel data not yet updated — retry on next tick
-                    window.rebuildScheduled = false;
-                    window.scheduleRebuild();
-                    return;
-                }
-            }
-
-if (window.layer === 2 && window.searchQuery !== "") {
-                // Layer 2 active: re-init Fuse index and re-run search
-                initFuseIndex();
-                _executeSearch();
-                return;
-            }
-
-            if (window.layer === 1 && window.drilledAppId) {
-                var prevAddress = sphereModel[selectedAppIndex]
-                    ? sphereModel[selectedAppIndex].address
-                    : null;
-
-                var app = null;
-                for (var i = 0; i < raw.length; i++) {
-                    if (raw[i].appId === window.drilledAppId) { app = raw[i]; break; }
-                }
-
-                if (app && app.windowCount >= 1) {
-                    var winMru = appWindowMru[app.appId] || [];
-                    sphereModel = app.windows.slice().map(function(w) {
-                        return {
-                            address: w.address,
-                            title:   w.title,
-                            icon:    app.icon,
-                            label:   app.label,
-                            appId:   app.appId,
-                            isWindowNode: true,
-                        };
-                    }).sort(function(a, b) {
-                        var ia = winMru.indexOf(a.address);
-                        var ib = winMru.indexOf(b.address);
-                        return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
-                    });
-
-                    var restoredIdx = -1;
-                    for (var si = 0; si < sphereModel.length; si++) {
-                        if (sphereModel[si].address === prevAddress) { restoredIdx = si; break; }
-                    }
-                    selectedAppIndex = restoredIdx >= 0 ? restoredIdx : 0;
-                    centerOnApp(selectedAppIndex);
-                } else {
-                    window.layer = 0;
-                    window.drilledAppId = "";
-                    rebuildToLayer0(raw);
-                }
-            } else {
-                rebuildToLayer0(raw);
-            }
-
+            rebuildToLayer(raw);
             projDirty = true;
             rebuildProjCache();
-            // If we just spawned a new window, select it
-            if (window._pendingSpawnAddr) {
-                var found = false;
-                if (window.layer === 0) {
-                    // Layer 0: match by appId (app nodes don't have .address)
-                    for (var si = 0; si < window.sphereModel.length; si++) {
-                        if (window.sphereModel[si].appId === window._pendingSpawnAppId
-                            && !window.sphereModel[si].isWhitelistPlaceholder) {
-                            window.selectedAppIndex = si;
-                            window.centerOnApp(si);
-                            found = true;
-                            break;
-                        }
-                    }
-                } else {
-                    // Layer 1/2: match by address (normalize 0x prefix)
-                    for (var si = 0; si < window.sphereModel.length; si++) {
-                        var sa = window.sphereModel[si].address || "";
-                        if (sa.indexOf("0x") !== 0) sa = "0x" + sa;
-                        if (sa === window._pendingSpawnAddr) {
-                            window.selectedAppIndex = si;
-                            window.centerOnApp(si);
-                            found = true;
-                            break;
-                        }
-                    }
-                }
-                if (!found && window.layer === 0 && window.sphereModel.length > 0) {
-                    // Fallback: select the first non-placeholder node
-                    for (var si = 0; si < window.sphereModel.length; si++) {
-                        if (!window.sphereModel[si].isPlaceholder) {
-                            window.selectedAppIndex = si;
-                            window.centerOnApp(si);
-                            break;
-                        }
-                    }
-                }
-                window._pendingSpawnAddr = "";
-            }
-            // Recalculate pre-selection so the sphere follows window opens/closes.
-            // Don't override the spawn auto-selection though.
-            if (window.visible && !window._pendingSpawnAppId) {
-                window._preSelectedAppId = "";
-                if (window.globalWindowMru.length >= 2) {
-                    window._preSelectedAppId = window._findAppForAddress(window.globalWindowMru[1]);
-                }
-                // If the current selection is no longer valid, update to the pre-selected app.
-                var curApp = window.sphereModel && window.sphereModel.length > window.selectedAppIndex
-                    ? window.sphereModel[window.selectedAppIndex] : null;
-                if (window._preSelectedAppId && (!curApp || curApp.appId !== window._preSelectedAppId)) {
-                    for (var rsi = 0; rsi < (window.sphereModel || []).length; rsi++) {
-                        if (window.sphereModel[rsi].appId === window._preSelectedAppId) {
-                            window.selectedAppIndex = rsi;
-                            window.centerOnApp(rsi);
-                            break;
-                        }
-                    }
-                }
-            }
-            // After any sphere rebuild, ensure overlay still has keyboard focus
             focusGrabber.forceActiveFocus();
         });
     }
 
-    function drillDown() {
-        if (window.layer === 0) {
-            // Layer 0 → Layer 1 (existing behavior)
-            var app = sphereModel[selectedAppIndex];
-            if (!app || app.isPlaceholder || app.isWhitelistPlaceholder) return;
-            if (app.windowCount === 0) return;
+    function rebuildToLayer(raw) {
+        if (window.layer === 2 && window.searchQuery !== "") {
+            initFuseIndex();
+            _executeSearch();
+            return;
+        }
 
-            window.layer = 1;
-            window.drilledAppId = app.appId;
-
-            var winMru = appWindowMru[app.appId] || [];
-            sphereModel = app.windows.slice().map(function(w) {
-                return {
-                    address: w.address,
-                    title:   w.title,
-                    icon:    app.icon,
-                    label:   app.label,
-                    appId:   app.appId,
-                    isWindowNode: true,
-                };
-            }).sort(function(a, b) {
-                var ia = winMru.indexOf(a.address);
-                var ib = winMru.indexOf(b.address);
-                return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
-            });
-
-            selectedAppIndex = 0;
-            // Pre-select the second MRU-most window (index 1) so the drill-down
-            // Select the window that is NOT the commit target, so drill-down
-            // always shows the "other" window the user would switch to.
-            if (sphereModel.length >= 2) {
-                var commitAddr = window.globalWindowMru.length >= 2 ? window.globalWindowMru[1] : "";
-                if (sphereModel[0].address === commitAddr) {
-                    selectedAppIndex = 1;
-                } else if (sphereModel[1].address === commitAddr) {
-                    selectedAppIndex = 0;
-                } else {
-                    selectedAppIndex = 1;
+        if (window.layer === 1 && window.drilledAppId) {
+            var appExists = false;
+            for (var i = 0; i < raw.length; i++) {
+                if (raw[i].appId === window.drilledAppId && !raw[i].isWhitelistPlaceholder) {
+                    appExists = true;
+                    break;
                 }
             }
-            console.log("[dbg] drillDown0: len=" + sphereModel.length + " sel=" + selectedAppIndex + " titles=" + JSON.stringify(sphereModel.map(function(s){return s.title;})));
-            projDirty = true;
-            rebuildProjCache();
-            centerOnApp(selectedAppIndex);
-            // FocusOnTab: focus the drilled-down window
-            if (cfg.focusOnTab) {
-                window._previewFocus(window._targetAddrForNode(sphereModel[selectedAppIndex]));
-            }
-        } else if (window.layer === 2) {
-            // Layer 2 → drill into app → Layer 1
-            var node = sphereModel[selectedAppIndex];
-            if (!node || node.isPlaceholder || node.isWhitelistPlaceholder) return;
-            if (node.isWindowNode) return;  // no-op on window nodes
-            if (!node.windows || node.windowCount === 0) return;
-
-            // Save layer 2 state for restoration
-            savedLayer2Model = sphereModel.slice();
-            savedLayer2Query = searchQuery;
-
-            window.layer = 1;
-            window.drilledAppId = node.appId;
-
-            var winMru = appWindowMru[node.appId] || [];
-            sphereModel = node.windows.slice().map(function(w) {
-                return {
-                    address: w.address,
-                    title:   w.title,
-                    icon:    node.icon,
-                    label:   node.label,
-                    appId:   node.appId,
-                    isWindowNode: true,
-                };
-            }).sort(function(a, b) {
-                var ia = winMru.indexOf(a.address);
-                var ib = winMru.indexOf(b.address);
-                return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
-            });
-
-            selectedAppIndex = 0;
-            // Same select-the-other-window rule for layer-2 drill-down
-            if (sphereModel.length >= 2) {
-                var commitAddr = window.globalWindowMru.length >= 2 ? window.globalWindowMru[1] : "";
-                if (sphereModel[0].address === commitAddr) {
-                    selectedAppIndex = 1;
-                } else if (sphereModel[1].address === commitAddr) {
-                    selectedAppIndex = 0;
-                } else {
-                    selectedAppIndex = 1;
+            if (appExists) {
+                var prevAddress = sphereModel[selectedAppIndex]
+                    ? sphereModel[selectedAppIndex].address : null;
+                sphereModel = buildLayer1(window.drilledAppId);
+                var restoredIdx = -1;
+                for (var si = 0; si < sphereModel.length; si++) {
+                    if (sphereModel[si].address === prevAddress) { restoredIdx = si; break; }
                 }
-            }
-            console.log("[dbg] drillDown2: len=" + sphereModel.length + " sel=" + selectedAppIndex);
-            projDirty = true;
-            rebuildProjCache();
-            centerOnApp(0);
-            sphereZoom = 1.0;
-            // FocusOnTab: focus the drilled-down window
-            if (cfg.focusOnTab) {
-                window._previewFocus(window._targetAddrForNode(sphereModel[selectedAppIndex]));
-            }
-        } else {
-            // Layer 1 → back to previous layer
-            if (savedLayer2Model.length > 0) {
-                // Return to layer 2 (search results preserved)
-                window.layer = 2;
-                searchQuery = savedLayer2Query;
-                sphereModel = savedLayer2Model;
-                savedLayer2Model = [];
-                savedLayer2Query = "";
-                projDirty = true;
-                rebuildProjCache();
-
-                var prevIdx = -1;
-                for (var i = 0; i < sphereModel.length; i++) {
-                    if (sphereModel[i].appId === window.drilledAppId) { prevIdx = i; break; }
-                }
-                selectedAppIndex = prevIdx >= 0 ? prevIdx : 0;
+                selectedAppIndex = restoredIdx >= 0 ? restoredIdx : 0;
                 centerOnApp(selectedAppIndex);
-                window.drilledAppId = "";
-                sphereZoom = cfg.search?.layer2Zoom ?? 1.5;
-                // FocusOnTab: focus the returned-to app's target
-                if (cfg.focusOnTab) {
-                    window._previewFocus(window._targetAddrForNode(sphereModel[selectedAppIndex]));
-                }
             } else {
-                // Normal layer 1 → layer 0
                 window.layer = 0;
-                var raw = buildLayer0();
+                window.drilledAppId = "";
                 sphereModel = raw.length === 0
                     ? [{ label: "No windows", icon: "", appId: "", windows: [], isPlaceholder: true }]
-                    : sortByWindowMru(raw);
-                projDirty = true;
-                rebuildProjCache();
-
-                var prevIdx = -1;
-                for (var i = 0; i < sphereModel.length; i++) {
-                    if (sphereModel[i].appId === window.drilledAppId) { prevIdx = i; break; }
-                }
-                selectedAppIndex = prevIdx >= 0 ? prevIdx : 0;
-                centerOnApp(selectedAppIndex);
-                window.drilledAppId = "";
-                // FocusOnTab: focus the returned-to app's target
-                if (cfg.focusOnTab) {
-                    window._previewFocus(window._targetAddrForNode(sphereModel[selectedAppIndex]));
-                }
-            }
-        }
-    }
-
-    function commitSelection() {
-        // Guard: sphere not ready yet (buildLayer0 hasn't returned data)
-        if (!window.overlayActive) return;
-        if (closeSequence.running) return;
-        window._mruFrozen = false;
-
-        var node = sphereModel[selectedAppIndex];
-        if (!node || node.isPlaceholder) {
-            window.overlayActive = false;
-            closeSequence.start();
-            // Reset Hyprland submap so next ALT+Tab works
-            Quickshell.execDetached(["hyprctl", "eval", 'hl.dispatch(hl.dsp.submap("reset"))']);
-            return;
-        }
-
-        if (node.isWhitelistPlaceholder) {
-            window.focusable = false;
-            window.overlayActive = false;
-
-            // Keep fade animation — overlay can't steal focus since
-            // focusable is false. Dispatch by class to ensure focus.
-            if (cfg.fullscreenOnActivate) {
-                // Launch via exec_cmd with a PID-tracked maximize rule
-                Quickshell.execDetached(["hyprctl", "dispatch",
-                    'hl.dsp.exec_cmd("' + node.exec + '", { maximize = true })']);
-                // Focus by class after a small delay
-                Quickshell.execDetached(["bash", "-c",
-                    'sleep 0.5 && hyprctl dispatch hl.dsp.focus({window="class:' + node.appId + '"}) &']);
-            } else {
-                // Original shell chain: launch + focus
-                var sh = node.exec + ' & sleep 0.3 && hyprctl dispatch ' + "'hl.dsp.focus({window=\\\"class:" + node.appId + "\\\"})'" + ' &';
-                Quickshell.execDetached(["bash", "-c", sh]);
-            }
-            closeSequence.start();
-            // Reset Hyprland submap so next ALT+Tab works
-            Quickshell.execDetached(["hyprctl", "eval", 'hl.dispatch(hl.dsp.submap("reset"))']);
-            return;
-        }
-
-        var addr = window._targetAddrForNode(node);
-        console.log("[dbg] commitSel node=" + (node ? node.appId : "null") + " addr=" + (addr || "none") + " layer=" + window.layer);
-
-        // Update globalWindowMru synchronously before hiding overlay —
-        // onActiveToplevelChanged may not fire until overlay reopens.
-        if (addr) {
-            var commitNorm = addr.indexOf("0x") === 0 ? addr : "0x" + addr;
-            var commitFiltered = [];
-            for (var ci = 0; ci < globalWindowMru.length; ci++) {
-                if (globalWindowMru[ci] !== commitNorm) commitFiltered.push(globalWindowMru[ci]);
-            }
-            globalWindowMru = [commitNorm].concat(commitFiltered);
-        }
-        window.overlayActive = false;
-        window.visible = false;
-
-        // Focus the target window using Lua dispatch format.
-        var prefix = addr.indexOf("0x") === 0 ? "" : "0x";
-        Quickshell.execDetached(["hyprctl", "dispatch", 'hl.dsp.focus({window="address:' + prefix + addr + '"})']);
-
-        // Fullscreen on activate (if configured)
-        if (cfg.fullscreenOnActivate) {
-            Quickshell.execDetached(["hyprctl", "dispatch",
-                'hl.dsp.window.fullscreen({ mode = "maximized", action = "set", window = "address:' + prefix + addr + '" })']);
-        }
-
-        // Reset Hyprland submap so normal bindings work again
-        // NOTE: must use hyprctl eval, not dispatch (submap is Lua-only)
-        Quickshell.execDetached(["hyprctl", "eval", 'hl.dispatch(hl.dsp.submap("reset"))']);
-    }
-
-    // ── Phase 5: Ctrl+C close ──
-    function closeSelection() {
-        if (closeSequence.running) return;
-
-        var node = sphereModel[selectedAppIndex];
-        if (!node || node.isPlaceholder) return;
-
-        // If the node is still a whitelisted placeholder but windows have
-        // been spawned (e.g. Ctrl+Enter before the sphere rebuilds), close
-        // via appWindowMru which is updated immediately by openwindow.
-        if (node.isWhitelistPlaceholder) {
-            var spawnAddrs = appWindowMru[node.appId] || [];
-            for (var si = 0; si < spawnAddrs.length; si++) {
-                var sa = spawnAddrs[si];
-                var sp = sa.indexOf("0x") === 0 ? "" : "0x";
-                Quickshell.execDetached(["hyprctl", "dispatch",
-                    'hl.dsp.window.close({window="address:' + sp + sa + '"})']);
-            }
-            return;
-        }
-
-        if (window.layer === 0 || (window.layer === 2 && !node.isWindowNode)) {
-            // Layer 0 or layer 2 app node: close all windows of this app
-            for (var w = 0; w < node.windows.length; w++) {
-                var a = node.windows[w].address;
-                var p = a.indexOf("0x") === 0 ? "" : "0x";
-                Quickshell.execDetached(["hyprctl", "dispatch",
-                    'hl.dsp.window.close({window="address:' + p + a + '"})']);
+                    : raw;
+                selectedAppIndex = 0;
+                centerOnApp(0);
             }
         } else {
-            // Layer 1 or layer 2 window node: close specific window
-            var p = node.address.indexOf("0x") === 0 ? "" : "0x";
-            Quickshell.execDetached(["hyprctl", "dispatch",
-                'hl.dsp.window.close({window="address:' + p + node.address + '"})']);
+            sphereModel = raw.length === 0
+                ? [{ label: "No windows", icon: "", appId: "", windows: [], isPlaceholder: true }]
+                : raw;
+            selectedAppIndex = Math.min(sphereModel.length - 1, selectedAppIndex);
+            centerOnApp(selectedAppIndex);
         }
     }
 
-    function openNewWindow() {
-        if (closeSequence.running) return;
+    // ══════════════════════════════════════════════════════════════════════════
+    // EVENT HANDLERS
+    // ══════════════════════════════════════════════════════════════════════════
 
-        var node = sphereModel[selectedAppIndex];
-        if (!node || node.isPlaceholder) return;
-
-        // Resolve appId — for window nodes, use the parent appId
-        var appId = node.appId;
-        if (!appId) return;
-
-        // Build exec command: whitelist exec → execMap → appId fallback
-        var execCmd = node.exec || window.resolveExec(appId) || appId;
-
-        // If fullscreen on activate is on, use exec_cmd with a PID-tracked
-        // maximize rule (same as the whitelist commit path). Some apps like
-        // Blender override our one-shot openwindow dispatch during init, but
-        // the compositor-enforced rule persists through their entire startup.
-        // Otherwise, launch via bash -c (original behaviour).
-        if (cfg.fullscreenOnActivate) {
-            Quickshell.execDetached(["hyprctl", "dispatch",
-                'hl.dsp.exec_cmd("' + execCmd + '", { maximize = true })']);
-        } else {
-            Quickshell.execDetached(["bash", "-c", execCmd]);
-        }
-
-        // Launch tracking for auto-selection
-        window._pendingSpawnAppId = appId;
-    }
-
-    function rebuildToLayer0(raw) {
-        if (raw.length === 0) {
-            sphereModel = [{ label: "No windows", icon: "", appId: "", windows: [], isPlaceholder: true }];
-            selectedAppIndex = 0;
-            return;
-        }
-        sphereModel = sortByWindowMru(raw);
-        selectedAppIndex = Math.min(sphereModel.length - 1, selectedAppIndex);
-        centerOnApp(selectedAppIndex);
-    }
-
-    // ── Phase 2: MRU tracking ──
     Connections {
         target: Hyprland
         function onActiveToplevelChanged() {
             var t = Hyprland.activeToplevel;
             if (!t) return;
             var appId = (t.wayland && t.wayland.appId) ? t.wayland.appId : "unknown";
-
             var addr = window.normalizeAddress(t.address);
-            // MRU freeze: when the overlay is open (focusOnTab), block focus
-            // tracking to prevent feedback loops from preview focus dispatches.
-            if (window._mruFrozen) return;
-
-            // When a real appId resolves, clean up any stale "unknown" entry
-            if (appId !== "unknown") {
-                var cleaned = [];
-                for (var ci = 0; ci < appMru.length; ci++) {
-                    if (appMru[ci] !== "unknown") cleaned.push(appMru[ci]);
-                }
-                appMru = cleaned;
-            }
-
-            // Move app to front of app-level MRU
-            var filtered = [];
-            for (var i = 0; i < appMru.length; i++) {
-                if (appMru[i] !== appId) filtered.push(appMru[i]);
-            }
-            appMru = [appId].concat(filtered);
-
-            // Move window to front of this app's per-app window MRU
-            var winList = appWindowMru[appId] || [];
-            var winFiltered = [];
-            for (var j = 0; j < winList.length; j++) {
-                if (winList[j] !== addr) winFiltered.push(winList[j]);
-            }
-            appWindowMru[appId] = [addr].concat(winFiltered);
-
-            // Maintain global window MRU on every focus change
-            if (addr) {
-                var gwFiltered = [];
-                for (var gi = 0; gi < globalWindowMru.length; gi++) {
-                    if (globalWindowMru[gi] !== addr) gwFiltered.push(globalWindowMru[gi]);
-                }
-                globalWindowMru = [addr].concat(gwFiltered);
-            }
-
-
+            log("activeToplevelChanged: addr=" + addr.substring(addr.length-6) + " app=" + appId);
+            window.moveToFront(addr);
         }
     }
 
     Connections {
         target: Hyprland
         function onRawEvent(event) {
-            // Handle openwindow: track new windows in MRU immediately
             if (event.name === "openwindow") {
                 var parts = (event.data || "").split(",");
                 if (parts.length >= 3) {
@@ -1127,35 +674,18 @@ if (window.layer === 2 && window.searchQuery !== "") {
                     if (addr.indexOf("0x") !== 0) addr = "0x" + addr;
                     var appId = parts[2];
                     if (!appId) return;
-                    // Track per-app opening order
-                    if (!window._appOpeningOrder[appId]) window._appOpeningOrder[appId] = [];
-                    if (window._appOpeningOrder[appId].indexOf(addr) === -1) {
-                        window._appOpeningOrder[appId].push(addr);
-                    }
-                    var filtered = [];
-                    for (var i = 0; i < appMru.length; i++) {
-                        if (appMru[i] !== appId) filtered.push(appMru[i]);
-                    }
-                    appMru = [appId].concat(filtered);
-                    appWindowMru[appId] = [addr].concat(appWindowMru[appId] || []);
+                    window.addToFront(addr, appId, "");
+                    log("openwindow: addr=" + addr.substring(addr.length-6) + " app=" + appId);
 
-                    // If this is a spawned window, save info for auto-selection
+                    // Spawn tracking
                     if (window._pendingSpawnAppId === appId) {
                         window._pendingSpawnAddr = addr;
                         if (window.visible) {
-                            // Cycle visibility to force the compositor to
-                            // re-grant keyboard focus to the overlay layer.
-                            // Some apps (Blender) steal focus on open.
                             window.visible = false;
-                            Qt.callLater(function() {
-                                window.visible = true;
-                                // onVisibleChanged → forceActiveFocus
-                            });
+                            Qt.callLater(function() { window.visible = true; });
                             window.scheduleRebuild();
                         }
                     }
-
-
                 }
                 return;
             }
@@ -1164,119 +694,69 @@ if (window.layer === 2 && window.searchQuery !== "") {
             var addr = event.data || "";
             if (!addr) return;
             if (addr.indexOf("0x") !== 0) addr = "0x" + addr;
+            log("closewindow: addr=" + addr.substring(addr.length-6));
+            window.removeAddress(addr);
 
-            // Remove from per-app opening order (compacts that app's indices)
-            for (var aid in window._appOpeningOrder) {
-                var list = window._appOpeningOrder[aid];
-                var oi = list.indexOf(addr);
-                if (oi !== -1) {
-                    list.splice(oi, 1);
-                    if (list.length === 0) delete window._appOpeningOrder[aid];
-                    break;
-                }
-            }
-
-            for (var appId in appWindowMru) {
-                var list = appWindowMru[appId];
-                var idx = -1;
-                for (var k = 0; k < list.length; k++) {
-                    if (list[k] === addr) { idx = k; break; }
-                }
-                if (idx !== -1) {
-                    var newList = [];
-                    for (var k2 = 0; k2 < list.length; k2++) {
-                        if (k2 !== idx) newList.push(list[k2]);
-                    }
-                    if (newList.length === 0) {
-                        delete appWindowMru[appId];
-                        var newMru = [];
-                        for (var m = 0; m < appMru.length; m++) {
-                            if (appMru[m] !== appId) newMru.push(appMru[m]);
-                        }
-                        appMru = newMru;
-                    } else {
-                        appWindowMru[appId] = newList;
-                    }
-                    break;
-                }
-            }
-
-            // Remove closed address from global window MRU
-            var gwNew = [];
-            for (var gi = 0; gi < globalWindowMru.length; gi++) {
-                if (globalWindowMru[gi] !== addr) gwNew.push(globalWindowMru[gi]);
-            }
-            globalWindowMru = gwNew;
+            // Remove from globalWindowMru equivalent (already handled by removeAddress)
 
             if (window.visible) {
-                // Unmap and remap overlay to force compositor to re-grant
-                // keyboard focus to the exclusive layer surface.
                 window.visible = false;
-                Qt.callLater(function() {
-                    window.visible = true;
-                    // onVisibleChanged fires → forceActiveFocus
-                });
+                Qt.callLater(function() { window.visible = true; });
                 scheduleRebuild();
             }
         }
     }
 
-    function advance(dir) {
-        if (sphereModel.length === 0) return;
-        if (sphereModel[0].isPlaceholder) return;
-        var count = sphereModel.length;
-        var next = selectedAppIndex + dir;
-        if (next < 0) {
-            next = cfg.cycling?.wrapAround !== false ? count - 1 : 0;
-        } else if (next >= count) {
-            next = cfg.cycling?.wrapAround !== false ? 0 : count - 1;
-        }
-        selectedAppIndex = next;
-        centerOnApp(next);
-        console.log("[dbg] advance dir=" + dir + " newIdx=" + selectedAppIndex + " app=" + sphereModel[selectedAppIndex].appId);
-        // FocusOnTab: focus the newly selected node's target window
-        if (cfg.focusOnTab) {
-            window._previewFocus(window._targetAddrForNode(sphereModel[selectedAppIndex]));
+    Connections {
+        target: window
+        function onVisibleChanged() {
+            if (window.visible) {
+                window.sphereZoom = 1.0;
+                introPhaseAnim.restart();
+                focusGrabber.forceActiveFocus();
+            }
         }
     }
 
-    property bool overlayActive: false
+    // ══════════════════════════════════════════════════════════════════════════
+    // IPC HANDLERS
+    // ══════════════════════════════════════════════════════════════════════════
 
     IpcHandler {
         target: "hyprsphere"
         function toggle(): void {
             if (window.overlayActive && !window._togglingVisibility) {
-                // Hyprland consumed the Tab key (ALT+Tab bind), so focusGrabber
-                // never saw it. Advance via IPC instead.
                 window.advance(1);
                 return;
             }
-            console.log("[hyprsphere] IPC toggle() called");
+            log("IPC toggle()");
             openSwitcher();
         }
 
         function commit(): void {
-            if (window.overlayActive) {
-                window.commitSelection();
-            }
+            if (window.overlayActive) window.commitSelection();
         }
 
         function cancel(): void {
-            if (window.overlayActive) {
-                window.cancelSwitch();
-            }
+            if (window.overlayActive) window.cancelSwitch();
         }
     }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // INIT
+    // ══════════════════════════════════════════════════════════════════════════
 
     Component.onCompleted: {
         configReader.running = true;
         iconReader.running = true;
         Hyprland.refreshToplevels();
-        // After toplevels populate, assign static indices to existing windows
         Qt.callLater(function() { window.initWindowIndices(); });
     }
 
-    // Responsive scaler — scales values proportionally to window width
+    // ══════════════════════════════════════════════════════════════════════════
+    // RESPONSIVE SCALER
+    // ══════════════════════════════════════════════════════════════════════════
+
     function s(val) {
         let ref = cfg.scaler?.referenceWidth ?? 1920;
         let minR = cfg.scaler?.minRatio ?? 0.5;
@@ -1286,7 +766,7 @@ if (window.layer === 2 && window.searchQuery !== "") {
         return res > 0 ? res : val;
     }
 
-    // Colors from hyprsphere.json (Catppuccin Mocha fallback defaults)
+    // Colors from hyprsphere.json (Catppuccin Mocha fallback)
     readonly property color base:      cfg.colors?.base      ?? "#1e1e2e"
     readonly property color mantle:    cfg.colors?.mantle    ?? "#181825"
     readonly property color crust:     cfg.colors?.crust     ?? "#11111b"
@@ -1353,7 +833,6 @@ if (window.layer === 2 && window.searchQuery !== "") {
     Behavior on sphereZoom { NumberAnimation { duration: cfg.sphere?.zoomDurationMs ?? 400; easing.type: Easing.OutCubic } }
 
     property real sphereRadius: baseSphereRadius
-
     property real rotX: cfg.sphere?.initialRotX ?? -0.2
     property real rotY: cfg.sphere?.initialRotY ?? 0
 
@@ -1367,7 +846,6 @@ if (window.layer === 2 && window.searchQuery !== "") {
         if (!projDirty) return;
         projDirty = false;
 
-        // Auto-adjust sphere radius based on node count
         var auto = cfg.sphere?.autoRadius;
         if (auto && auto.enabled !== false) {
             var minR = auto.minRadius ?? 160;
@@ -1393,11 +871,8 @@ if (window.layer === 2 && window.searchQuery !== "") {
             let b_x      = Math.cos(b_theta) * b_radius;
             let b_z      = Math.sin(b_theta) * b_radius;
 
-            // Rotate X
             let y1 = b_y * cosRx - b_z * sinRx;
             let z1 = b_y * sinRx + b_z * cosRx;
-
-            // Rotate Y
             let x2 = b_x * cosRy + z1 * sinRy;
             let z2 = -b_x * sinRy + z1 * cosRy;
 
@@ -1406,14 +881,11 @@ if (window.layer === 2 && window.searchQuery !== "") {
         window.projCache = arr;
     }
 
-    // Invalidate cache whenever rotation changes
     onRotXChanged: { projDirty = true; rebuildProjCache(); }
     onRotYChanged: { projDirty = true; rebuildProjCache(); }
 
-    // Keep the original project3D for centerOnApp (called rarely)
     function project3D(bx, by, bz) {
-        let rx = window.rotX;
-        let ry = window.rotY;
+        let rx = window.rotX, ry = window.rotY;
         let y1 = by * Math.cos(rx) - bz * Math.sin(rx);
         let z1 = by * Math.sin(rx) + bz * Math.cos(rx);
         let x2 = bx * Math.cos(ry) + z1 * Math.sin(ry);
@@ -1452,7 +924,6 @@ if (window.layer === 2 && window.searchQuery !== "") {
 
         searchRotXAnim.to = targetRotX;
         searchRotYAnim.to = window.rotY + diff;
-
         searchRotXAnim.restart();
         searchRotYAnim.restart();
     }
@@ -1463,51 +934,16 @@ if (window.layer === 2 && window.searchQuery !== "") {
         from: 0.0; to: 1.0; duration: cfg.animations?.entranceFadeDurationMs ?? 800; easing.type: Easing.OutExpo; running: true
     }
 
-    Connections {
-        target: window
-        function onVisibleChanged() {
-            if (window.visible) {
-                window.sphereZoom   = 1.0;
-                introPhaseAnim.restart();
-                focusGrabber.forceActiveFocus();
-            }
-        }
-    }
-
-
-
     SequentialAnimation {
         id: closeSequence
         NumberAnimation { target: window; property: "introPhase"; to: 0.0; duration: cfg.animations?.exitFadeDurationMs ?? 400; easing.type: Easing.OutQuint }
         ScriptAction { script: { window.overlayActive = false; window.visible = false; } }
     }
 
-    function cancelSwitch() {
-        if (closeSequence.running) return;  // guard against double-fire
-        window.layer = 0;
-        window.drilledAppId = "";
-        window.searchQuery = "";
-        window.savedLayer2Model = [];
-        window.savedLayer2Query = "";
-        window.overlayActive = false;
-        // FocusOnTab: restore focus to the origin window (the one the user
-        // was on before pressing Alt+Tab) before unfreezing MRU, so the
-        // compositor doesn't leave the last preview-focused window active.
-        if (cfg.focusOnTab && globalWindowMru.length >= 1) {
-            var originAddr = globalWindowMru[0];
-            console.log("[dbg] cancelSwitch restoring focus to " + originAddr);
-            var originPrefix = originAddr.indexOf("0x") === 0 ? "" : "0x";
-            Quickshell.execDetached(["hyprctl", "dispatch",
-                'hl.dsp.focus({window="address:' + originPrefix + originAddr + '"})']);
-        }
-        window._mruFrozen = false;
-        closeSequence.start();
-        // Reset Hyprland submap so normal bindings work again
-        // NOTE: must use hyprctl eval, not dispatch (submap is Lua-only)
-        Quickshell.execDetached(["hyprctl", "eval", 'hl.dispatch(hl.dsp.submap("reset"))']);
-    }
+    // ══════════════════════════════════════════════════════════════════════════
+    // KEY HANDLERS — Focus Grabber
+    // ══════════════════════════════════════════════════════════════════════════
 
-    // ── Phase 3: key handling ──
     Item {
         id: focusGrabber
         anchors.fill: parent
@@ -1516,40 +952,47 @@ if (window.layer === 2 && window.searchQuery !== "") {
 
         Keys.onPressed: (event) => {
             if (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab) {
-                if (event.modifiers & Qt.ShiftModifier || event.key === Qt.Key_Backtab) window.advance(-1);
-                else window.advance(1);
+                var dir = (event.modifiers & Qt.ShiftModifier || event.key === Qt.Key_Backtab) ? -1 : 1;
+                Binds.advance(window, dir);
+                event.accepted = true;
+            } else if (event.key === Qt.Key_Backslash || event.key === Qt.Key_Bar) {
+                var dir = (event.key === Qt.Key_Bar || (event.modifiers & Qt.ShiftModifier)) ? -1 : 1;
+                Binds.slashPreview(window, dir);
                 event.accepted = true;
             } else if (event.key === Qt.Key_Semicolon) {
-                window.drillDown();
+                Binds.drillDown(window);
                 event.accepted = true;
             } else if (event.key === Qt.Key_C && (event.modifiers & Qt.ControlModifier)) {
-                window.closeSelection();
+                Binds.closeSelection(window);
                 event.accepted = true;
             } else if (event.key === Qt.Key_Return && (event.modifiers & Qt.ControlModifier)) {
-                window.openNewWindow();
+                Binds.openNewWindow(window, closeSequence);
                 event.accepted = true;
             } else if (event.key === Qt.Key_Backspace && !event.isAutoRepeat) {
-                if (window.searchQuery.length > 0) {
+                if (window.searchQuery.length > 0)
                     window._handleSearchInput(window.searchQuery.slice(0, -1));
-                }
                 event.accepted = true;
             } else if (!event.isAutoRepeat && event.text.length > 0
                        && event.text.match(/[a-zA-Z0-9 _.-]/)) {
                 window._handleSearchInput(window.searchQuery + event.text);
                 event.accepted = true;
             } else if (event.key === Qt.Key_Escape) {
-                window.cancelSwitch();
+                Binds.cancelSwitch(window, closeSequence);
                 event.accepted = true;
             }
         }
 
         Keys.onReleased: (event) => {
             if (event.key === Qt.Key_Alt) {
-                window.commitSelection();
+                Binds.commitSelection(window, closeSequence);
                 event.accepted = true;
             }
         }
     }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // 3D SPHERE SCENE
+    // ══════════════════════════════════════════════════════════════════════════
 
     Item {
         id: scene3D
@@ -1594,11 +1037,6 @@ if (window.layer === 2 && window.searchQuery !== "") {
                 delegate: Item {
                     id: appNode
 
-                    // Read pre-computed projection from the cache array.
-                    // The cache is a plain JS array; QML won't auto-bind to its
-                    // contents, so we use a property alias that updates whenever
-                    // projCache itself is reassigned (the whole array is replaced
-                    // on every cache rebuild, which triggers change notification).
                     property var proj: (window.projCache && window.projCache.length > index)
                                        ? window.projCache[index]
                                        : { x: 0, y: 0, z: 0 }
@@ -1607,21 +1045,18 @@ if (window.layer === 2 && window.searchQuery !== "") {
 
                     x: (origin.width  / 2) + (proj.x * window.sphereRadius * zoomFactor) - width  / 2
                     y: (origin.height / 2) + (proj.y * window.sphereRadius * zoomFactor) - height / 2
-
                     z: Math.round(proj.z * 1000)
 
                     property bool isSelected: index === window.selectedAppIndex
                     property real _hz: Math.max(0.0, Math.min(1.0, proj.z * (cfg.cardTilt?.depthOpacityMultiplier ?? 4.0)))
                     opacity: proj.z > 0.0 ? _hz : 0.0
                     Behavior on opacity { NumberAnimation { duration: cfg.animations?.cardFadeDurationMs ?? 200; easing.type: Easing.OutCubic } }
-
                     visible: opacity > 0.01
 
                     property real _baseScale: (cfg.cardTilt?.baseScaleAtEdge ?? 0.78) + (Math.max(0.0, proj.z) * (cfg.cardTilt?.scaleIncreaseTowardCenter ?? 0.22))
                     scale: isSelected ? 1.0 : (_baseScale * ((nodeMa.containsMouse && !isSelected) ? (cfg.cardTilt?.hoverScaleMultiplier ?? 1.12) : 1.0))
                     Behavior on scale { NumberAnimation { duration: cfg.animations?.cardScaleDurationMs ?? 200; easing.type: Easing.OutCubic } }
 
-                    // Tilt angles — used only for the non-selected card face
                     property real _xNorm: proj.x / (window.sphereRadius / window.s(cfg.sphere?.normalizationConstant ?? 310.5))
                     property real _yNorm: proj.y / (window.sphereRadius / window.s(cfg.sphere?.normalizationConstant ?? 310.5))
 
@@ -1650,9 +1085,6 @@ if (window.layer === 2 && window.searchQuery !== "") {
                         color:  "transparent"
                         border.color: nodeMa.containsMouse && !appNode.isSelected ? (cfg.appCard?.cardBorderColor ?? "transparent") : "transparent"
                         border.width: window._s2
-                        Behavior on color { ColorAnimation { duration: cfg.animations?.cardFadeDurationMs ?? 200 } }
-
-                        // Completely skip rendering when satellite is shown
                         visible: !appNode.isSelected
 
                         ColumnLayout {
@@ -1716,10 +1148,9 @@ if (window.layer === 2 && window.searchQuery !== "") {
                                     elide: Text.ElideRight
                                 }
                             }
-
                         }
 
-                        // Window count / index badge (over icon)
+                        // Window count / index badge
                         Item {
                             id: windowBadge
                             anchors.horizontalCenter: cardIcon.horizontalCenter
@@ -1760,11 +1191,8 @@ if (window.layer === 2 && window.searchQuery !== "") {
                                     var n = window.sphereModel[index];
                                     if (!n) return "";
                                     if (n.isWindowNode) {
-                                        var a = n.address || "";
-                                        if (a.indexOf("0x") !== 0) a = "0x" + a;
-                                        var appList = window._appOpeningOrder[n.appId];
-                                        if (!appList) return "";
-                                        var oi = appList.indexOf(a);
+                                        var winList = window.windowsForApp ? window.windowsForApp(n.appId) : [];
+                                        var oi = winList.indexOf(n.address || "");
                                         return String(oi >= 0 ? oi + 1 : "");
                                     }
                                     return "+" + String(n.windowCount || 0);
@@ -1784,6 +1212,7 @@ if (window.layer === 2 && window.searchQuery !== "") {
                         }
                     }
 
+                    // ── Satellite (selected card) ──────────────────────
                     Loader {
                         id: satLoader
                         anchors.centerIn: parent
@@ -1863,7 +1292,7 @@ if (window.layer === 2 && window.searchQuery !== "") {
                                     }
                                 }
 
-                                // Window count / index badge (over icon)
+                                // Badge on satellite
                                 Item {
                                     id: satBadge
                                     anchors.horizontalCenter: satIcon.horizontalCenter
@@ -1904,11 +1333,8 @@ if (window.layer === 2 && window.searchQuery !== "") {
                                             var n = window.sphereModel[window.selectedAppIndex];
                                             if (!n) return "";
                                             if (n.isWindowNode) {
-                                                var a = n.address || "";
-                                                if (a.indexOf("0x") !== 0) a = "0x" + a;
-                                                var appList = window._appOpeningOrder[n.appId];
-                                                if (!appList) return "";
-                                                var oi = appList.indexOf(a);
+                                                var winList = window.windowsForApp ? window.windowsForApp(n.appId) : [];
+                                                var oi = winList.indexOf(n.address || "");
                                                 return String(oi >= 0 ? oi + 1 : "");
                                             }
                                             return "+" + String(n.windowCount || 0);
@@ -1939,12 +1365,6 @@ if (window.layer === 2 && window.searchQuery !== "") {
                         onClicked: {
                             window.selectedAppIndex = index;
                             window.centerOnApp(index);
-                            // FocusOnTab: focus the clicked node
-                            if (cfg.focusOnTab) {
-                                var clickNode = window.sphereModel[index];
-                                console.log("[dbg] click idx=" + index + " app=" + (clickNode ? clickNode.appId : "null"));
-                                window._previewFocus(window._targetAddrForNode(clickNode));
-                            }
                         }
 
                         onDoubleClicked: {
@@ -1957,7 +1377,10 @@ if (window.layer === 2 && window.searchQuery !== "") {
         }
     }
 
-    // ── Phase 6: Search bar ──
+    // ══════════════════════════════════════════════════════════════════════════
+    // SEARCH BAR
+    // ══════════════════════════════════════════════════════════════════════════
+
     Rectangle {
         id: searchContainer
         visible: window.overlayActive

@@ -201,6 +201,7 @@
 
   "fullscreenOnActivate": true,
   "focusOnTab": false,
+  "debug": true,
 
   "misc": {}
 }
