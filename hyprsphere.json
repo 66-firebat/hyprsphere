@@ -67,6 +67,8 @@
     "searchRotateDurationMs": 250,
     "sphereAutoRotateIntervalMs": 16,
     "sphereRotateSpeed": 0.002,
+    "sphereLayer1Multiplier": 2,
+    "sphereLayer2Multiplier": 8,
     "cardFadeDurationMs": 200,
     "cardScaleDurationMs": 200,
     "satelliteFadeDurationMs": 400,

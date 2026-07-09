@@ -562,6 +562,7 @@ PanelWindow {
         window.layer = 0;
         window.drilledAppId = "";
         window.searchQuery = "";
+        window.updateRotateSpeed();
         window.focusable = true;
         window.overlayActive = true;
         window._pendingSpawnAppId = "";
@@ -948,11 +949,36 @@ PanelWindow {
         return { x: x2, y: y1, z: z2 };
     }
 
+    // ── Layer-based rotation speed ──
+    property real targetRotateSpeed: 0
+    property real rotationSpeed: 0
+
+    function updateRotateSpeed() {
+        var base = cfg.animations?.sphereRotateSpeed ?? 0.002;
+        var multiplier = 1;
+        if (layer === 1) multiplier = cfg.animations?.sphereLayer1Multiplier ?? 2;
+        else if (layer === 2) multiplier = cfg.animations?.sphereLayer2Multiplier ?? 8;
+        targetRotateSpeed = base * multiplier;
+        speedAnim.to = targetRotateSpeed;
+        speedAnim.restart();
+        log("rotationSpeed: layer=" + layer + " base=" + base + " mult=" + multiplier + " speed=" + targetRotateSpeed);
+    }
+
+    onLayerChanged: updateRotateSpeed();
+
+    NumberAnimation {
+        id: speedAnim
+        target: window
+        property: "rotationSpeed"
+        duration: 400
+        easing.type: Easing.OutCubic
+    }
+
     Timer {
         interval: cfg.animations?.sphereAutoRotateIntervalMs ?? 16
         running: !sceneMouse.pressed && !searchRotXAnim.running && !searchRotYAnim.running
         repeat: true
-        onTriggered: window.rotY -= cfg.animations?.sphereRotateSpeed ?? 0.002
+        onTriggered: window.rotY -= window.rotationSpeed
     }
 
     function centerOnApp(index) {
