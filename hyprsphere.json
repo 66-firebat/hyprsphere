@@ -46,7 +46,7 @@
   },
 
   "sphere": {
-    "baseRadius": 360,
+    "baseRadius": 480,
     "initialZoom": 1.0,
     "zoomDurationMs": 400,
     "zoomEasing": "OutCubic",
