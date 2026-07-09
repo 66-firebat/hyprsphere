@@ -64,8 +64,8 @@
     },
     "effects": {
       "mode": "launch",
-      "durationMs": 300,
-      "slingDistance": -3.0,
+      "durationMs": 500,
+      "slingDistance": -2.0,
       "landBounce": 2.0
     }
   },
