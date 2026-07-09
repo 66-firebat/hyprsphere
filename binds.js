@@ -85,25 +85,44 @@ function drillDown(window) {
         window.log("drillDown 0→1: app=" + appNode.appId + " windows=" + window.sphereModel.length);
 
     } else if (window.layer === 2) {
+        // Layer 2 → Layer 0: return to app list, select the app node
+        // corresponding to the search result we were on.
         var searchNode = window.sphereModel[window.selectedAppIndex];
-        if (!searchNode || searchNode.isPlaceholder || searchNode.isWhitelistPlaceholder) return;
-        if (searchNode.isWindowNode) return;
+        if (!searchNode || searchNode.isPlaceholder) return;
+        var targetAppId = searchNode.appId;
 
-        window.layer = 1;
-        window.drilledAppId = searchNode.appId;
-        window.sphereModel = window.buildLayer1(searchNode.appId);
-
-        window.selectedAppIndex = 0;
-        if (window.sphereModel.length >= 2) {
-            window.selectedAppIndex = 1;
-        }
+        window.layer = 0;
+        window.drilledAppId = "";
+        window.searchQuery = "";
+        var raw = window.buildLayer0();
+        window.sphereModel = raw.length === 0
+            ? [{ label: "No windows", icon: "", appId: "", windows: [], isPlaceholder: true }]
+            : raw;
         window.projDirty = true;
         window.rebuildProjCache();
-        window.centerOnApp(window.selectedAppIndex);
         window.sphereZoom = 1.0;
-        window.log("drillDown 2→1: app=" + searchNode.appId);
+
+        // Select the app node matching the search result's appId
+        var matched = false;
+        if (targetAppId) {
+            for (var _si = 0; _si < window.sphereModel.length; _si++) {
+                if (window.sphereModel[_si].appId === targetAppId) {
+                    window.selectedAppIndex = _si;
+                    window.centerOnApp(_si);
+                    matched = true;
+                    break;
+                }
+            }
+        }
+        if (!matched) {
+            window.selectedAppIndex = 0;
+            window.centerOnApp(0);
+        }
+        window.log("drillDown 2→0: app=" + targetAppId + (matched ? " selected" : " not found, fallback to 0"));
 
     } else {
+        // Layer 1 → Layer 0: return to app list, select the app we drilled from
+        var returnAppId = window.drilledAppId;
         window.layer = 0;
         window.drilledAppId = "";
         var raw = window.buildLayer0();
@@ -112,10 +131,25 @@ function drillDown(window) {
             : raw;
         window.projDirty = true;
         window.rebuildProjCache();
-        window.selectedAppIndex = 0;
-        window.centerOnApp(0);
         window.sphereZoom = 1.0;
-        window.log("drillDown 1→0");
+
+        // Select the app node we were drilled into
+        var matched = false;
+        if (returnAppId) {
+            for (var _si = 0; _si < window.sphereModel.length; _si++) {
+                if (window.sphereModel[_si].appId === returnAppId) {
+                    window.selectedAppIndex = _si;
+                    window.centerOnApp(_si);
+                    matched = true;
+                    break;
+                }
+            }
+        }
+        if (!matched) {
+            window.selectedAppIndex = 0;
+            window.centerOnApp(0);
+        }
+        window.log("drillDown 1→0: app=" + (returnAppId || "none") + (matched ? " selected" : " not found, fallback to 0"));
     }
 }
 
