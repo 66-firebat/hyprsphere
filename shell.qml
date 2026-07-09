@@ -10,7 +10,7 @@ import Quickshell.Wayland
 import Quickshell.Hyprland._Ipc
 import "lib/fuse.js" as FuseJs
 import "binds.js" as Binds
-import "rotations.js" as Rotations
+import "effects.js" as Effects
 
 // ══════════════════════════════════════════════════════════════════════════════
 // hyprsphere — 3D window switcher for Hyprland/Quickshell
@@ -563,7 +563,6 @@ PanelWindow {
         window.layer = 0;
         window.drilledAppId = "";
         window.searchQuery = "";
-        window.updateRotateSpeed();
         window.focusable = true;
         window.overlayActive = true;
         window._pendingSpawnAppId = "";
@@ -950,51 +949,10 @@ PanelWindow {
         return { x: x2, y: y1, z: z2 };
     }
 
-    // ── Layer-based rotation speed ──
-    property real targetRotateSpeed: 0
-    property real rotationSpeed: 0
-
-    function updateRotateSpeed() {
-        var base = cfg.animations?.sphereRotateSpeed ?? 0.002;
-        var multiplier = 1;
-        if (layer === 1) multiplier = cfg.animations?.sphereLayer1Multiplier ?? 2;
-        else if (layer === 2) multiplier = cfg.animations?.sphereLayer2Multiplier ?? 8;
-        targetRotateSpeed = base * multiplier;
-        speedAnim.to = targetRotateSpeed;
-        speedAnim.restart();
-        log("rotationSpeed: layer=" + layer + " base=" + base + " mult=" + multiplier + " speed=" + targetRotateSpeed);
-    }
-
-    onLayerChanged: updateRotateSpeed();
-
-    NumberAnimation {
-        id: speedAnim
-        target: window
-        property: "rotationSpeed"
-        duration: 400
-        easing.type: Easing.OutCubic
-    }
-
-    // ── Rotation tick counter ──
-    property int _rotationTick: 0
-
-    Timer {
-        interval: cfg.animations?.sphereAutoRotateIntervalMs ?? 16
-        running: !sceneMouse.pressed && !searchRotXAnim.running && !searchRotYAnim.running
-        repeat: true
-        onTriggered: {
-            var delta = Rotations.compute(cfg.sphere?.rotation, window._rotationTick, 1);
-            window.rotX += delta.x;
-            window.rotY += delta.y;
-            // rotZ not used on the 2D projection, but computed for future use
-            window._rotationTick++;
-        }
-    }
-
     onOverlayActiveChanged: {
         if (!window.overlayActive) {
-            window._rotationTick = 0;
-            Rotations.reset();
+            Effects.resetAnimation(searchRotXAnim);
+            Effects.resetAnimation(searchRotYAnim);
         }
     }
 
@@ -1022,6 +980,8 @@ PanelWindow {
 
         searchRotXAnim.to = targetRotX;
         searchRotYAnim.to = window.rotY + diff;
+        Effects.setAnimation(searchRotXAnim, cfg.sphere?.effects);
+        Effects.setAnimation(searchRotYAnim, cfg.sphere?.effects);
         searchRotXAnim.restart();
         searchRotYAnim.restart();
     }

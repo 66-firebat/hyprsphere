@@ -62,22 +62,15 @@
       "minRadius": 160,
       "maxNodeCount": 20
     },
-    "rotation": {
-      "mode": "figure8",
-      "config": {
-        "amplitudeX": 1.5,
-        "amplitudeY": 1.0,
-        "frequency": 0.001
-      }
+    "effects": {
+      "mode": "bounce",
+      "durationMs": 400,
+      "overshoot": 4.0
     }
   },
 
   "animations": {
     "searchRotateDurationMs": 250,
-    "sphereAutoRotateIntervalMs": 16,
-    "sphereRotateSpeed": 0.002,
-    "sphereLayer1Multiplier": 4,
-    "sphereLayer2Multiplier": 16,
     "cardFadeDurationMs": 200,
     "cardScaleDurationMs": 200,
     "satelliteFadeDurationMs": 400,
