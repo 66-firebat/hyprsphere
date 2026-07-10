@@ -825,6 +825,7 @@ PanelWindow {
         iconReader.running = true;
         Hyprland.refreshToplevels();
         Qt.callLater(function() { window.initWindowIndices(); });
+        startPerpetual();
     }
 
     // ══════════════════════════════════════════════════════════════════════════
