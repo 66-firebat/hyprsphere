@@ -1,106 +1,87 @@
 // ══════════════════════════════════════════════════════════════════════════════
-// effects.js — Animation effects for hyprsphere
+// effects.js — Perpetual effects for hyprsphere
+//
+// Each effect registers itself with register(name, { start, tick, stop }).
+// The timer in shell.qml calls tick(window) every frame.
 //
 // Import in shell.qml:
 //   import "effects.js" as Effects
-//
-// Easing type numeric values (QML Easing enum not accessible from .js):
-//   OutCubic     = 6
-//   InBack       = 33
-//   OutBack      = 34
-//   BezierSpline = 45
 // ══════════════════════════════════════════════════════════════════════════════
 
 .pragma library
 
-// ── Main entry point ──────────────────────────────────────────────────────
+// ── Registry ──────────────────────────────────────────────────────────────
 
-function setAnimation(anim, config) {
-    if (!config) {
-        _applyDefault(anim);
-        return;
+var _entries = [];   // { name, start, tick, stop }
+var _running = false;
+
+function register(name, hooks) {
+    _entries.push({
+        name: name,
+        start: hooks.start || function(){},
+        tick:  hooks.tick  || function(){},
+        stop:  hooks.stop  || function(){}
+    });
+}
+
+function start(window) {
+    _running = true;
+    for (var i = 0; i < _entries.length; i++) {
+        _entries[i].start(window);
     }
+}
 
-    if (config.mode === "launch") {
-        _applyLaunch(anim, config);
-        return;
+function stop(window) {
+    _running = false;
+    for (var i = 0; i < _entries.length; i++) {
+        _entries[i].stop(window);
     }
+}
 
-    if (config.mode === "bounce") {
-        _applyBounce(anim, config);
-        return;
+function tick(window) {
+    if (!_running) return;
+    for (var i = 0; i < _entries.length; i++) {
+        _entries[i].tick(window);
     }
-
-    _applyDefault(anim);
 }
 
-// ── Default: smooth cubic ease ────────────────────────────────────────────
-
-function _applyDefault(anim) {
-    anim.easing.type = 6;           // Easing.OutCubic
-    anim.easing.overshoot = 0;
-    anim.duration = 400;
-}
-
-// ── Bounce mode: OutBack overshoot ────────────────────────────────────────
-
-function _applyBounce(anim, config) {
-    var overshoot = config.overshoot !== undefined ? config.overshoot : 4.0;
-    var duration = config.durationMs || 400;
-    anim.easing.type = 34;           // Easing.OutBack
-    anim.easing.overshoot = overshoot;
-    anim.duration = duration;
-}
-
-// ── Launch mode: InBack pull-back ─────────────────────────────────────────
-// InBack goes briefly in the opposite direction (pull-back / slingshot),
-// then accelerates toward the target. The overshoot parameter controls
-// how far back it goes.
-
-function _applyLaunch(anim, config) {
-    var dur = config.durationMs || 500;
-    var sd = config.slingDistance !== undefined ? config.slingDistance : -5.0;
-    var lb = config.landBounce !== undefined ? config.landBounce : 0.3;
-
-    // Clamp
-    if (sd > -0.01) sd = -0.01;
-    if (sd < -10.0) sd = -10.0;
-    if (lb < 0) lb = 0;
-    if (lb > 1.0) lb = 1.0;
-
-    // InBack: pull back then go forward. Overshoot controls pull-back distance.
-    // Higher overshoot = more dramatic pull-back. We chain InBack (pull-back)
-    // followed by OutBack (arrival bounce) using the ratio of the two.
-    // InBack gets (1 - lb) fraction of the time, OutBack gets lb fraction.
-    anim.easing.type = 33;           // Easing.InBack
-    anim.easing.overshoot = -sd;     // Negative sd = positive overshoot
-    anim.duration = Math.floor(dur * (1 - lb * 0.5));
-}
-
-// ── Heartbeat Waveform ───────────────────────────────────────────────────
-// Returns a dilation factor ∈ [0, 1] at a normalized phase t ∈ [0, 1]
-// within one heartbeat cycle. Models a realistic cardiac pulse:
-//   • Sharp systolic spike ("lub")  ~8%
-//   • Gentler diastolic bump ("dub") ~28%
-//   • Rest plateau ~40%–100%
+// ── Heartbeat Effect ─────────────────────────────────────────────────────
 
 function heartbeatAtPhase(t) {
-    // Systolic spike: quick sharp Gaussian
+    // Systolic spike: sharp Gaussian at ~8%
     var lub = Math.exp(-Math.pow((t - 0.08) / 0.025, 2));
-
-    // Diastolic bump: gentler, lower Gaussian
+    // Diastolic bump: gentler 50%-height at ~28%
     var dub = 0.5 * Math.exp(-Math.pow((t - 0.28) / 0.045, 2));
-
     // Small tension ripple after dub
     var ripple = 0.12 * Math.exp(-Math.pow((t - 0.42) / 0.06, 2));
-
     return Math.max(0, lub + dub + ripple);
 }
 
-// ── Reset animation to defaults ───────────────────────────────────────────
-
-function resetAnimation(anim) {
-    anim.easing.type = 6;           // Easing.OutCubic
-    anim.easing.overshoot = 0;
-    anim.duration = 400;
-}
+register("heartbeat", {
+    start: function(window) {
+        window._hbStartTime = Date.now();
+    },
+    tick: function(window) {
+        var pe = window.cfg.sphere?.perpetualEffects;
+        if (!pe || !pe.heartbeat || !pe.heartbeat.enabled) return;
+        var hb = pe.heartbeat;
+        var layerKey = "layer_" + window.layer;
+        var lc = hb.layers ? hb.layers[layerKey] : null;
+        var freqMult = (lc && lc.frequency !== undefined) ? lc.frequency : 1.0;
+        var amp = (lc && lc.amplitude !== undefined) ? lc.amplitude : (hb.amplitude || 24);
+        var bpm = (hb.bpm || 54) * freqMult;
+        var beatMs = 60000 / bpm;
+        var elapsed = Date.now() - window._hbStartTime;
+        var t = (elapsed % beatMs) / beatMs;
+        var hbVal = heartbeatAtPhase(t);
+        window.sphereRadius = window.baseSphereRadius + hbVal * amp;
+        window._hbIconScale = 1.0 + hbVal * (hb.scaleAmplitude || 0);
+        window._hbIconOpacity = 1.0 - hbVal * (hb.opacityAmplitude || 0);
+    },
+    stop: function(window) {
+        window._hbStartTime = 0;
+        window._hbIconScale = 1.0;
+        window._hbIconOpacity = 1.0;
+        window.sphereRadius = window.baseSphereRadius;
+    }
+});
