@@ -800,7 +800,7 @@ PanelWindow {
         target: "hyprsphere"
         function toggle(): void {
             if (window.overlayActive && !window._togglingVisibility) {
-                window.advance(1);
+                Binds.advance(window, 1);
                 return;
             }
             log("IPC toggle()");

@@ -47,18 +47,24 @@ function tick(window) {
 
 // ── Heartbeat Effect ─────────────────────────────────────────────────────
 
-function heartbeatAtPhase(t, lubPos, dubPos, lubWidth, dubWidth) {
-    lubPos  = lubPos  || 0.08;
-    dubPos  = dubPos  || 0.28;
-    lubWidth  = lubWidth  || 0.025;
-    dubWidth  = dubWidth  || 0.045;
-    // Systolic spike: sharp Gaussian
-    var lub = Math.exp(-Math.pow((t - lubPos) / lubWidth, 2));
-    // Diastolic bump: gentler 50%-height
-    var dub = 0.5 * Math.exp(-Math.pow((t - dubPos) / dubWidth, 2));
-    // Small tension ripple shortly after dub (ripple width = dubWidth * 1.33)
+function heartbeatAtPhase(t, lubPos, dubPos, lubWidth, dubWidth, lubDecay, dubDecay) {
+    lubPos   = lubPos   || 0.08;
+    dubPos   = dubPos   || 0.28;
+    lubWidth = lubWidth || 0.025;
+    dubWidth = dubWidth || 0.045;
+    lubDecay = lubDecay || lubWidth;   // default: symmetric
+    dubDecay = dubDecay || dubWidth;
+
+    // Asymmetric Gaussian: attack uses width, decay uses decay
+    var lubDiff = t - lubPos;
+    var lub = Math.exp(-Math.pow(lubDiff / (lubDiff < 0 ? lubWidth : lubDecay), 2));
+
+    var dubDiff = t - dubPos;
+    var dub = 0.5 * Math.exp(-Math.pow(dubDiff / (dubDiff < 0 ? dubWidth : dubDecay), 2));
+
+    // Small tension ripple shortly after dub (ripple width = dubDecay * 1.33)
     var ripPos = dubPos + 0.14;
-    var ripple = 0.12 * Math.exp(-Math.pow((t - ripPos) / (dubWidth * 1.33), 2));
+    var ripple = 0.12 * Math.exp(-Math.pow((t - ripPos) / (dubDecay * 1.33), 2));
     return Math.max(0, lub + dub + ripple);
 }
 
@@ -82,8 +88,10 @@ register("heartbeat", {
         var dubPos   = hb.dubPos   || 0.28;
         var lubWidth = hb.lubWidth || 0.025;
         var dubWidth = hb.dubWidth || 0.045;
-        var hbVal = heartbeatAtPhase(t, lubPos, dubPos, lubWidth, dubWidth);
-        window.sphereRadius = window.baseSphereRadius + hbVal * amp;
+        var lubDecay = hb.lubDecay || lubWidth;
+        var dubDecay = hb.dubDecay || dubWidth;
+        var hbVal = heartbeatAtPhase(t, lubPos, dubPos, lubWidth, dubWidth, lubDecay, dubDecay);
+        window.sphereRadius = window.baseSphereRadius - hbVal * amp;
         window._hbIconScale = 1.0 + hbVal * (hb.scaleAmplitude || 0);
         window._hbIconOpacity = 1.0 - hbVal * (hb.opacityAmplitude || 0);
     },
