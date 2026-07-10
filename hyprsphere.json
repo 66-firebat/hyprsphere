@@ -65,17 +65,20 @@
     "perpetualEffects": {
       "heartbeat": {
         "enabled": true,
-        "bpm": 54,
-        "amplitude": 24,
+        "bpm": 67.5,
+        "amplitude": 48,
         "scaleAmplitude": 0.04,
-        "opacityAmplitude": 0.12,
+        "opacityAmplitude": 0,
+        "dubPos": 0.36,
+        "lubWidth": 0.04,
+        "dubWidth": 0.07,
         "layers": {
           "layer_1": {
             "frequency": 1.5,
             "amplitude": 36
           },
           "layer_2": {
-            "frequency": 2.0,
+            "frequency": 1.5,
             "amplitude": 48
           }
         }

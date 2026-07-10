@@ -47,13 +47,18 @@ function tick(window) {
 
 // ── Heartbeat Effect ─────────────────────────────────────────────────────
 
-function heartbeatAtPhase(t) {
-    // Systolic spike: sharp Gaussian at ~8%
-    var lub = Math.exp(-Math.pow((t - 0.08) / 0.025, 2));
-    // Diastolic bump: gentler 50%-height at ~28%
-    var dub = 0.5 * Math.exp(-Math.pow((t - 0.28) / 0.045, 2));
-    // Small tension ripple after dub
-    var ripple = 0.12 * Math.exp(-Math.pow((t - 0.42) / 0.06, 2));
+function heartbeatAtPhase(t, lubPos, dubPos, lubWidth, dubWidth) {
+    lubPos  = lubPos  || 0.08;
+    dubPos  = dubPos  || 0.28;
+    lubWidth  = lubWidth  || 0.025;
+    dubWidth  = dubWidth  || 0.045;
+    // Systolic spike: sharp Gaussian
+    var lub = Math.exp(-Math.pow((t - lubPos) / lubWidth, 2));
+    // Diastolic bump: gentler 50%-height
+    var dub = 0.5 * Math.exp(-Math.pow((t - dubPos) / dubWidth, 2));
+    // Small tension ripple shortly after dub (ripple width = dubWidth * 1.33)
+    var ripPos = dubPos + 0.14;
+    var ripple = 0.12 * Math.exp(-Math.pow((t - ripPos) / (dubWidth * 1.33), 2));
     return Math.max(0, lub + dub + ripple);
 }
 
@@ -73,7 +78,11 @@ register("heartbeat", {
         var beatMs = 60000 / bpm;
         var elapsed = Date.now() - window._hbStartTime;
         var t = (elapsed % beatMs) / beatMs;
-        var hbVal = heartbeatAtPhase(t);
+        var lubPos   = hb.lubPos   || 0.08;
+        var dubPos   = hb.dubPos   || 0.28;
+        var lubWidth = hb.lubWidth || 0.025;
+        var dubWidth = hb.dubWidth || 0.045;
+        var hbVal = heartbeatAtPhase(t, lubPos, dubPos, lubWidth, dubWidth);
         window.sphereRadius = window.baseSphereRadius + hbVal * amp;
         window._hbIconScale = 1.0 + hbVal * (hb.scaleAmplitude || 0);
         window._hbIconOpacity = 1.0 - hbVal * (hb.opacityAmplitude || 0);
