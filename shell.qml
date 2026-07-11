@@ -912,6 +912,17 @@ PanelWindow {
     property real _hbStartTime: 0
     property real _hbIconScale: 1.0
     property real _hbIconOpacity: 1.0
+    property real _trailScale: 1.5
+    property double _trailTime: 0
+    property double _trailStepTime: 200
+    property double _trailBumpDuration: 600
+    property double _trailDelay: 0
+    property bool _peekRestart: false
+    property bool _animating: false
+    property int _peekTime: 0
+    property bool _peekInitialized: false
+    property var _peekTargets: null
+    property var _peekTable: null
     Timer {
         id: perpetualTimer
         interval: 16  // ~60fps
@@ -935,6 +946,10 @@ PanelWindow {
 
     NumberAnimation { id: searchRotXAnim; target: window; property: "rotX"; duration: cfg.animations?.searchRotateDurationMs ?? 700; easing.type: Easing.OutCubic }
     NumberAnimation { id: searchRotYAnim; target: window; property: "rotY"; duration: cfg.animations?.searchRotateDurationMs ?? 700; easing.type: Easing.OutCubic }
+    Connections {
+        target: searchRotXAnim
+        function onFinished() { window._animating = false; }
+    }
 
     property var projCache: []
     property bool projDirty: true
@@ -1018,6 +1033,8 @@ PanelWindow {
 
         searchRotXAnim.to = targetRotX;
         searchRotYAnim.to = window.rotY + diff;
+        window._animating = true;
+        window._peekRestart = true;
         searchRotXAnim.restart();
         searchRotYAnim.restart();
     }
@@ -1204,6 +1221,23 @@ PanelWindow {
                                 fillMode: Image.PreserveAspectFit
                                 smooth: true
                                 cache: true
+                                scale: {
+                                    var st = window._trailStepTime;
+                                    var bd = window._trailBumpDuration;
+                                    if (st <= 0 || bd <= 0) return 1.0;
+                                    var total = window.sphereModel.length;
+                                    if (total < 2) return 1.0;
+                                    var period = total * st + window._trailDelay;
+                                    if (period <= 0) return 1.0;
+                                    var localT = window._trailTime - index * st;
+                                    localT = ((localT % period) + period) % period;
+                                    if (localT < bd) {
+                                        var p = localT / bd;
+                                        var bump = Math.sin(Math.PI * p);
+                                        return 1.0 + (window._trailScale - 1.0) * bump;
+                                    }
+                                    return 1.0;
+                                }
                                 opacity: {
                                     var n = window.sphereModel[index];
                                     if (!n) return 1.0;
@@ -1345,6 +1379,25 @@ PanelWindow {
                                     }
                                     fillMode: Image.PreserveAspectFit
                                     smooth: true
+                                    scale: {
+                                        var st = window._trailStepTime;
+                                        var bd = window._trailBumpDuration;
+                                        if (st <= 0 || bd <= 0) return 1.0;
+                                        var total = window.sphereModel.length;
+                                        if (total < 2) return 1.0;
+                                        var idx = window.selectedAppIndex;
+                                        if (idx < 0) return 1.0;
+                                        var period = total * st + window._trailDelay;
+                                        if (period <= 0) return 1.0;
+                                        var localT = window._trailTime - idx * st;
+                                        localT = ((localT % period) + period) % period;
+                                        if (localT < bd) {
+                                            var p = localT / bd;
+                                            var bump = Math.sin(Math.PI * p);
+                                            return 1.0 + (window._trailScale - 1.0) * bump;
+                                        }
+                                        return 1.0;
+                                    }
                                     opacity: {
                                         var n = window.sphereModel[window.selectedAppIndex];
                                         if (!n) return 1.0;
