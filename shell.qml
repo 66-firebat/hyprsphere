@@ -1546,6 +1546,25 @@ PanelWindow {
                     : window.overlay0
                 verticalAlignment: TextInput.AlignVCenter
             }
+
+            // ── Node count badge (layers 1 & 2) ───────────────────────
+            Label {
+                id: nodeCountBadge
+                Layout.preferredHeight: window._s28
+                Layout.preferredWidth: implicitWidth + window._s16
+                horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
+                font.pixelSize: window._s12
+                font.weight: Font.Bold
+                font.family: "JetBrains Mono"
+                color: cfg.colors?.crust ?? "#11111b"
+                text: window.sphereModel.length.toString()
+                visible: window.layer >= 1 && window.sphereModel.length > 0
+                background: Rectangle {
+                    radius: nodeCountBadge.height / 2
+                    color: cfg.searchBar?.textColor ?? "#ff4400"
+                }
+            }
         }
     }
 }
