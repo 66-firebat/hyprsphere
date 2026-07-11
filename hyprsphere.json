@@ -68,7 +68,12 @@
         "scale": 1.25,
         "stepTime": 50,
         "bumpDuration": 1200,
-        "delayBetweenWaves": 2000
+        "delayBetweenWaves": 2000,
+        "layerMultipliers": {
+          "layer_0": 1.0,
+          "layer_1": 0.5,
+          "layer_2": 0.25
+        }
       }
     }
   },

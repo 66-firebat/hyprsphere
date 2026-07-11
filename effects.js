@@ -220,11 +220,16 @@ register("expandTrail", {
         var cfg = window.cfg.sphere?.perpetualEffects?.expandTrail;
         if (!cfg || !cfg.enabled) return;
         window._trailTime += 16;
-        // Expose config values for QML bindings
-        window._trailStepTime = cfg.stepTime || 200;
-        window._trailBumpDuration = cfg.bumpDuration || 600;
+        // Layer-specific speed multiplier
+        var mult = 1.0;
+        var lm = cfg.layerMultipliers;
+        var layerKey = "layer_" + window.layer;
+        if (lm && lm[layerKey] !== undefined) mult = lm[layerKey];
+        // Expose config values for QML bindings (scaled by layer multiplier)
+        window._trailStepTime = (cfg.stepTime || 200) * mult;
+        window._trailBumpDuration = (cfg.bumpDuration || 600) * mult;
         window._trailScale = cfg.scale || 1.5;
-        window._trailDelay = cfg.delayBetweenWaves || 0;
+        window._trailDelay = (cfg.delayBetweenWaves || 0) * mult;
     },
     stop: function(window) {
         window._trailTime = 0;
