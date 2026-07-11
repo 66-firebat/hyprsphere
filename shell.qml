@@ -1062,7 +1062,7 @@ PanelWindow {
             } else if (event.key === Qt.Key_Return && (event.modifiers & Qt.ControlModifier)) {
                 Binds.openNewWindow(window, closeSequence);
                 event.accepted = true;
-            } else if (event.key === Qt.Key_Backspace && !event.isAutoRepeat) {
+            } else if (event.key === Qt.Key_Backspace) {
                 if (window.searchQuery.length > 0)
                     window._handleSearchInput(window.searchQuery.slice(0, -1));
                 event.accepted = true;
