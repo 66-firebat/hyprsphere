@@ -1559,7 +1559,7 @@ PanelWindow {
                 font.family: "JetBrains Mono"
                 color: cfg.colors?.crust ?? "#11111b"
                 text: window.sphereModel.length.toString()
-                visible: window.layer >= 1 && window.sphereModel.length > 0
+                visible: window.sphereModel.length > 0
                 background: Rectangle {
                     radius: nodeCountBadge.height / 2
                     color: cfg.searchBar?.textColor ?? "#ff4400"
