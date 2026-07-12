@@ -61,20 +61,6 @@
       "enabled": false,
       "minRadius": 160,
       "maxNodeCount": 20
-    },
-    "perpetualEffects": {
-      "expandTrail": {
-        "enabled": true,
-        "scale": 1.25,
-        "stepTime": 50,
-        "bumpDuration": 1200,
-        "delayBetweenWaves": 2000,
-        "layerMultipliers": {
-          "layer_0": 1.0,
-          "layer_1": 0.5,
-          "layer_2": 0.25
-        }
-      }
     }
   },
 
@@ -86,7 +72,7 @@
     "satelliteScaleDurationMs": 450,
     "satelliteInitialScale": 0.4,
     "satelliteTargetScale": 1.5,
-    "entranceFadeDurationMs": 800,
+    "entranceFadeDurationMs": 300,
     "exitFadeDurationMs": 400,
     "borderColorDurationMs": 150
   },
