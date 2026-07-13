@@ -300,14 +300,33 @@ PanelWindow {
         if (window.visible) scheduleRebuild();
     }
 
-    function initWindowIndices() {
+    function reconcileFocusHistory() {
         var tls = Hyprland.toplevels;
         var arr = (tls && tls.values) || [];
         if (arr.length === 0) {
-            Qt.callLater(function() { window.initWindowIndices(); });
+            Qt.callLater(function() { window.reconcileFocusHistory(); });
             return;
         }
-        var initList = [];
+        var validAddrs = {};
+        for (var i = 0; i < arr.length; i++) {
+            var t = arr[i];
+            if (!t) continue;
+            var ws = t.workspace;
+            if (ws && String(ws.name || "").startsWith("special:")) continue;
+            var addr = window.normalizeAddress(t.address);
+            if (addr) validAddrs[addr] = true;
+        }
+        // Phase 2: remove orphaned entries (closed windows)
+        var removed = 0;
+        for (var i = focusHistory.length - 1; i >= 0; i--) {
+            var entry = focusHistory[i];
+            if (entry.address && !validAddrs[entry.address]) {
+                focusHistory.splice(i, 1);
+                removed++;
+            }
+        }
+        // Phase 3: add any live toplevels not yet in focusHistory
+        var added = 0;
         for (var i = 0; i < arr.length; i++) {
             var t = arr[i];
             if (!t) continue;
@@ -316,20 +335,18 @@ PanelWindow {
             var wl = t.wayland;
             var appId = (wl && wl.appId) ? wl.appId : "unknown";
             var addr = window.normalizeAddress(t.address);
-            // Only add if not already in focusHistory (safeguard)
+            if (!addr) continue;
             var found = false;
             for (var j = 0; j < focusHistory.length; j++) {
                 if (focusHistory[j].address === addr) { found = true; break; }
             }
             if (!found) {
-                initList.push({ address: addr, appId: appId, title: t.title });
+                focusHistory.push({ address: addr, appId: appId, title: t.title });
+                added++;
             }
         }
-        // Prepend in reverse order so first window (index 0) ends up first
-        for (var k = initList.length - 1; k >= 0; k--) {
-            focusHistory.unshift(initList[k]);
-        }
-        log("initWindowIndices: focusHistory now has " + focusHistory.length + " entries");
+        if (removed > 0 || added > 0)
+            log("reconcileFocusHistory: removed=" + removed + " added=" + added + " total=" + focusHistory.length);
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -587,6 +604,8 @@ PanelWindow {
             return;
         }
 
+        reconcileFocusHistory();
+
         var raw = buildLayer0();
         if (raw.length === 0) {
             Qt.callLater(function() { finishOpenSwitcher(); });
@@ -824,7 +843,7 @@ PanelWindow {
         configReader.running = true;
         iconReader.running = true;
         Hyprland.refreshToplevels();
-        Qt.callLater(function() { window.initWindowIndices(); });
+        Qt.callLater(function() { window.reconcileFocusHistory(); });
         startPerpetual();
     }
 
