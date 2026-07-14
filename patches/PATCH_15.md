@@ -14,12 +14,24 @@ appears in the sphere but whose address no longer corresponds to a real window.
 Committing on this node calls `dispatchFocus("")` which is a no-op, so nothing
 happens.
 
+## Root Cause Analysis
+
+There are two independent gaps where an orphan can survive:
+
+### Gap A — Cross-session orphan (initial open)
+A closewindow event is dropped while the overlay is closed. The orphan sits in
+`focusHistory` until the next time the overlay opens.
+
+### Gap B — Mid-session orphan (live rebuild)
+A closewindow event is dropped while the overlay IS visible. The overlay is
+hidden and re-shown via `scheduleRebuild()`, but `scheduleRebuild()` calls
+`buildLayer0()` directly — it never reconciles. The orphan survives the rebuild
+and appears in the currently visible overlay.
+
 ## Proposed Fix
 Add a `reconcileFocusHistory()` function that compares `focusHistory` against
 Hyprland's actual toplevel list (`Hyprland.toplevels.values`) and removes any
-entries whose addresses don't match a real window. This runs once when the
-overlay initially opens, catching any orphans that accumulated since the last
-session.
+entries whose addresses don't match a real window.
 
 ### Algorithm
 ```
@@ -44,18 +56,24 @@ reconcileFocusHistory():
         push { address, appId, title } to focusHistory
 ```
 
-### Placement
-Call `reconcileFocusHistory()` once at the start of `finishOpenSwitcher()`,
-right before `buildLayer0()` — so it runs once per overlay open, not on every
-`scheduleRebuild()`. This catches orphans that accumulated since the last
-time the overlay was used, without adding cost to live rebuilds.
+### Placement (covers both gaps)
+Call `reconcileFocusHistory()` in two places:
+
+1. **`finishOpenSwitcher()`** — before `buildLayer0()` → catches Gap A on every
+   full overlay open (Alt press → IPC toggle).
+
+2. **`scheduleRebuild()`** — before `buildLayer0()` → catches Gap B on every
+   live rebuild triggered by `closewindow` / `openwindow` events while the
+   overlay is visible.
+
+Both calls are before the sphere is rebuilt, so the update is seen immediately.
 
 ### Replaces `initWindowIndices`
 The function subsumes `initWindowIndices` completely:
 - Phase 3 scans toplevels and adds missing entries (same as `initWindowIndices`)
 - Phase 2 adds orphan cleanup (new functionality)
-- Therefore `Component.onCompleted` should call `reconcileFocusHistory()`
-  instead of `initWindowIndices()`, and `initWindowIndices()` can be removed.
+- Therefore `Component.onCompleted` calls `reconcileFocusHistory()`
+  instead of `initWindowIndices()`, and `initWindowIndices()` is removed.
 
 ### Safety
 - Entries without an `address` field (whitelisted placeholders) are never
@@ -66,10 +84,19 @@ The function subsumes `initWindowIndices` completely:
 
 ### Cost
 O(n + m) where n = focusHistory length (~50) and m = toplevel count (~50).
-Runs once per overlay open — negligible.
+Runs once per overlay open and once per live rebuild — negligible.
 
-## Files Modified
+## Status
+**Already partially implemented.** The implementation in the current codebase
+has:
+- `reconcileFocusHistory()` function ✓
+- Called from `finishOpenSwitcher()` ✓ (Gap A)
+- Called from `Component.onCompleted` ✓ (startup)
+- `initWindowIndices()` removed ✓
+
+**Missing:** Call from `scheduleRebuild()` (Gap B).
+
+## Files Modified (remaining)
 - `shell.qml`:
-  - Replace `initWindowIndices()` with `reconcileFocusHistory()`
-  - Replace the call in `Component.onCompleted`
-  - Add call in `finishOpenSwitcher()` before `buildLayer0()`
+  - Add `reconcileFocusHistory();` at the top of `scheduleRebuild()`,
+    right before `var raw = buildLayer0();`

@@ -638,6 +638,7 @@ PanelWindow {
         Qt.callLater(function() {
             rebuildScheduled = false;
             Hyprland.refreshToplevels();
+            reconcileFocusHistory();
             var raw = buildLayer0();
             rebuildToLayer(raw);
             // Auto-select spawned window after rebuild
