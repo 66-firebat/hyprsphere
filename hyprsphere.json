@@ -46,7 +46,7 @@
   },
 
   "sphere": {
-    "baseRadius": 480,
+    "baseRadius": 360,
     "initialZoom": 1.0,
     "zoomDurationMs": 400,
     "zoomEasing": "OutCubic",
@@ -104,7 +104,7 @@
     "fuseThreshold": 0.4,
     "fuseMinMatchCharLength": 1,
     "ignoreLocation": true,
-    "layer2Zoom": 0.25
+    "layer2Zoom": 0.5
   },
 
   "appCard": {
