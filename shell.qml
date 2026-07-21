@@ -828,11 +828,11 @@ PanelWindow {
         }
 
         function commit(): void {
-            if (window.overlayActive) window.commitSelection();
+            if (window.overlayActive) Binds.commitSelection(window, closeSequence);
         }
 
         function cancel(): void {
-            if (window.overlayActive) window.cancelSwitch();
+            if (window.overlayActive) Binds.cancelSwitch(window, closeSequence);
         }
     }
 
@@ -933,6 +933,8 @@ PanelWindow {
     property real _hbIconScale: 1.0
     property real _hbIconOpacity: 1.0
     property double _trailTime: 0
+    property int _extRotDirY: 0
+    property int _extRotDirX: 0
     property bool _peekRestart: false
     property bool _animating: false
     property int _peekTime: 0
@@ -1046,6 +1048,10 @@ PanelWindow {
         let diff = targetRotYNorm - currentRotYMod;
         if (diff >  Math.PI) diff -= Math.PI * 2;
         if (diff < -Math.PI) diff += Math.PI * 2;
+
+        // Capture direction for extendRotation perpetual effect
+        window._extRotDirY = Math.sign(diff);
+        window._extRotDirX = Math.sign(targetRotX - window.rotX);
 
         searchRotXAnim.to = targetRotX;
         searchRotYAnim.to = window.rotY + diff;

@@ -61,6 +61,12 @@
       "enabled": false,
       "minRadius": 160,
       "maxNodeCount": 20
+    },
+    "perpetualEffects": {
+      "extendRotation": {
+        "enabled": true,
+        "speed_radPerSec": 0.15
+      }
     }
   },
 

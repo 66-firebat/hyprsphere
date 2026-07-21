@@ -235,3 +235,31 @@ register("expandTrail", {
         window._trailTime = 0;
     }
 });
+
+// ── Extend Rotation Effect ─────────────────────────────────────────────────
+// After centerOnApp finishes, continues the sphere rotation along the same
+// trajectory at a slow constant speed until the user navigates again.
+
+register("extendRotation", {
+    start: function(window) {
+        // Direction is set by centerOnApp() in shell.qml
+    },
+    tick: function(window) {
+        var cfg = window.cfg.sphere?.perpetualEffects?.extendRotation;
+        if (!cfg || !cfg.enabled) return;
+        // Don't interfere with the transition animation
+        if (window._animating) return;
+        var speed = cfg.speed_radPerSec || 0.15;
+        var dt = 0.016;
+        if (window._extRotDirY) {
+            window.rotY += window._extRotDirY * speed * dt;
+        }
+        if (window._extRotDirX) {
+            window.rotX += window._extRotDirX * speed * dt;
+        }
+    },
+    stop: function(window) {
+        window._extRotDirY = 0;
+        window._extRotDirX = 0;
+    }
+});
