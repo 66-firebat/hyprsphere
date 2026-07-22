@@ -1275,7 +1275,7 @@ PanelWindow {
                                         if (!n) return "";
                                         return n.title ? n.title : (n.label || "");
                                     }
-                                    font.family: "JetBrains Mono"
+                                    font.family: "FreeSans"
                                     font.pixelSize: window.s(14)
                                     font.weight: Font.DemiBold
                                     color: "#8C8C8C"
@@ -1334,7 +1334,7 @@ PanelWindow {
                                     }
                                     return "";
                                 }
-                                font.family: "JetBrains Mono"
+                                font.family: "FreeSans"
                                 font.pixelSize: window.s(cfg.appCard?.windowCountBadge?.fontSize ?? 18)
                                 font.weight: Font.Bold
                                 color: {
@@ -1417,7 +1417,7 @@ PanelWindow {
                                             if (!n) return "";
                                             return n && n.title ? n.title : (n && n.label || "");
                                         }
-                                        font.family: "JetBrains Mono"
+                                        font.family: "FreeSans"
                                         font.pixelSize: window._sat_fontSize
                                         font.weight: Font.Bold
                                         color: "#8C8C8C"
@@ -1476,7 +1476,7 @@ PanelWindow {
                                             }
                                             return "";
                                         }
-                                        font.family: "JetBrains Mono"
+                                        font.family: "FreeSans"
                                         font.pixelSize: window.s(cfg.appCard?.windowCountBadge?.fontSize ?? 18)
                                         font.weight: Font.Bold
                                         color: {
@@ -1558,7 +1558,7 @@ PanelWindow {
                 Layout.fillHeight: true
                 background: Item {}
                 color: cfg.searchBar?.textColor ?? "#ff4400"
-                font.family: "JetBrains Mono"
+                font.family: "FreeSans"
                 font.pixelSize: window._s15
                 font.weight: Font.Medium
                 selectByMouse: true
@@ -1589,7 +1589,7 @@ PanelWindow {
                 verticalAlignment: Text.AlignVCenter
                 font.pixelSize: window._s12
                 font.weight: Font.Bold
-                font.family: "JetBrains Mono"
+                font.family: "FreeSans"
                 color: cfg.colors?.crust ?? "#11111b"
                 text: window.sphereModel.length.toString()
                 visible: window.sphereModel.length > 0
