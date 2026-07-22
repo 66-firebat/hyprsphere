@@ -1263,11 +1263,7 @@ PanelWindow {
                                     var n = window.sphereModel[index];
                                     return n && n.isWindowNode;
                                 }
-                                color: Qt.rgba(
-                                    (parseInt((cfg.appCard?.labelBgColor ?? "#ff4400").substring(1,3),16)/255),
-                                    (parseInt((cfg.appCard?.labelBgColor ?? "#ff4400").substring(3,5),16)/255),
-                                    (parseInt((cfg.appCard?.labelBgColor ?? "#ff4400").substring(5,7),16)/255),
-                                    cfg.appCard?.labelBgOpacity ?? 0.5)
+                                color: "transparent"
 
                                 Text {
                                     id: labelText
@@ -1282,7 +1278,7 @@ PanelWindow {
                                     font.family: "JetBrains Mono"
                                     font.pixelSize: window.s(14)
                                     font.weight: Font.DemiBold
-                                    color: cfg.appCard?.labelTextColor ?? "#2b2b2b"
+                                    color: "#8C8C8C"
                                     horizontalAlignment: Text.AlignHCenter
                                     verticalAlignment:   Text.AlignVCenter
                                     elide: Text.ElideRight
@@ -1409,11 +1405,7 @@ PanelWindow {
                                         if (n.isWindowNode) return true;
                                         return cfg.appCard?.satelliteAppLabel === true;
                                     }
-                                    color: Qt.rgba(
-                                        (parseInt((cfg.appCard?.labelBgColor ?? "#ff4400").substring(1,3),16)/255),
-                                        (parseInt((cfg.appCard?.labelBgColor ?? "#ff4400").substring(3,5),16)/255),
-                                        (parseInt((cfg.appCard?.labelBgColor ?? "#ff4400").substring(5,7),16)/255),
-                                        cfg.appCard?.labelBgOpacity ?? 0.5)
+                                    color: "transparent"
 
                                     Text {
                                         id: satLabelText
@@ -1428,7 +1420,7 @@ PanelWindow {
                                         font.family: "JetBrains Mono"
                                         font.pixelSize: window._sat_fontSize
                                         font.weight: Font.Bold
-                                        color: cfg.appCard?.labelTextColor ?? "#2b2b2b"
+                                        color: "#8C8C8C"
                                         horizontalAlignment: Text.AlignHCenter
                                         verticalAlignment: Text.AlignVCenter
                                         elide: Text.ElideRight
