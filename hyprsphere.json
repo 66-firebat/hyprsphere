@@ -171,7 +171,7 @@
       "appId": "emacs",
       "label": "Emacs",
       "icon": "emacs",
-      "exec": "ghostty -e bash -lc 'emacs --daemon -l $HOME/.config/emacs/init.el 2>/dev/null; until [ -S \\\"$XDG_RUNTIME_DIR/emacs/server\\\" ]; do sleep 0.1; done; emacsclient -nw --eval \\\"(my/eat-new)\\\"'"
+      "exec": "ghostty -e bash -lc 'emacs --daemon -l $HOME/.config/emacs/init.el 2>/dev/null; until [ -S \\\"$XDG_RUNTIME_DIR/emacs/server\\\" ]; do sleep 0.1; done; emacsclient -nw --eval \\\"(my/ghostel-new)\\\"'"
     },
     {
       "appId": "anki",
