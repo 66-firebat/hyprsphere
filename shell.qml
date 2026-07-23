@@ -262,17 +262,17 @@ PanelWindow {
     function bracketIcon(badgeIndex, total) {
         if (!badgeIndex || !total || total < 1) return "";
         var x = badgeIndex / total;
-        if (x <= 1/12)  return "󱑊 ";
-        if (x <= 2/12)  return "󱐿 ";
-        if (x <= 3/12)  return "󱑀 ";
-        if (x <= 4/12)  return "󱑁 ";
-        if (x <= 5/12)  return "󱑂 ";
-        if (x <= 6/12)  return "󱑂 ";
-        if (x <= 7/12)  return "󱑂 ";
-        if (x <= 8/12)  return "󱑂 ";
-        if (x <= 9/12)  return "󱑂 ";
-        if (x <= 10/12) return "󱑂 ";
-        if (x <= 11/12) return "󱑂 ";
+        if (x <= 1/12)  return "󱑊";
+        if (x <= 2/12)  return "󱐿";
+        if (x <= 3/12)  return "󱑀";
+        if (x <= 4/12)  return "󱑁";
+        if (x <= 5/12)  return "󱑂";
+        if (x <= 6/12)  return "󱑂";
+        if (x <= 7/12)  return "󱑂";
+        if (x <= 8/12)  return "󱑂";
+        if (x <= 9/12)  return "󱑂";
+        if (x <= 10/12) return "󱑂";
+        if (x <= 11/12) return "󱑂";
         return "\uEE0B";
     }
 
@@ -1318,13 +1318,7 @@ PanelWindow {
                             anchors.verticalCenterOffset: window.s(cfg.appCard?.windowCountBadge?.offsetY ?? 0)
                             width: badgeLabel.width + window.s(cfg.appCard?.windowCountBadge?.padding ?? 14)
                             height: badgeLabel.height + window.s(cfg.appCard?.windowCountBadge?.padding ?? 14)
-                            visible: {
-                                if (cfg.appCard?.windowCountBadge?.nonSelected === false) return false;
-                                var n = window.sphereModel[index];
-                                if (!n || n.isPlaceholder || n.isWhitelistPlaceholder) return false;
-                                if (n.isWindowNode) return true;
-                                return (n.windowCount || 0) >= 1;
-                            }
+                            visible: false
 
                             Rectangle {
                                 anchors.fill: parent
@@ -1457,7 +1451,7 @@ PanelWindow {
                                     anchors.horizontalCenter: satIcon.horizontalCenter
                                     anchors.verticalCenter: satIcon.verticalCenter
                                     anchors.horizontalCenterOffset: window.s(0)
-                                    anchors.verticalCenterOffset: window.s(57)
+                                    anchors.verticalCenterOffset: window.s(0)
                                     width: satBadgeLabel.width + window.s(14)
                                     height: satBadgeLabel.height + window.s(14)
                                     visible: {
@@ -1487,9 +1481,10 @@ PanelWindow {
                                             return window.bracketIcon(idx, total);
                                         }
                                         font.family: "JetBrainsMonoNL Nerd Font Mono"
-                                        font.pixelSize: window.s(18)
+                                        font.pixelSize: window.s(138)
                                         font.weight: Font.Bold
-                                        color: "#ff4400"
+                                        color: "#2b2b2b"
+                                        opacity: 0.75
                                         horizontalAlignment: Text.AlignHCenter
                                         verticalAlignment: Text.AlignVCenter
                                     }
