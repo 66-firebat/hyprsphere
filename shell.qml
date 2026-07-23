@@ -1444,51 +1444,6 @@ PanelWindow {
                                         wrapMode: Text.WordWrap
                                     }
                                 }
-
-                                // Badge on satellite — MRU proportional bracket icon
-                                Item {
-                                    id: satBadge
-                                    anchors.horizontalCenter: satIcon.horizontalCenter
-                                    anchors.verticalCenter: satIcon.verticalCenter
-                                    anchors.horizontalCenterOffset: window.s(0)
-                                    anchors.verticalCenterOffset: window.s(0)
-                                    width: satBadgeLabel.width + window.s(14)
-                                    height: satBadgeLabel.height + window.s(14)
-                                    visible: {
-                                        var n = window.sphereModel[window.selectedAppIndex];
-                                        return n && n.isWindowNode && !n.isPlaceholder;
-                                    }
-
-                                    Rectangle {
-                                        anchors.fill: parent
-                                        radius: height / 2
-                                        color: "transparent"
-                                    }
-
-                                    Text {
-                                        id: satBadgeLabel
-                                        anchors.centerIn: parent
-                                        text: {
-                                            var n = window.sphereModel[window.selectedAppIndex];
-                                            if (!n || !n.isWindowNode) return "";
-                                            var idx = n.badgeIndex;
-                                            if (!idx) {
-                                                var winList = window.windowsForApp ? window.windowsForApp(n.appId) : [];
-                                                var oi = winList.indexOf(n.address || "");
-                                                idx = oi >= 0 ? oi + 1 : 0;
-                                            }
-                                            var total = window.windowsForApp ? window.windowsForApp(n.appId).length : 0;
-                                            return window.bracketIcon(idx, total);
-                                        }
-                                        font.family: "JetBrainsMonoNL Nerd Font Mono"
-                                        font.pixelSize: window.s(138)
-                                        font.weight: Font.Bold
-                                        color: "#2b2b2b"
-                                        opacity: 0.75
-                                        horizontalAlignment: Text.AlignHCenter
-                                        verticalAlignment: Text.AlignVCenter
-                                    }
-                                }
                             }
                         }
                     }
@@ -1509,6 +1464,48 @@ PanelWindow {
                             window.commitSelection();
                         }
                     }
+                }
+            }
+
+            // ── Static badge on sphere (doesn't rotate with card) ──
+            Item {
+                id: satBadge
+                anchors.centerIn: parent
+                width: satBadgeLabel.width + window.s(14)
+                height: satBadgeLabel.height + window.s(14)
+                visible: {
+                    var n = window.sphereModel[window.selectedAppIndex];
+                    return n && n.isWindowNode && !n.isPlaceholder;
+                }
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius: height / 2
+                    color: "transparent"
+                }
+
+                Text {
+                    id: satBadgeLabel
+                    anchors.centerIn: parent
+                    text: {
+                        var n = window.sphereModel[window.selectedAppIndex];
+                        if (!n || !n.isWindowNode) return "";
+                        var idx = n.badgeIndex;
+                        if (!idx) {
+                            var winList = window.windowsForApp ? window.windowsForApp(n.appId) : [];
+                            var oi = winList.indexOf(n.address || "");
+                            idx = oi >= 0 ? oi + 1 : 0;
+                        }
+                        var total = window.windowsForApp ? window.windowsForApp(n.appId).length : 0;
+                        return window.bracketIcon(idx, total);
+                    }
+                    font.family: "JetBrainsMonoNL Nerd Font Mono"
+                    font.pixelSize: window.baseSphereRadius * (cfg.sphere?.badgeRadiusRatio ?? 0.4)
+                    font.weight: Font.Bold
+                    color: cfg.sphere?.badgeColor ?? "#2b2b2b"
+                    opacity: cfg.sphere?.badgeOpacity ?? 0.5
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
                 }
             }
         }

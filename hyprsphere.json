@@ -55,8 +55,11 @@
     "maxRotationX": 2.5,
     "maxRotationY": 1.45,
     "zoomFactorWeight": 0.45,
-    "layer1Zoom": 0.5,
+    "layer1Zoom": 1.5,
     "normalizationConstant": 310.5,
+    "badgeRadiusRatio": 0.8,
+    "badgeOpacity": 0,
+    "badgeColor": "#6A6A6A",
     "autoRadius": {
       "enabled": false,
       "minRadius": 160,
@@ -110,7 +113,7 @@
     "fuseThreshold": 0.4,
     "fuseMinMatchCharLength": 1,
     "ignoreLocation": true,
-    "layer2Zoom": 0.5
+    "layer2Zoom": 1.5
   },
 
   "appCard": {
