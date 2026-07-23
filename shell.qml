@@ -253,6 +253,29 @@ PanelWindow {
         return layers["layer_" + window.layer] !== false;
     }
 
+    // ── MRU bracket icon lookup ────────────────────────────────────────────
+    // Maps badgeIndex / totalWindows to a 12-step Nerd Font progress bracket.
+    // Icons from Nerd Font Progress set (U+EE00–U+EE0B):
+    //     ≤1/12,  ≤2/12,  ≤3/12,  ≤4/12,  ≤5/12,  ≤6/12,
+    //     ≤7/12,  ≤8/12,  ≤9/12,  ≤10/12,  ≤11/12,  ≤12/12
+
+    function bracketIcon(badgeIndex, total) {
+        if (!badgeIndex || !total || total < 1) return "";
+        var x = badgeIndex / total;
+        if (x <= 1/12)  return "󱑊 ";
+        if (x <= 2/12)  return "󱐿 ";
+        if (x <= 3/12)  return "󱑀 ";
+        if (x <= 4/12)  return "󱑁 ";
+        if (x <= 5/12)  return "󱑂 ";
+        if (x <= 6/12)  return "󱑂 ";
+        if (x <= 7/12)  return "󱑂 ";
+        if (x <= 8/12)  return "󱑂 ";
+        if (x <= 9/12)  return "󱑂 ";
+        if (x <= 10/12) return "󱑂 ";
+        if (x <= 11/12) return "󱑂 ";
+        return "\uEE0B";
+    }
+
     Process {
         id: iconReader
         command: ["bash", "-c",
@@ -1275,7 +1298,7 @@ PanelWindow {
                                         if (!n) return "";
                                         return n.title ? n.title : (n.label || "");
                                     }
-                                    font.family: "FreeSans"
+                                    font.family: "JetBrains Mono"
                                     font.pixelSize: window.s(14)
                                     font.weight: Font.DemiBold
                                     color: "#8C8C8C"
@@ -1334,7 +1357,7 @@ PanelWindow {
                                     }
                                     return "";
                                 }
-                                font.family: "FreeSans"
+                                font.family: "JetBrains Mono"
                                 font.pixelSize: window.s(cfg.appCard?.windowCountBadge?.fontSize ?? 18)
                                 font.weight: Font.Bold
                                 color: {
@@ -1417,7 +1440,7 @@ PanelWindow {
                                             if (!n) return "";
                                             return n && n.title ? n.title : (n && n.label || "");
                                         }
-                                        font.family: "FreeSans"
+                                        font.family: "JetBrains Mono"
                                         font.pixelSize: window._sat_fontSize
                                         font.weight: Font.Bold
                                         color: "#8C8C8C"
@@ -1428,38 +1451,24 @@ PanelWindow {
                                     }
                                 }
 
-                                // Badge on satellite
+                                // Badge on satellite — MRU proportional bracket icon
                                 Item {
                                     id: satBadge
                                     anchors.horizontalCenter: satIcon.horizontalCenter
                                     anchors.verticalCenter: satIcon.verticalCenter
-                                    anchors.horizontalCenterOffset: window.s(cfg.appCard?.windowCountBadge?.offsetX ?? -60)
-                                    anchors.verticalCenterOffset: window.s(cfg.appCard?.windowCountBadge?.offsetY ?? 0)
-                                    width: satBadgeLabel.width + window.s(cfg.appCard?.windowCountBadge?.padding ?? 14)
-                                    height: satBadgeLabel.height + window.s(cfg.appCard?.windowCountBadge?.padding ?? 14)
+                                    anchors.horizontalCenterOffset: window.s(0)
+                                    anchors.verticalCenterOffset: window.s(57)
+                                    width: satBadgeLabel.width + window.s(14)
+                                    height: satBadgeLabel.height + window.s(14)
                                     visible: {
-                                        if (cfg.appCard?.windowCountBadge?.satellite === false) return false;
                                         var n = window.sphereModel[window.selectedAppIndex];
-                                        if (!n || n.isPlaceholder || n.isWhitelistPlaceholder) return false;
-                                        if (n.isWindowNode) return true;
-                                        return (n.windowCount || 0) >= 1;
+                                        return n && n.isWindowNode && !n.isPlaceholder;
                                     }
 
                                     Rectangle {
                                         anchors.fill: parent
                                         radius: height / 2
-                                        color: {
-                                            var n = window.sphereModel[window.selectedAppIndex];
-                                            return n && n.isWindowNode
-                                                ? (cfg.appCard?.windowCountBadge?.windowBgColor ?? "#ff4400")
-                                                : (cfg.appCard?.windowCountBadge?.bgColor ?? "#2b2b2b");
-                                        }
-                                        opacity: {
-                                            var n = window.sphereModel[window.selectedAppIndex];
-                                            return n && n.isWindowNode
-                                                ? (cfg.appCard?.windowCountBadge?.windowBgOpacity ?? 0.5)
-                                                : (cfg.appCard?.windowCountBadge?.bgOpacity ?? 0.5);
-                                        }
+                                        color: "transparent"
                                     }
 
                                     Text {
@@ -1467,24 +1476,20 @@ PanelWindow {
                                         anchors.centerIn: parent
                                         text: {
                                             var n = window.sphereModel[window.selectedAppIndex];
-                                            if (!n) return "";
-                                            if (n.isWindowNode) {
-                                                if (n.badgeIndex) return String(n.badgeIndex);
+                                            if (!n || !n.isWindowNode) return "";
+                                            var idx = n.badgeIndex;
+                                            if (!idx) {
                                                 var winList = window.windowsForApp ? window.windowsForApp(n.appId) : [];
                                                 var oi = winList.indexOf(n.address || "");
-                                                return String(oi >= 0 ? oi + 1 : "");
+                                                idx = oi >= 0 ? oi + 1 : 0;
                                             }
-                                            return "";
+                                            var total = window.windowsForApp ? window.windowsForApp(n.appId).length : 0;
+                                            return window.bracketIcon(idx, total);
                                         }
-                                        font.family: "FreeSans"
-                                        font.pixelSize: window.s(cfg.appCard?.windowCountBadge?.fontSize ?? 18)
+                                        font.family: "JetBrainsMonoNL Nerd Font Mono"
+                                        font.pixelSize: window.s(18)
                                         font.weight: Font.Bold
-                                        color: {
-                                            var n = window.sphereModel[window.selectedAppIndex];
-                                            return n && n.isWindowNode
-                                                ? (cfg.appCard?.windowCountBadge?.windowColor ?? "#2b2b2b")
-                                                : (cfg.appCard?.windowCountBadge?.color ?? "#ff4400");
-                                        }
+                                        color: "#ff4400"
                                         horizontalAlignment: Text.AlignHCenter
                                         verticalAlignment: Text.AlignVCenter
                                     }
@@ -1558,7 +1563,7 @@ PanelWindow {
                 Layout.fillHeight: true
                 background: Item {}
                 color: cfg.searchBar?.textColor ?? "#ff4400"
-                font.family: "FreeSans"
+                font.family: "JetBrains Mono"
                 font.pixelSize: window._s15
                 font.weight: Font.Medium
                 selectByMouse: true
@@ -1589,7 +1594,7 @@ PanelWindow {
                 verticalAlignment: Text.AlignVCenter
                 font.pixelSize: window._s12
                 font.weight: Font.Bold
-                font.family: "FreeSans"
+                font.family: "JetBrains Mono"
                 color: cfg.colors?.crust ?? "#11111b"
                 text: window.sphereModel.length.toString()
                 visible: window.sphereModel.length > 0
