@@ -660,8 +660,10 @@ PanelWindow {
         rebuildScheduled = true;
         Qt.callLater(function() {
             rebuildScheduled = false;
-            Hyprland.refreshToplevels();
-            reconcileFocusHistory();
+            // focusHistory is maintained correctly by synchronous
+            // openwindow/closewindow event handlers. No reconcile here —
+            // calling reconcileFocusHistory() with potentially stale
+            // toplevel data can silently delete valid windows (see bugfix).
             var raw = buildLayer0();
             rebuildToLayer(raw);
             // Auto-select spawned window after rebuild
