@@ -65,6 +65,7 @@
       "minRadius": 160,
       "maxNodeCount": 20
     },
+    "toplevelRefreshDelayMs": 66,
     "perpetualEffects": {
       "extendRotation": {
         "enabled": true,

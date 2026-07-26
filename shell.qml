@@ -660,55 +660,11 @@ PanelWindow {
         rebuildScheduled = true;
         Qt.callLater(function() {
             rebuildScheduled = false;
-            // focusHistory is maintained correctly by synchronous
-            // openwindow/closewindow event handlers. No reconcile here —
-            // calling reconcileFocusHistory() with potentially stale
-            // toplevel data can silently delete valid windows (see bugfix).
-            var raw = buildLayer0();
-            rebuildToLayer(raw);
-            // Auto-select spawned window after rebuild
-            if (window._pendingSpawnAppId) {
-                log("spawnAutoSelect: pendingApp=" + window._pendingSpawnAppId + " pendingAddr=" + (window._pendingSpawnAddr ? window._pendingSpawnAddr.substring(window._pendingSpawnAddr.length-6) : "none") + " layer=" + window.layer + " sphereLen=" + window.sphereModel.length);
-                var _found = false;
-                for (var _si = 0; _si < window.sphereModel.length; _si++) {
-                    var _n = window.sphereModel[_si];
-                    if (_n.isPlaceholder || _n.isWhitelistPlaceholder) continue;
-                    if (window._pendingSpawnAddr) {
-                        if (_n.isWindowNode && _n.address === window._pendingSpawnAddr) {
-                            log("spawnAutoSelect: FOUND by address at idx=" + _si);
-                            window.selectedAppIndex = _si;
-                            window.centerOnApp(_si);
-                            _found = true;
-                            break;
-                        } else if (!_n.isWindowNode && _n.appId === window._pendingSpawnAppId) {
-                            log("spawnAutoSelect: FOUND appNode by appId at idx=" + _si);
-                            window.selectedAppIndex = _si;
-                            window.centerOnApp(_si);
-                            _found = true;
-                            break;
-                        }
-                    } else if (_n.appId === window._pendingSpawnAppId) {
-                        log("spawnAutoSelect: FOUND by appId at idx=" + _si);
-                        window.selectedAppIndex = _si;
-                        window.centerOnApp(_si);
-                        _found = true;
-                        break;
-                    }
-                }
-                if (!_found) log("spawnAutoSelect: NOT FOUND in sphereModel");
-                if (window.sphereModel.length > 0) {
-                    var _s0 = window.sphereModel[0];
-                    log("spawnAutoSelect: sphere[0] app=" + _s0.appId + " addr=" + (_s0.address ? _s0.address.substring(_s0.address.length-6) : "none") + " isWin=" + (_s0.isWindowNode ? "Y" : "N"));
-                }
-                window._pendingSpawnAddr = "";
-                window._pendingSpawnAppId = "";
-            }
-            // Force QML to re-evaluate the sphere model binding
-            window.projDirty = true;
-            window.rebuildProjCache();
-            projDirty = true;
-            rebuildProjCache();
-            focusGrabber.forceActiveFocus();
+            Hyprland.refreshToplevels();
+            // Defer reconcile+build via Timer — guarantees the IPC
+            // response has arrived so reconcileFocusHistory() never
+            // sees stale toplevel data (avoids false deletions).
+            refreshDelayTimer.start();
         });
     }
 
@@ -972,6 +928,63 @@ PanelWindow {
         repeat: true
         running: false
         onTriggered: { Effects.tick(window); }
+    }
+
+    // Fires after refreshToplevels() IPC has had time to complete.
+    // reconcileFocusHistory() runs with guaranteed-fresh data ( we assume that the transaction across the socket and processing takes less than a few ms in reality, so we use a very conservative 66 ms default interval), so it safely
+    // removes orphans AND adds missing windows without false deletions.
+    Timer {
+        id: refreshDelayTimer
+        interval: cfg.sphere?.toplevelRefreshDelayMs ?? 66
+        repeat: false
+        onTriggered: {
+            reconcileFocusHistory();
+            var raw = buildLayer0();
+            rebuildToLayer(raw);
+            // Auto-select spawned window after rebuild
+            if (window._pendingSpawnAppId) {
+                log("spawnAutoSelect: pendingApp=" + window._pendingSpawnAppId + " pendingAddr=" + (window._pendingSpawnAddr ? window._pendingSpawnAddr.substring(window._pendingSpawnAddr.length-6) : "none") + " layer=" + window.layer + " sphereLen=" + window.sphereModel.length);
+                var _found = false;
+                for (var _si = 0; _si < window.sphereModel.length; _si++) {
+                    var _n = window.sphereModel[_si];
+                    if (_n.isPlaceholder || _n.isWhitelistPlaceholder) continue;
+                    if (window._pendingSpawnAddr) {
+                        if (_n.isWindowNode && _n.address === window._pendingSpawnAddr) {
+                            log("spawnAutoSelect: FOUND by address at idx=" + _si);
+                            window.selectedAppIndex = _si;
+                            window.centerOnApp(_si);
+                            _found = true;
+                            break;
+                        } else if (!_n.isWindowNode && _n.appId === window._pendingSpawnAppId) {
+                            log("spawnAutoSelect: FOUND appNode by appId at idx=" + _si);
+                            window.selectedAppIndex = _si;
+                            window.centerOnApp(_si);
+                            _found = true;
+                            break;
+                        }
+                    } else if (_n.appId === window._pendingSpawnAppId) {
+                        log("spawnAutoSelect: FOUND by appId at idx=" + _si);
+                        window.selectedAppIndex = _si;
+                        window.centerOnApp(_si);
+                        _found = true;
+                        break;
+                    }
+                }
+                if (!_found) log("spawnAutoSelect: NOT FOUND in sphereModel");
+                if (window.sphereModel.length > 0) {
+                    var _s0 = window.sphereModel[0];
+                    log("spawnAutoSelect: sphere[0] app=" + _s0.appId + " addr=" + (_s0.address ? _s0.address.substring(_s0.address.length-6) : "none") + " isWin=" + (_s0.isWindowNode ? "Y" : "N"));
+                }
+                window._pendingSpawnAddr = "";
+                window._pendingSpawnAppId = "";
+            }
+            // Force QML to re-evaluate the sphere model binding
+            window.projDirty = true;
+            window.rebuildProjCache();
+            projDirty = true;
+            rebuildProjCache();
+            focusGrabber.forceActiveFocus();
+        }
     }
 
     function startPerpetual() {
