@@ -330,13 +330,17 @@ PanelWindow {
             Qt.callLater(function() { window.reconcileFocusHistory(); });
             return;
         }
+        log("reconcileFocusHistory: toplevels.length=" + arr.length);
         var validAddrs = {};
         for (var i = 0; i < arr.length; i++) {
             var t = arr[i];
             if (!t) continue;
             var ws = t.workspace;
-            if (ws && String(ws.name || "").startsWith("special:")) continue;
+            if (ws && String(ws.name || "").startsWith("special:")) { log("reconcileFocusHistory: skip special ws=" + ws.name + " addr=" + window.normalizeAddress(t.address).substring(window.normalizeAddress(t.address).length-6)); continue; }
             var addr = window.normalizeAddress(t.address);
+            var wl = t.wayland;
+            var tlAppId = (wl && wl.appId) ? wl.appId : "(none)";
+            log("reconcileFocusHistory: toplevel[" + i + "] addr=" + addr.substring(addr.length-6) + " appId=" + tlAppId + " mapped=" + (t.mapped !== undefined ? t.mapped : "?") + " title=" + String(t.title || "").substring(0,40));
             if (addr) validAddrs[addr] = true;
         }
         // Phase 2: remove orphaned entries (closed windows)
@@ -356,7 +360,12 @@ PanelWindow {
             var ws = t.workspace;
             if (ws && String(ws.name || "").startsWith("special:")) continue;
             var wl = t.wayland;
-            var appId = (wl && wl.appId) ? wl.appId : "unknown";
+            var appId = (wl && wl.appId) ? wl.appId : "";
+            // Skip toplevels with no Wayland appId — these are internal
+            // sub-windows (KiCad tool windows, XDG portals, etc.) that
+            // leak into Hyprland's j/clients response without openwindow
+            // events. They have no usable icon or name.
+            if (!appId) continue;
             var addr = window.normalizeAddress(t.address);
             if (!addr) continue;
             var found = false;
@@ -391,6 +400,9 @@ PanelWindow {
         for (var i = 0; i < focusHistory.length; i++) {
             var entry = focusHistory[i];
             var appId = entry.appId;
+            // Skip entries with no appId — internal sub-windows that
+            // leak into the toplevel list with no usable metadata.
+            if (!appId) continue;
             if (!seenCounts[appId]) seenCounts[appId] = 0;
             seenCounts[appId]++;
 
@@ -466,6 +478,7 @@ PanelWindow {
         // Individual windows
         for (var i = 0; i < focusHistory.length; i++) {
             var entry = focusHistory[i];
+            if (!entry.appId) continue;
             var sTitle = entry.title || window._resolveTitle(entry.address) || entry.appId;
             db.push({
                 type: "window", appId: entry.appId,
