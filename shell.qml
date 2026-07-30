@@ -621,6 +621,7 @@ PanelWindow {
     property bool _togglingVisibility: false
     property bool _mruFrozen: false
     property string _commitAddr: ""
+    property double _commitAddrDeadline: 0
     property string _pendingSpawnAppId: ""
     property string _pendingSpawnAddr: ""
 
@@ -637,6 +638,7 @@ PanelWindow {
         window.overlayActive = true;
         window._mruFrozen = true;
         window._commitAddr = "";
+        window._commitAddrDeadline = 0;
         window.log("openSwitcher: _mruFrozen=true");
         window._pendingSpawnAppId = "";
         window._pendingSpawnAddr = "";
@@ -750,6 +752,14 @@ PanelWindow {
             if (!t) return;
             var appId = (t.wayland && t.wayland.appId) ? t.wayland.appId : "unknown";
             var addr = window.normalizeAddress(t.address);
+            // Timeout: if the committed window never received focus
+            // (dispatch was a silent no-op), force-unfreeze after 2s.
+            if (window._mruFrozen && window._commitAddrDeadline && Date.now() > window._commitAddrDeadline) {
+                window._mruFrozen = false;
+                window._commitAddr = "";
+                window._commitAddrDeadline = 0;
+                log("activeToplevelChanged: TIMEOUT force-unfreeze");
+            }
             if (window._mruFrozen && addr !== window._commitAddr) {
                 log("activeToplevelChanged: BLOCKED addr=" + addr.substring(addr.length-6) + " app=" + appId + " commitAddr=" + (window._commitAddr ? window._commitAddr.substring(window._commitAddr.length-6) : "none"));
                 return;

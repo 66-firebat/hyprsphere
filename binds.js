@@ -207,6 +207,7 @@ function commitSelection(window, closeSequence) {
 
     if (addr) {
         window._commitAddr = addr.indexOf("0x") === 0 ? addr : "0x" + addr;
+        window._commitAddrDeadline = Date.now() + 2000;
         window.log("commitSelection: _commitAddr=" + window._commitAddr.substring(window._commitAddr.length-6) + " mruFrozen=" + window._mruFrozen);
         window.moveToFront(window._commitAddr);
         window.log("commitSelection: focusHistory[0..3] after moveToFront: " + window.focusHistory.slice(0,4).map(function(e){return e.appId.substring(0,10) + "-" + e.address.substring(e.address.length-4)}).join(", "));
