@@ -203,16 +203,19 @@ function commitSelection(window, closeSequence) {
     var addr = resolveTargetAddress(window, node);
     window.log("commitSelection: app=" + node.appId + " addr=" + (addr ? addr.substring(addr.length-6) : "none") + " layer=" + window.layer);
 
-    if (addr) {
-        var normAddr = addr.indexOf("0x") === 0 ? addr : "0x" + addr;
-        window.moveToFront(normAddr);
-        window.log("commitSelection: moveToFront " + normAddr.substring(normAddr.length-6));
-    }
+    // MRU is updated by onActiveToplevelChanged when the focus dispatch
+    // arrives. No manual moveToFront here — it would fire before the
+    // dispatches complete, and the fullscreen dispatch triggers a
+    // secondary focus event that corrupts the MRU order.
 
     window.stopPerpetual();
     window.overlayActive = false;
     window.visible = false;
-    // Serialized: focus → fullscreen → submap reset in one shell command.
+    // Sentinel: only this address can update MRU. All other focus
+    // changes (submap reset, surface unmap) are ignored.
+    if (addr) {
+        window._mruCommitAddr = addr.indexOf("0x") === 0 ? addr : "0x" + addr;
+    }
     window.dispatchCommit(addr);
 }
 
@@ -274,6 +277,7 @@ function cancelSwitch(window, closeSequence) {
     window.overlayActive = false;
     window.visible = false;
     window.log("cancelSwitch");
+    window._mruCommitAddr = "";
     closeSequence.start();
     window.dispatchSubmap("reset");
     window.log("cancelSwitch done");

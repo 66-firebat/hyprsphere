@@ -95,15 +95,11 @@ PanelWindow {
         var p = _prefix(addr);
         var fullAddr = p + addr;
         log("dispatchCommit: fullAddr=" + fullAddr + " len=" + fullAddr.length);
-        // Serialize focus → fullscreen → submap reset into a single
-        // shell command. Three independent execDetached calls would
-        // race at Hyprland's IPC socket — the submap reset could
-        // arrive before the focus dispatch.
-        var cmd = "hyprctl dispatch 'hl.dsp.focus({window=\"address:" + p + addr + "\"})'";
-        if (window.cfg.fullscreenOnActivate) {
-            cmd += " && hyprctl dispatch 'hl.dsp.window.fullscreen({ mode = \"maximized\", action = \"set\", window = \"address:" + p + addr + "\" })'";
-        }
-        cmd += " && hyprctl eval 'hl.dispatch(hl.dsp.submap(\"reset\"))'";
+        // Serialized: submap reset FIRST, then focus.
+        // Fullscreen is intentionally NOT included — it causes Hyprland
+        // to refocus a different window, corrupting MRU order.
+        var cmd = "hyprctl eval 'hl.dispatch(hl.dsp.submap(\"reset\"))'";
+        cmd += " && hyprctl dispatch 'hl.dsp.focus({window=\"address:" + p + addr + "\"})'";
         Quickshell.execDetached(["bash", "-c", cmd]);
     }
 
@@ -642,6 +638,7 @@ PanelWindow {
     property bool _togglingVisibility: false
     property string _pendingSpawnAppId: ""
     property string _pendingSpawnAddr: ""
+    property string _mruCommitAddr: ""
 
     // ══════════════════════════════════════════════════════════════════════════
     // OPEN / REBUILD
@@ -654,6 +651,8 @@ PanelWindow {
         window.searchQuery = "";
         window.focusable = true;
         window.overlayActive = true;
+    window._mruCommitAddr = "blocked";
+    window.log("openSwitcher: MRU blocked");
         window._pendingSpawnAppId = "";
         window._pendingSpawnAddr = "";
 
@@ -764,8 +763,21 @@ PanelWindow {
         function onActiveToplevelChanged() {
             var t = Hyprland.activeToplevel;
             if (!t) return;
-            var appId = (t.wayland && t.wayland.appId) ? t.wayland.appId : "unknown";
             var addr = window.normalizeAddress(t.address);
+            // Sentinel-based MRU: "blocked" = overlay open (ignore all),
+            // "0x..." = commit pending (only match exact addr),
+            // "" = normal operation (track all).
+            if (window._mruCommitAddr === "blocked") return;
+            if (window._mruCommitAddr) {
+                if (addr === window._mruCommitAddr) {
+                    window.moveToFront(addr);
+                    window._mruCommitAddr = "";
+                    log("activeToplevelChanged: COMMIT-MATCH addr=" + addr.substring(addr.length-6));
+                }
+                return;
+            }
+            // Normal operation — track all focus changes.
+            var appId = (t.wayland && t.wayland.appId) ? t.wayland.appId : "unknown";
             log("activeToplevelChanged: addr=" + addr.substring(addr.length-6) + " app=" + appId);
             window.moveToFront(addr);
             log("focusHistory[0..3]: " + window.focusHistory.slice(0,4).map(function(e){return e.appId.substring(0,10) + "-" + e.address.substring(e.address.length-4)}).join(", "));
