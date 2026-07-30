@@ -9,7 +9,12 @@
 
 ---
 
-## Finding 1 (CRITICAL): `reconcileFocusHistory()` uses stale toplevel data inside `scheduleRebuild()`
+## Finding 1 ✅ RESOLVED: `reconcileFocusHistory()` uses stale toplevel data inside `scheduleRebuild()`
+
+> **Status:** Fixed via Timer-based deferral (see `patches/bug-reconcile-stale-toplevels.md`).
+> `scheduleRebuild()` now calls `Hyprland.refreshToplevels()` then starts a
+> `refreshDelayTimer` (66ms, configurable via `toplevelRefreshDelayMs`). When
+> the Timer fires, `reconcileFocusHistory()` runs with guaranteed-fresh data.
 
 ### What it is
 
@@ -527,15 +532,151 @@ to distinguish spawn-triggered rebuilds from others.
 
 ---
 
+## Finding 9 ✅ RESOLVED: "Local History" ghost nodes from toplevels with empty Wayland appId
+
+> **Status:** Fixed. See `patches/bug-local-history.md` for full details.
+> `reconcileFocusHistory` Phase 3 now skips toplevels with empty `appId`.
+> `buildLayer0()` and `buildSearchDatabase()` also filter empty-`appId` entries
+> as safety nets.
+
+---
+
+## Finding 10 ❌ REJECTED: `dispatchFocus` dispatcher may not switch workspaces
+
+> **Status:** Rejected — incorrect diagnosis. The Lua dispatcher
+> `hl.dsp.focus({window="address:0x..."})` correctly switches workspaces.
+> The `focuswindow` old-style dispatcher attempted as a fix does not work
+> in the user's Hyprland version and broke all window switching.
+> Reverted to original `hl.dsp.focus`.
+
+### What it is
+
+`dispatchFocus()` uses Hyprland's Lua dispatcher:
+
+```javascript
+Quickshell.execDetached(["hyprctl", "dispatch",
+    'hl.dsp.focus({window="address:' + p + addr + '"})']);
+```
+
+The Lua dispatcher `hl.dsp.focus({window="address:0x..."})` may be
+**workspace-scoped** — it focuses the window only if it's on the current
+workspace. If the target window is on a different workspace, the dispatch
+is a silent no-op.
+
+### Evidence
+
+User reports: "If I physically move to that workspace, then I can
+see/focus on the window, but sometimes I cannot do this through hyprsphere."
+
+### Proposed fix
+
+Use Hyprland's old-style `focuswindow` dispatcher, which explicitly
+switches to the window's workspace:
+
+```javascript
+function dispatchFocus(addr) {
+    if (!addr) { log("dispatchFocus: no addr"); return; }
+    var p = _prefix(addr);
+    // focuswindow dispatcher reliably switches workspace
+    Quickshell.execDetached(["hyprctl", "dispatch",
+        "focuswindow address:" + p + addr]);
+}
+```
+
+---
+
+## Finding 11 (HIGH): `dispatchFocus`, `dispatchFullscreen`, and `dispatchSubmap` race via independent `execDetached` calls
+
+### What it is
+
+In `commitSelection()`, three separate `execDetached` calls fire in
+sequence but execute asynchronously:
+
+```javascript
+window.dispatchFocus(addr);          // Process A: hyprctl dispatch focuswindow ...
+if (cfg.fullscreenOnActivate)
+    window.dispatchFullscreen(addr); // Process B: hyprctl dispatch fullscreen ...
+window.dispatchSubmap("reset");      // Process C: hyprctl eval submap reset
+```
+
+Each spawns an independent `hyprctl` process. They connect to Hyprland's
+IPC socket in an **indeterminate order** — process scheduling determines
+which arrives first.
+
+If the fullscreen dispatch (B) arrives before the focus dispatch (A),
+the fullscreen command targets a window that isn't focused yet and may
+fail or produce side effects. If the submap reset (C) arrives first,
+Hyprland exits the submap before processing the focus dispatch.
+
+### Proposed fix
+
+Serialize the exit sequence into a single shell command:
+
+```javascript
+var p = _prefix(addr);
+var cmd = 'hyprctl dispatch focuswindow address:' + p + addr;
+if (window.cfg.fullscreenOnActivate) {
+    cmd += ' && hyprctl dispatch \'hl.dsp.window.fullscreen({ mode = "maximized", action = "set", window = "address:' + p + addr + '" })\'';
+}
+cmd += ' && hyprctl eval \'hl.dispatch(hl.dsp.submap("reset"))\'';
+Quickshell.execDetached(["bash", "-c", cmd]);
+```
+
+This guarantees: focus first → fullscreen second → submap reset last.
+
+---
+
+## Finding 12 (MEDIUM): `dispatchFocus` silently exits on empty address, leaving `_mruFrozen` locked
+
+### What it is
+
+If `resolveTargetAddress()` returns a falsy address (empty string, null,
+undefined — e.g. if the node's `address` property is missing), `dispatchFocus`
+returns immediately:
+
+```javascript
+function dispatchFocus(addr) {
+    if (!addr) { log("dispatchFocus: no addr"); return; }   // ← silent exit
+    // ...
+}
+```
+
+But `commitSelection()` has already set `overlayActive = false`,
+`visible = false`, and called `dispatchSubmap("reset")`. The overlay is
+gone, but `_mruFrozen` remains `true` with `_commitAddr = ""`.
+
+In `onActiveToplevelChanged`, the unfreeze gate checks:
+
+```javascript
+if (window._mruFrozen && addr !== window._commitAddr) { return; }   // "" !== "" → false
+if (window._mruFrozen && addr === window._commitAddr) {             // "" === "" → true
+    window._mruFrozen = false;   // ← unfreezes immediately
+}
+```
+
+Actually, this is a **self-correcting** edge case: the NEXT focus change
+will have `addr = "" === _commitAddr = ""` → unfreezes. So this is not as
+severe as Finding 3.
+
+### Proposed fix
+
+Covered by the timeout-based unfreeze proposed in Finding 3.
+
+---
+
 ## Summary Table
 
-| # | Severity | Symptom | Root cause | Proposed fix |
-|---|---|---|---|---|
-| 1 | CRITICAL | New window sometimes missing from sphere | `reconcileFocusHistory` uses stale toplevel data in `scheduleRebuild` | Add second `Qt.callLater` deferral between `refreshToplevels` and `reconcile` |
-| 2 | HIGH | New window in `focusHistory` but invisible in sphere | `openwindow` only triggers rebuild when `_pendingSpawnAppId` matches | Always call `scheduleRebuild()` on `openwindow` |
-| 3 | HIGH | Commit silently fails, MRU stuck | `_mruFrozen` never cleared if `dispatchFocus` is no-op | Add timeout-based unfreeze or clear `_mruFrozen` in `commitSelection` |
-| 4 | MEDIUM | Latent address corruption | `addToFront` doesn't handle decimal addresses | Use canonical `normalizeAddress()` in all ingestors |
-| 5 | MEDIUM | `_pendingSpawnAppId` consumed by closewindow rebuild | Unnecessary rebuild triggered on irrelevant close | Skip rebuild when close had no effect |
-| 6 | MEDIUM | Duplicate Firefox nodes, wrong commit target | Case-sensitive whitelist dedup | Case-insensitive comparison |
-| 7 | LOW | Overlay never opens | Infinite retry on icon-read failure | Add retry counter |
-| 8 | LOW | Spawn-tracking state consumed by unrelated rebuild | `_pendingSpawnAppId` cleared unconditionally | Only clear when consumed or timeout |
+| # | Severity | Symptom | Root cause | Proposed fix | Status |
+|---|---|---|---|---|---|
+| 1 | CRITICAL | New window sometimes missing from sphere | `reconcileFocusHistory` uses stale toplevel data in `scheduleRebuild` | Timer-based deferral (66ms) | ✅ FIXED |
+| 2 | HIGH | New window in `focusHistory` but invisible in sphere | `openwindow` only triggers rebuild when `_pendingSpawnAppId` matches | Always call `scheduleRebuild()` on `openwindow` | |
+| 3 | HIGH | Commit silently fails, MRU stuck | `_mruFrozen` never cleared if `dispatchFocus` is no-op | Add timeout-based unfreeze or clear `_mruFrozen` in `commitSelection` | |
+| 4 | MEDIUM | Latent address corruption | `addToFront` doesn't handle decimal addresses | Use canonical `normalizeAddress()` in all ingestors | |
+| 5 | MEDIUM | `_pendingSpawnAppId` consumed by closewindow rebuild | Unnecessary rebuild triggered on irrelevant close | Skip rebuild when close had no effect | |
+| 6 | MEDIUM | Duplicate Firefox nodes, wrong commit target | Case-sensitive whitelist dedup | Case-insensitive comparison | |
+| 7 | LOW | Overlay never opens | Infinite retry on icon-read failure | Add retry counter | |
+| 8 | LOW | Spawn-tracking state consumed by unrelated rebuild | `_pendingSpawnAppId` cleared unconditionally | Only clear when consumed or timeout | |
+| 9 | HIGH | Ghost "Local History" nodes with broken icon | Phase 3 added toplevels with empty appId to focusHistory | Skip toplevels with empty appId in Phase 3, buildLayer0, and buildSearchDatabase | ✅ FIXED |
+| 10 | HIGH | Can't switch to window on different workspace | `hl.dsp.focus` dispatcher may not switch workspaces | Use old-style `focuswindow address:0x...` dispatcher | |
+| 11 | HIGH | Dispatchers race in commitSelection exit sequence | Three independent `execDetached` calls unordered | Serialize into single shell command | |
+| 12 | MEDIUM | dispatchFocus exits silently on empty addr | `addr` can be falsy if node.address is missing | Timeout unfreeze (same as #3) | |

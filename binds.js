@@ -215,12 +215,10 @@ function commitSelection(window, closeSequence) {
     window.stopPerpetual();
     window.overlayActive = false;
     window.visible = false;
-    window.dispatchFocus(addr);
-    if (window.cfg.fullscreenOnActivate) window.dispatchFullscreen(addr);
+    // Serialized: focus → fullscreen → submap reset in one shell command.
     // onActiveToplevelChanged unfreezes when the committed window's focus
-    // event arrives. No deferred unfreeze needed — the guard blocks
-    // auto-restore and lets only the committed window's event through.
-    window.dispatchSubmap("reset");
+    // event arrives.
+    window.dispatchCommit(addr);
 }
 
 // ── Close Selection (Ctrl+C) ──────────────────────────────────────────────

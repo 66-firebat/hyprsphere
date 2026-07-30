@@ -90,6 +90,21 @@ PanelWindow {
             'hl.dsp.window.fullscreen({ mode = "maximized", action = "set", window = "address:' + p + addr + '" })']);
     }
 
+    function dispatchCommit(addr) {
+        if (!addr) { log("dispatchCommit: no addr"); return; }
+        var p = _prefix(addr);
+        // Serialize focus → fullscreen → submap reset into a single
+        // shell command. Three independent execDetached calls would
+        // race at Hyprland's IPC socket — the submap reset could
+        // arrive before the focus dispatch.
+        var cmd = "hyprctl dispatch 'hl.dsp.focus({window=\"address:" + p + addr + "\"})'";
+        if (window.cfg.fullscreenOnActivate) {
+            cmd += " && hyprctl dispatch 'hl.dsp.window.fullscreen({ mode = \"maximized\", action = \"set\", window = \"address:" + p + addr + "\" })'";
+        }
+        cmd += " && hyprctl eval 'hl.dispatch(hl.dsp.submap(\"reset\"))'";
+        Quickshell.execDetached(["bash", "-c", cmd]);
+    }
+
     function dispatchClose(addr) {
         if (!addr) return;
         var p = _prefix(addr);
