@@ -224,83 +224,19 @@ if (event.name === "openwindow") {
 
 ---
 
-## Finding 3 (HIGH): `_mruFrozen` can become permanently stuck at `true`
+## Finding 3 ✅ RESOLVED: MRU corrupted by intermediate focus events during commit
 
-### What it is
-
-When committing a selection, `_mruFrozen` is **not** cleared.
-It stays `true` even after the overlay closes:
-
-```javascript
-// binds.js — commitSelection()
-window._commitAddr = addr;          // address we expect focus on
-window.stopPerpetual();
-window.overlayActive = false;
-window.visible = false;
-window.dispatchFocus(addr);        // focus dispatch — may fail silently
-window.dispatchSubmap("reset");
-// NOTE: _mruFrozen is NOT set to false here
-```
-
-The unfreeze is delegated to `onActiveToplevelChanged`:
-
-```javascript
-// shell.qml — onActiveToplevelChanged
-if (window._mruFrozen && addr !== window._commitAddr) {
-    return;  // ← BLOCK all focus changes
-}
-if (window._mruFrozen && addr === window._commitAddr) {
-    window._mruFrozen = false;     // ← UNFREEZE (only here)
-    window._commitAddr = "";
-}
-```
-
-If `dispatchFocus(addr)` is a silent no-op (window in a transitional
-state, Firefox content not loaded, address subtly wrong), the
-`activeToplevelChanged` event **never** fires for that address.
-`_mruFrozen` stays `true`. All subsequent real focus changes are
-blocked, and `focusHistory` stops tracking reality.
-
-### Impact
-
-While `_mruFrozen` is stuck:
-- `onActiveToplevelChanged` blocks all `moveToFront()` calls
-- `focusHistory` diverges from reality — new focus changes don't move
-  windows to the front
-- The **current** overlay session's commit is silently broken
-
-On the **next** Alt+Tab, `openSwitcher()` calls `reconcileFocusHistory()`
-which cross-references against `Hyprland.toplevels` — this **corrects**
-the stale `focusHistory` by removing closed windows and adding missing
-ones. So the corruption doesn't carry between sessions, but the session
-where it happened is broken.
-
-### Proposed fix
-
-Add a safety timeout: if `_commitAddr` is set and the corresponding
-`activeToplevelChanged` hasn't arrived within a reasonable window
-(e.g., 2 seconds), auto-clear `_mruFrozen`:
-
-```javascript
-// In commitSelection(), after setting _commitAddr:
-window._commitAddr = addr;
-window._mruUnfreezeTimer = Date.now() + 2000;  // deadline
-
-// In onActiveToplevelChanged, add a fallback:
-if (window._mruFrozen && window._mruUnfreezeTimer && Date.now() > window._mruUnfreezeTimer) {
-    window._mruFrozen = false;
-    window._commitAddr = "";
-    window._mruUnfreezeTimer = 0;
-    log("mruFrozen: TIMEOUT — force-unfroze");
-}
-// ... then the normal commit-addr check
-```
-
-Alternatively, simply set `_mruFrozen = false` in `commitSelection()`
-after the dispatch, and accept that the committed window's
-`activeToplevelChanged` may fire and update focusHistory (which is
-actually the desired behavior — the committed window should become
-MRU-most).
+> **Status:** Fixed. The `_mruFrozen` / `_commitAddr` mechanism was completely
+> removed and replaced with a **sentinel string** `_mruCommitAddr` with three states:
+>
+> - `""` (empty) — normal operation, all focus changes update MRU
+> - `"blocked"` — overlay is open, all focus changes ignored
+> - `"0x..."` (an address) — commit just happened, only this exact address can update MRU
+>
+> `commitSelection` sets the sentinel to the committed address. `onActiveToplevelChanged`
+> only calls `moveToFront` when the incoming addr matches the sentinel, then clears it.
+> All intermediate noise (submap reset, surface unmap auto-refocus, fullscreen side
+> effects) is silently ignored. No timers, no addr-matching gymnastics, no stuck states.
 
 ---
 
@@ -658,9 +594,33 @@ Actually, this is a **self-correcting** edge case: the NEXT focus change
 will have `addr = "" === _commitAddr = ""` → unfreezes. So this is not as
 severe as Finding 3.
 
-### Proposed fix
+> **Status:** ✅ Resolved — covered by sentinel fix (Finding 3).
 
-Covered by the timeout-based unfreeze proposed in Finding 3.
+---
+
+## Finding 11 ✅ RESOLVED: `dispatchFocus`, `dispatchFullscreen`, and `dispatchSubmap` race via independent `execDetached` calls
+
+> **Status:** Fixed. `commitSelection` now calls `dispatchCommit(addr)`, which
+> serializes submap reset → focus into a single `bash -c "cmd1 && cmd2"` shell
+> command. Fullscreen was removed from the serialized command because it causes
+> Hyprland to refocus a different window, corrupting MRU.
+
+---
+
+## Finding 13 ✅ RESOLVED: Truncated addresses from `openwindow` events
+
+> **Status:** Fixed. `_resolveFullAddress(addr)` is called in the `openwindow`
+> handler before `addToFront`. It scans `Hyprland.toplevels.values` for a
+> matching suffix and returns the full address. This prevents `0x89afca6f28`
+> (truncated) from being stored when the real address is `0x59135989afca6f28`.
+
+---
+
+## Finding 14 ✅ RESOLVED: Drill-down MRU corruption
+
+> **Status:** Fixed by the same sentinel mechanism as Finding 3. When committing
+> at layer 1 (drill-down), only the committed address can update MRU. All
+> intermediate focus noise from submap reset and surface unmap is absorbed.
 
 ---
 
@@ -670,13 +630,15 @@ Covered by the timeout-based unfreeze proposed in Finding 3.
 |---|---|---|---|---|---|
 | 1 | CRITICAL | New window sometimes missing from sphere | `reconcileFocusHistory` uses stale toplevel data in `scheduleRebuild` | Timer-based deferral (66ms) | ✅ FIXED |
 | 2 | HIGH | New window in `focusHistory` but invisible in sphere | `openwindow` only triggers rebuild when `_pendingSpawnAppId` matches | Always call `scheduleRebuild()` on `openwindow` | |
-| 3 | HIGH | Commit silently fails, MRU stuck | `_mruFrozen` never cleared if `dispatchFocus` is no-op | Add timeout-based unfreeze or clear `_mruFrozen` in `commitSelection` | |
+| 3 | HIGH | MRU corrupted by intermediate focus events during commit | `onActiveToplevelChanged` processed all focus noise from submap reset, surface unmap, fullscreen | Replace `_mruFrozen` with sentinel `_mruCommitAddr` — only the committed address can update MRU | ✅ FIXED |
 | 4 | MEDIUM | Latent address corruption | `addToFront` doesn't handle decimal addresses | Use canonical `normalizeAddress()` in all ingestors | |
 | 5 | MEDIUM | `_pendingSpawnAppId` consumed by closewindow rebuild | Unnecessary rebuild triggered on irrelevant close | Skip rebuild when close had no effect | |
 | 6 | MEDIUM | Duplicate Firefox nodes, wrong commit target | Case-sensitive whitelist dedup | Case-insensitive comparison | |
 | 7 | LOW | Overlay never opens | Infinite retry on icon-read failure | Add retry counter | |
 | 8 | LOW | Spawn-tracking state consumed by unrelated rebuild | `_pendingSpawnAppId` cleared unconditionally | Only clear when consumed or timeout | |
 | 9 | HIGH | Ghost "Local History" nodes with broken icon | Phase 3 added toplevels with empty appId to focusHistory | Skip toplevels with empty appId in Phase 3, buildLayer0, and buildSearchDatabase | ✅ FIXED |
-| 10 | HIGH | Can't switch to window on different workspace | `hl.dsp.focus` dispatcher may not switch workspaces | Use old-style `focuswindow address:0x...` dispatcher | |
-| 11 | HIGH | Dispatchers race in commitSelection exit sequence | Three independent `execDetached` calls unordered | Serialize into single shell command | |
-| 12 | MEDIUM | dispatchFocus exits silently on empty addr | `addr` can be falsy if node.address is missing | Timeout unfreeze (same as #3) | |
+| 10 | HIGH | Can't switch to window on different workspace | `hl.dsp.focus` dispatcher may not switch workspaces | Use old-style `focuswindow address:0x...` dispatcher | ❌ REJECTED |
+| 11 | HIGH | Dispatchers race in commitSelection exit sequence | Three independent `execDetached` calls unordered | Serialize into single `dispatchCommit` shell command | ✅ FIXED |
+| 12 | MEDIUM | dispatchFocus exits silently on empty addr | `addr` can be falsy if node.address is missing | Covered by sentinel fix (#3) | ✅ FIXED |
+| 13 | HIGH | Truncated addresses from openwindow events | `openwindow` event gives shortened hex, `dispatchFocus` needs full address | `_resolveFullAddress` maps short → full via `Hyprland.toplevels` | ✅ FIXED |
+| 14 | HIGH | Drill-down MRU corruption | Commit at layer 1 caused double moveToFront from fullscreen/submap reset noise | Same sentinel fix (#3) — only committed addr updates MRU | ✅ FIXED |
