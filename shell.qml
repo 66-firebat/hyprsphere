@@ -95,11 +95,13 @@ PanelWindow {
         var p = _prefix(addr);
         var fullAddr = p + addr;
         log("dispatchCommit: fullAddr=" + fullAddr + " len=" + fullAddr.length);
-        // Serialized: submap reset FIRST, then focus.
-        // Fullscreen is intentionally NOT included — it causes Hyprland
-        // to refocus a different window, corrupting MRU order.
+        // Serialized: submap reset → (fullscreen) → focus.
+        // Focus runs last — matches sentinel, updates MRU, clears sentinel.
         var cmd = "hyprctl eval 'hl.dispatch(hl.dsp.submap(\"reset\"))'";
         cmd += " && hyprctl dispatch 'hl.dsp.focus({window=\"address:" + p + addr + "\"})'";
+        if (window.cfg.fullscreenOnActivate) {
+            cmd += " && hyprctl dispatch 'hl.dsp.window.fullscreen({ mode = \"maximized\", action = \"set\", window = \"address:" + p + addr + "\" })'";
+        }
         Quickshell.execDetached(["bash", "-c", cmd]);
     }
 
