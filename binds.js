@@ -176,8 +176,7 @@ function commitSelection(window, closeSequence) {
     if (!node || node.isPlaceholder) {
         window.stopPerpetual();
         window.overlayActive = false;
-        window.log("commitSelection: placeholder unfreeze");
-    window._mruFrozen = false;
+        window.log("commitSelection: placeholder close");
         closeSequence.start();
         window.dispatchSubmap("reset");
         return;
@@ -187,8 +186,7 @@ function commitSelection(window, closeSequence) {
         window.focusable = false;
         window.stopPerpetual();
         window.overlayActive = false;
-        window.log("commitSelection: whitelist placeholder unfreeze");
-    window._mruFrozen = false;
+        window.log("commitSelection: whitelist placeholder close");
         if (window.cfg.fullscreenOnActivate) {
             window.dispatchExec(node.exec);
             window.dispatchFocusByClass(node.appId);
@@ -206,19 +204,15 @@ function commitSelection(window, closeSequence) {
     window.log("commitSelection: app=" + node.appId + " addr=" + (addr ? addr.substring(addr.length-6) : "none") + " layer=" + window.layer);
 
     if (addr) {
-        window._commitAddr = addr.indexOf("0x") === 0 ? addr : "0x" + addr;
-        window._commitAddrDeadline = Date.now() + 2000;
-        window.log("commitSelection: _commitAddr=" + window._commitAddr.substring(window._commitAddr.length-6) + " mruFrozen=" + window._mruFrozen);
-        window.moveToFront(window._commitAddr);
-        window.log("commitSelection: focusHistory[0..3] after moveToFront: " + window.focusHistory.slice(0,4).map(function(e){return e.appId.substring(0,10) + "-" + e.address.substring(e.address.length-4)}).join(", "));
+        var normAddr = addr.indexOf("0x") === 0 ? addr : "0x" + addr;
+        window.moveToFront(normAddr);
+        window.log("commitSelection: moveToFront " + normAddr.substring(normAddr.length-6));
     }
 
     window.stopPerpetual();
     window.overlayActive = false;
     window.visible = false;
     // Serialized: focus → fullscreen → submap reset in one shell command.
-    // onActiveToplevelChanged unfreezes when the committed window's focus
-    // event arrives.
     window.dispatchCommit(addr);
 }
 
@@ -279,9 +273,8 @@ function cancelSwitch(window, closeSequence) {
     window.stopPerpetual();
     window.overlayActive = false;
     window.visible = false;
-    window.log("cancelSwitch: unfreeze MRU");
-    window._mruFrozen = false;
+    window.log("cancelSwitch");
     closeSequence.start();
     window.dispatchSubmap("reset");
-    window.log("cancelSwitch");
+    window.log("cancelSwitch done");
 }
