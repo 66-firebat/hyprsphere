@@ -93,6 +93,8 @@ PanelWindow {
     function dispatchCommit(addr) {
         if (!addr) { log("dispatchCommit: no addr"); return; }
         var p = _prefix(addr);
+        var fullAddr = p + addr;
+        log("dispatchCommit: fullAddr=" + fullAddr + " len=" + fullAddr.length);
         // Serialize focus → fullscreen → submap reset into a single
         // shell command. Three independent execDetached calls would
         // race at Hyprland's IPC socket — the submap reset could
@@ -228,6 +230,25 @@ PanelWindow {
                 return t.title;
         }
         return "";
+    }
+
+    // Resolve a potentially truncated address from the openwindow event
+    // to its full form from Hyprland.toplevels. The event socket
+    // sometimes gives shortened addresses (e.g. "89afca6f28") while
+    // hyprctl clients -j and dispatchFocus expect the full form
+    // (e.g. "0x59135989afca6f28").
+    function _resolveFullAddress(shortAddr) {
+        if (!shortAddr) return shortAddr;
+        var tls = Hyprland.toplevels;
+        var arr = (tls && tls.values) || [];
+        for (var i = 0; i < arr.length; i++) {
+            var full = window.normalizeAddress(arr[i].address);
+            if (full && full.substring(full.length - shortAddr.length) === shortAddr) {
+                return full;
+            }
+        }
+        log("_resolveFullAddress: no match for " + shortAddr + ", returning as-is");
+        return shortAddr;
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -759,6 +780,10 @@ PanelWindow {
                 if (parts.length >= 3) {
                     var addr = parts[0];
                     if (addr.indexOf("0x") !== 0) addr = "0x" + addr;
+                    // Resolve full address — openwindow events sometimes
+                    // give truncated addresses that don't match hyprctl
+                    // clients or dispatchFocus.
+                    addr = window._resolveFullAddress(addr);
                     var appId = parts[2];
                     if (!appId) return;
                     window.addToFront(addr, appId, "");
