@@ -1474,6 +1474,46 @@ PanelWindow {
                                     Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
                                 }
 
+                                // MRU index badge anchored to the satellite icon
+                                Item {
+                                    id: satBadge
+                                    anchors.horizontalCenter: satIcon.horizontalCenter
+                                    anchors.bottom: satIcon.bottom
+                                    anchors.bottomMargin: window.s(6)
+                                    width: satBadgeLabel.width + window.s(14)
+                                    height: satBadgeLabel.height + window.s(14)
+                                    z: 10
+                                    visible: {
+                                        var n = window.sphereModel[window.selectedAppIndex];
+                                        return !!(n && n.isWindowNode && !n.isPlaceholder);
+                                    }
+
+                                    Rectangle {
+                                        anchors.fill: parent
+                                        radius: height / 2
+                                        color: "#2b2b2b"
+                                    }
+
+                                    Text {
+                                        id: satBadgeLabel
+                                        anchors.centerIn: parent
+                                        text: {
+                                            var n = window.sphereModel[window.selectedAppIndex];
+                                            if (!n || !n.isWindowNode) return "";
+                                            if (n.badgeIndex) return String(n.badgeIndex);
+                                            var winList = window.windowsForApp ? window.windowsForApp(n.appId) : [];
+                                            var oi = winList.indexOf(n.address || "");
+                                            return String(oi >= 0 ? oi + 1 : "");
+                                        }
+                                        font.family: "JetBrains Mono"
+                                        font.pixelSize: window.s(cfg.appCard?.windowCountBadge?.fontSize ?? 16)
+                                        font.weight: Font.Bold
+                                        color: "#ff4400"
+                                        horizontalAlignment: Text.AlignHCenter
+                                        verticalAlignment: Text.AlignVCenter
+                                    }
+                                }
+
                                 Rectangle {
                                     id: satLabelBg
                                     anchors.horizontalCenter: parent.horizontalCenter
@@ -1533,47 +1573,6 @@ PanelWindow {
                 }
             }
 
-            // ── Static badge on sphere (doesn't rotate with card) ──
-            Item {
-                id: satBadge
-                anchors.centerIn: parent
-                width: satBadgeLabel.width + window.s(14)
-                height: satBadgeLabel.height + window.s(14)
-                visible: {
-                    var n = window.sphereModel[window.selectedAppIndex];
-                    return n && n.isWindowNode && !n.isPlaceholder;
-                }
-
-                Rectangle {
-                    anchors.fill: parent
-                    radius: height / 2
-                    color: "transparent"
-                }
-
-                Text {
-                    id: satBadgeLabel
-                    anchors.centerIn: parent
-                    text: {
-                        var n = window.sphereModel[window.selectedAppIndex];
-                        if (!n || !n.isWindowNode) return "";
-                        var idx = n.badgeIndex;
-                        if (!idx) {
-                            var winList = window.windowsForApp ? window.windowsForApp(n.appId) : [];
-                            var oi = winList.indexOf(n.address || "");
-                            idx = oi >= 0 ? oi + 1 : 0;
-                        }
-                        var total = window.windowsForApp ? window.windowsForApp(n.appId).length : 0;
-                        return window.bracketIcon(idx, total);
-                    }
-                    font.family: "JetBrainsMonoNL Nerd Font Mono"
-                    font.pixelSize: window.baseSphereRadius * (cfg.sphere?.badgeRadiusRatio ?? 0.4)
-                    font.weight: Font.Bold
-                    color: cfg.sphere?.badgeColor ?? "#2b2b2b"
-                    opacity: cfg.sphere?.badgeOpacity ?? 0.5
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                }
-            }
         }
     }
 
