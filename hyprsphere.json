@@ -187,6 +187,12 @@
       "exec": "ghostty"
     },
     {
+      "appId": "element",
+      "label": "Element",
+      "icon": "element-desktop",
+      "exec": "element"
+    },
+    {
       "appId": "gimp",
       "label": "GIMP",
       "icon": "gimp",
