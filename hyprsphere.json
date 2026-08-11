@@ -189,8 +189,8 @@
     {
       "appId": "element",
       "label": "Element",
-      "icon": "element-desktop",
-      "exec": "element"
+      "icon": "element",
+      "exec": "element-desktop"
     },
     {
       "appId": "gimp",
