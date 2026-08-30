@@ -76,20 +76,6 @@ PanelWindow {
 
     function _prefix(addr) { return addr.indexOf("0x") === 0 ? "" : "0x"; }
 
-    function dispatchFocus(addr) {
-        if (!addr) { log("dispatchFocus: no addr"); return; }
-        var p = _prefix(addr);
-        Quickshell.execDetached(["hyprctl", "dispatch",
-            'hl.dsp.focus({window="address:' + p + addr + '"})']);
-    }
-
-    function dispatchFullscreen(addr) {
-        if (!addr) return;
-        var p = _prefix(addr);
-        Quickshell.execDetached(["hyprctl", "dispatch",
-            'hl.dsp.window.fullscreen({ mode = "maximized", action = "set", window = "address:' + p + addr + '" })']);
-    }
-
     function dispatchCommit(addr) {
         if (!addr) { log("dispatchCommit: no addr"); return; }
         var p = _prefix(addr);
@@ -669,7 +655,6 @@ PanelWindow {
     // ══════════════════════════════════════════════════════════════════════════
 
     property bool overlayActive: false
-    property bool _togglingVisibility: false
     property string _pendingSpawnAppId: ""
     property string _pendingSpawnAddr: ""
     property string _mruCommitAddr: ""
@@ -889,7 +874,7 @@ PanelWindow {
     IpcHandler {
         target: "hyprsphere"
         function toggle(): void {
-            if (window.overlayActive && !window._togglingVisibility) {
+            if (window.overlayActive) {
                 Binds.advance(window, 1);
                 return;
             }
