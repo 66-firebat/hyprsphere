@@ -1493,7 +1493,7 @@ PanelWindow {
                                             var winList = window.windowsForApp ? window.windowsForApp(n.appId) : [];
                                             var idx = winList.indexOf(n.address || "");
                                             if (idx < 0) idx = 0;
-                                            return " " + idx + "-" + winList.length + " ";
+                                            return " " + idx + "/" + winList.length + " ";
                                         }
                                         font.family: "JetBrainsMono Nerd Font Mono"
                                         font.pixelSize: window.s(cfg.appCard?.windowCountBadge?.fontSize ?? 12)
