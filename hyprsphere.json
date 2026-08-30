@@ -118,7 +118,7 @@
   },
 
   "appCard": {
-    "satelliteAppLabel": false,
+    "satelliteAppLabel": true,
     "labelBgOpacity": 0.5,
     "labelBgColor": "#ff4400",
     "labelTextColor": "#2b2b2b",

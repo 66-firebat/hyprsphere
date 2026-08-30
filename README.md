@@ -518,24 +518,18 @@ of the repository's `shell.qml`.
 
 ## Known Limitations
 
-### Held Tab does not cycle when `focusOnTab` is enabled
+### Peek snapshot matching is title-based
 
-When `focusOnTab: true`, each Tab press dispatches `hyprctl dispatch focus`
-to preview the target window behind the overlay. To prevent the target window
-from stealing keyboard focus from the overlay, the overlay briefly hides and
-reappears via a visibility toggle (`visible=false` → `visible=true`). During
-this toggle cycle, the compositor cannot deliver key events to the overlay
-surface. Any Tab key events received during this window are either lost or
-intercepted by Hyprland's global keybinds, causing the resulting IPC
-`advance()` call to be blocked by the `_togglingVisibility` guard.
+The peek feature (a snapshot of the selected window shown behind the sphere)
+captures the window via Quickshell's `ScreencopyView`, which uses Hyprland's
+`hyprland-toplevel-export-v1` protocol. That capture API accepts a
+*foreign-toplevel handle* — which exposes only `appId` + `title`, **not** the
+window's unique `0x…` address — so hyprsphere matches the selected node to a
+capture handle by **`appId` + `title`**.
 
-The practical effect is that **holding Tab to rapidly cycle through the
-sphere does not work** when `focusOnTab` is enabled. Each advance requires
-a distinct press-release-press cycle of the Tab key.
-
-**Workaround:** Press and release Tab individually for each advance.
-Or set `"focusOnTab": false` to disable live preview and restore
-held-Tab cycling (at the cost of losing the live window preview).
+In the rare case that two windows of the *same app* have *identical titles*
+(e.g. two Firefox windows both titled "New Tab"), the snapshot may show the
+wrong one. This is a known limitation; see `TODO.md` for proposed fixes.
 
 ---
 

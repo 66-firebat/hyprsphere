@@ -333,11 +333,20 @@ PanelWindow {
     // Icons from Nerd Fonts (Fira Code progress indicators): U+F143F..U+F144A
     function bracketIcon(badgeIndex, total) {
         if (!badgeIndex || !total || total < 1) return "";
-        var step = Math.ceil((badgeIndex / total) * 12);   // 1..12
-        if (step < 1) step = 1;
-        if (step > 12) step = 12;
-        // Fira Code progress indicators (Nerd Font): U+F143F..U+F144A
-        return String.fromCharCode(0xF143E + step);
+        var x = badgeIndex / total;
+        // Explicit 12-step mapping (most-recent → least-recent):
+        if (x <= 1/12)  return "󱑊";   // U+F144A
+        if (x <= 2/12)  return "󱐿";   // U+F143F
+        if (x <= 3/12)  return "󱑀";   // U+F1440
+        if (x <= 4/12)  return "󱑁";   // U+F1441
+        if (x <= 5/12)  return "󱑂";   // U+F1442
+        if (x <= 6/12)  return "󱑃";   // U+F1443
+        if (x <= 7/12)  return "󱑄";   // U+F1444
+        if (x <= 8/12)  return "󱑅";   // U+F1445
+        if (x <= 9/12)  return "󱑆";   // U+F1446
+        if (x <= 10/12)  return "󱑇";   // U+F1447
+        if (x <= 11/12)  return "󱑈";   // U+F1448
+        return "󱑉";                    // U+F1449 (11/12–12/12)
     }
 
     Process {
@@ -1485,7 +1494,7 @@ PanelWindow {
                                             var pos = n.badgeIndex || (winList.indexOf(n.address || "") + 1);
                                             return window.bracketIcon(pos, winList.length);
                                         }
-                                        font.family: "JetBrains Mono"
+                                        font.family: "JetBrainsMono Nerd Font"
                                         font.pixelSize: window.s(cfg.appCard?.windowCountBadge?.fontSize ?? 16)
                                         font.weight: Font.Bold
                                         color: "#ff4400"
