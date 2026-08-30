@@ -1469,7 +1469,7 @@ PanelWindow {
                                     id: satBadge
                                     anchors.horizontalCenter: satIcon.horizontalCenter
                                     anchors.verticalCenter: satIcon.verticalCenter
-                                    anchors.verticalCenterOffset: window.s(-50)
+                                    anchors.verticalCenterOffset: 38
                                     width: satBadgeLabel.width + window.s(14)
                                     height: satBadgeLabel.height + window.s(14)
                                     z: 10
@@ -1481,7 +1481,7 @@ PanelWindow {
                                     Rectangle {
                                         anchors.fill: parent
                                         radius: height / 2
-                                        color: "transparent"
+                                        color: "#2b2b2b"
                                     }
 
                                     Text {
@@ -1493,10 +1493,10 @@ PanelWindow {
                                             var winList = window.windowsForApp ? window.windowsForApp(n.appId) : [];
                                             var idx = winList.indexOf(n.address || "");
                                             if (idx < 0) idx = 0;
-                                            return "[" + idx + "/" + winList.length + "]";
+                                            return " " + idx + "-" + winList.length + " ";
                                         }
                                         font.family: "JetBrainsMono Nerd Font Mono"
-                                        font.pixelSize: window.s(cfg.appCard?.windowCountBadge?.fontSize ?? 18)
+                                        font.pixelSize: window.s(cfg.appCard?.windowCountBadge?.fontSize ?? 12)
                                         font.weight: Font.Bold
                                         color: "#ff4400"
                                         horizontalAlignment: Text.AlignHCenter
