@@ -1468,8 +1468,8 @@ PanelWindow {
                                 Item {
                                     id: satBadge
                                     anchors.horizontalCenter: satIcon.horizontalCenter
-                                    anchors.bottom: satIcon.bottom
-                                    anchors.bottomMargin: window.s(6)
+                                    anchors.verticalCenter: satIcon.verticalCenter
+                                    anchors.verticalCenterOffset: window.s(-60)
                                     width: satBadgeLabel.width + window.s(14)
                                     height: satBadgeLabel.height + window.s(14)
                                     z: 10
@@ -1481,7 +1481,7 @@ PanelWindow {
                                     Rectangle {
                                         anchors.fill: parent
                                         radius: height / 2
-                                        color: "#2b2b2b"
+                                        color: "transparent"
                                     }
 
                                     Text {
@@ -1494,8 +1494,8 @@ PanelWindow {
                                             var pos = n.badgeIndex || (winList.indexOf(n.address || "") + 1);
                                             return window.bracketIcon(pos, winList.length);
                                         }
-                                        font.family: "JetBrainsMono Nerd Font"
-                                        font.pixelSize: window.s(cfg.appCard?.windowCountBadge?.fontSize ?? 16)
+                                        font.family: "JetBrainsMono Nerd Font Mono"
+                                        font.pixelSize: window.s(cfg.appCard?.windowCountBadge?.fontSize ?? 36)
                                         font.weight: Font.Bold
                                         color: "#ff4400"
                                         horizontalAlignment: Text.AlignHCenter
