@@ -167,6 +167,20 @@ PanelWindow {
         return result;
     }
 
+    // --- Derivation: windows of an app as { address, title } objects ---
+    function windowsOf(appId) {
+        var result = [];
+        for (var i = 0; i < focusHistory.length; i++) {
+            if (focusHistory[i].appId !== appId) continue;
+            var addr = focusHistory[i].address;
+            result.push({
+                address: addr,
+                title: focusHistory[i].title || window._resolveTitle(addr) || appId,
+            });
+        }
+        return result;
+    }
+
     // --- Mutation: move to front (on focus or commit) ---
     function moveToFront(address) {
         if (!address) return;
@@ -261,6 +275,47 @@ PanelWindow {
         return "0x" + addr;
     }
 
+    // ── Peek: resolve a window (appId + title) to its foreign-toplevel handle ──
+    function resolveForeignToplevel(appId, title) {
+        if (!appId) return null;
+        var tm = ToplevelManager.toplevels;
+        var arr = (tm && tm.values) || [];
+        var fallback = null;
+        for (var i = 0; i < arr.length; i++) {
+            var t = arr[i];
+            if (!t || t.appId !== appId) continue;
+            if (t.title === title) return t;          // exact match
+            if (!fallback) fallback = t;              // remember first same-appId fallback
+        }
+        return fallback;                              // ambiguous title → best-effort
+    }
+
+    // ── Peek: snapshot the selected node's window (keyboard-driven only) ──
+    function refreshPeek() {
+        if (cfg.peek?.enabled !== true) {
+            peekView.captureSource = null;
+            return;
+        }
+        var node = sphereModel[window.selectedAppIndex];
+        if (!node || node.isPlaceholder || node.isWhitelistPlaceholder) {
+            log("refreshPeek: placeholder node — clearing snapshot");
+            peekView.captureSource = null;
+            return;
+        }
+        var appId = node.appId || "";
+        var title = node.isWindowNode
+            ? (node.title || "")
+            : (node.windows && node.windows.length ? node.windows[0].title : "");
+        var t = window.resolveForeignToplevel(appId, title);
+        peekView.captureSource = t;
+        if (t) {
+            peekView.captureFrame();
+            log("refreshPeek: captured appId=" + appId + " title=\"" + String(title).substring(0, 40) + "\"");
+        } else {
+            log("refreshPeek: NO foreign toplevel for appId=" + appId + " title=\"" + String(title).substring(0, 40) + "\"");
+        }
+    }
+
     // ══════════════════════════════════════════════════════════════════════════
     // ICON & NAME RESOLUTION
     // ══════════════════════════════════════════════════════════════════════════
@@ -288,26 +343,15 @@ PanelWindow {
     }
 
     // ── MRU bracket icon lookup ────────────────────────────────────────────
-    // Maps badgeIndex / totalWindows to a 12-step Nerd Font progress bracket.
-    // Icons from Nerd Font Progress set (U+EE00–U+EE0B):
-    //     ≤1/12,  ≤2/12,  ≤3/12,  ≤4/12,  ≤5/12,  ≤6/12,
-    //     ≤7/12,  ≤8/12,  ≤9/12,  ≤10/12,  ≤11/12,  ≤12/12
-
+    // Maps badgeIndex / totalWindows to the 12-step Fira Code progress set.
+    // Icons from Nerd Fonts (Fira Code progress indicators): U+F143F..U+F144A
     function bracketIcon(badgeIndex, total) {
         if (!badgeIndex || !total || total < 1) return "";
-        var x = badgeIndex / total;
-        if (x <= 1/12)  return "󱑊";
-        if (x <= 2/12)  return "󱐿";
-        if (x <= 3/12)  return "󱑀";
-        if (x <= 4/12)  return "󱑁";
-        if (x <= 5/12)  return "󱑂";
-        if (x <= 6/12)  return "󱑂";
-        if (x <= 7/12)  return "󱑂";
-        if (x <= 8/12)  return "󱑂";
-        if (x <= 9/12)  return "󱑂";
-        if (x <= 10/12) return "󱑂";
-        if (x <= 11/12) return "󱑂";
-        return "\uEE0B";
+        var step = Math.ceil((badgeIndex / total) * 12);   // 1..12
+        if (step < 1) step = 1;
+        if (step > 12) step = 12;
+        // Fira Code progress indicators (Nerd Font): U+F143F..U+F144A
+        return String.fromCharCode(0xF143E + step);
     }
 
     Process {
@@ -428,66 +472,52 @@ PanelWindow {
     function buildLayer0() {
         var result = [];
         var whitelist = cfg.whitelist || [];
-        var seenCounts = {};
+        var order = appOrder();   // unique appIds, MRU-first
 
-        // One node per entry in focusHistory
-        for (var i = 0; i < focusHistory.length; i++) {
-            var entry = focusHistory[i];
-            var appId = entry.appId;
-            // Skip entries with no appId — internal sub-windows that
-            // leak into the toplevel list with no usable metadata.
-            if (!appId) continue;
-            if (!seenCounts[appId]) seenCounts[appId] = 0;
-            seenCounts[appId]++;
-
-            var title = entry.title || window._resolveTitle(entry.address) || appId;
+        // One node per running app group
+        for (var i = 0; i < order.length; i++) {
+            var appId = order[i];
+            var wins = windowsOf(appId);
+            if (wins.length === 0) continue;   // safety net
             result.push({
-                address: entry.address,
                 appId: appId,
-                title: title,
                 label: window.resolveName(appId),
                 icon: window.resolveIcon(appId),
-                isWindowNode: true,
-                badgeIndex: seenCounts[appId],
-                windows: [],
-                windowCount: 0,
+                address: wins[0].address,       // MRU-most → commit + peek target
+                windows: wins,
+                windowCount: wins.length,
+                isWindowNode: false,
+                isAppGroup: true,
             });
         }
 
-        // Append whitelisted placeholders (not already in focusHistory)
+        // Append whitelisted placeholders (dedup case-insensitively)
         for (var w = 0; w < whitelist.length; w++) {
             var entry = whitelist[w];
             var alreadyPresent = false;
-            for (var a = 0; a < focusHistory.length; a++) {
-                if (focusHistory[a].appId === entry.appId) { alreadyPresent = true; break; }
+            for (var a = 0; a < order.length; a++) {
+                if (order[a].toLowerCase() === entry.appId.toLowerCase()) { alreadyPresent = true; break; }
             }
             if (!alreadyPresent) {
                 result.push({
                     appId: entry.appId, label: entry.label, icon: entry.icon,
                     exec: entry.exec, windows: [], windowCount: 0,
+                    isWindowNode: false, isAppGroup: true,
                     isWhitelistPlaceholder: true,
                 });
             }
         }
 
-        log("buildLayer0: " + result.length + " flat nodes, first=" + (result.length > 0 ? result[0].appId + "#" + result[0].badgeIndex : "empty"));
+        log("buildLayer0: " + result.length + " app groups, first=" + (result.length > 0 ? result[0].appId : "empty"));
         return result;
     }
 
     function buildLayer1(appId) {
-        var winAddrs = windowsForApp(appId);
+        var wins = windowsOf(appId);
         var result = [];
-        for (var i = 0; i < winAddrs.length; i++) {
-            var title = "";
-            for (var k = 0; k < focusHistory.length; k++) {
-                if (focusHistory[k].address === winAddrs[i]) {
-                    title = focusHistory[k].title;
-                    break;
-                }
-            }
-            if (!title) title = window._resolveTitle(winAddrs[i]);
+        for (var i = 0; i < wins.length; i++) {
             result.push({
-                address: winAddrs[i], title: title,
+                address: wins[i].address, title: wins[i].title,
                 icon: window.resolveIcon(appId), label: window.resolveName(appId),
                 appId: appId, isWindowNode: true,
             });
@@ -612,6 +642,7 @@ PanelWindow {
         rebuildProjCache();
         centerOnApp(0);
         sphereZoom = cfg.search?.layer2Zoom ?? 1.5;
+        refreshPeek();
         log("_executeSearch: " + layer2Model.length + " results for \"" + searchQuery + "\"");
     }
 
@@ -629,6 +660,7 @@ PanelWindow {
             selectedAppIndex = 0;
             centerOnApp(0);
         }
+        refreshPeek();
         log("cancelSearch: returned to layer 0");
     }
 
@@ -683,7 +715,7 @@ PanelWindow {
         sphereModel = raw;
         if (sphereModel.length > 0 && !sphereModel[0].isPlaceholder) {
             // Pre-select index 1 (previous app) if available
-            selectedAppIndex = focusHistory.length >= 2 ? 1 : 0;
+            selectedAppIndex = sphereModel.length >= 2 ? 1 : 0;
             if (selectedAppIndex < sphereModel.length) {
                 centerOnApp(selectedAppIndex);
             }
@@ -694,6 +726,7 @@ PanelWindow {
         initFuseIndex();
 
         window.visible = true;
+        refreshPeek();
         Qt.callLater(function() { scheduleRebuild(); });
 
         log("finishOpenSwitcher: " + sphereModel.length + " nodes, pre-selected index " + selectedAppIndex);
@@ -748,10 +781,15 @@ PanelWindow {
                 centerOnApp(0);
             }
         } else {
+            var prevAppId = sphereModel[selectedAppIndex]
+                ? sphereModel[selectedAppIndex].appId : null;
             sphereModel = raw.length === 0
                 ? [{ label: "No windows", icon: "", appId: "", windows: [], isPlaceholder: true }]
                 : raw;
-            selectedAppIndex = Math.min(sphereModel.length - 1, selectedAppIndex);
+            selectedAppIndex = 0;
+            for (var ri = 0; ri < sphereModel.length; ri++) {
+                if (sphereModel[ri].appId === prevAppId) { selectedAppIndex = ri; break; }
+            }
             centerOnApp(selectedAppIndex);
         }
     }
@@ -1035,6 +1073,7 @@ PanelWindow {
             projDirty = true;
             rebuildProjCache();
             focusGrabber.forceActiveFocus();
+            window.refreshPeek();
         }
     }
 
@@ -1113,7 +1152,9 @@ PanelWindow {
     }
 
     onOverlayActiveChanged: {
-        // no-op: perpetual effects handle their own lifecycle
+        // Clear the peek snapshot whenever the overlay closes so the capture
+        // buffer is released (all close paths set overlayActive = false).
+        if (!overlayActive) peekView.captureSource = null;
     }
 
     function centerOnApp(index) {
@@ -1177,10 +1218,6 @@ PanelWindow {
                 var dir = (event.modifiers & Qt.ShiftModifier || event.key === Qt.Key_Backtab) ? -1 : 1;
                 Binds.advance(window, dir);
                 event.accepted = true;
-            } else if (event.key === Qt.Key_Backslash || event.key === Qt.Key_Bar) {
-                var dir = (event.key === Qt.Key_Bar || (event.modifiers & Qt.ShiftModifier)) ? -1 : 1;
-                Binds.slashPreview(window, dir);
-                event.accepted = true;
             } else if (event.key === Qt.Key_Semicolon) {
                 Binds.drillDown(window);
                 event.accepted = true;
@@ -1210,6 +1247,20 @@ PanelWindow {
                 event.accepted = true;
             }
         }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // PEEK BACKDROP — snapshot of the selected window (behind the sphere)
+    // ══════════════════════════════════════════════════════════════════════════
+    ScreencopyView {
+        id: peekView
+        anchors.centerIn: parent
+        z: -1
+        live: false
+        paintCursor: false
+        opacity: window.introPhase
+        captureSource: null
+        constraintSize: Qt.size(window.width, window.height)
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -1350,7 +1401,7 @@ PanelWindow {
                                 visible: {
                                     if (!window.showNonSelectedLabel()) return false;
                                     var n = window.sphereModel[index];
-                                    return n && n.isWindowNode;
+                                    return n && !n.isPlaceholder;
                                 }
                                 color: "transparent"
 
@@ -1375,61 +1426,6 @@ PanelWindow {
                             }
                         }
 
-                        // Window count / index badge
-                        Item {
-                            id: windowBadge
-                            anchors.horizontalCenter: cardIcon.horizontalCenter
-                            anchors.verticalCenter: cardIcon.verticalCenter
-                            anchors.horizontalCenterOffset: window.s(cfg.appCard?.windowCountBadge?.offsetX ?? -60)
-                            anchors.verticalCenterOffset: window.s(cfg.appCard?.windowCountBadge?.offsetY ?? 0)
-                            width: badgeLabel.width + window.s(cfg.appCard?.windowCountBadge?.padding ?? 14)
-                            height: badgeLabel.height + window.s(cfg.appCard?.windowCountBadge?.padding ?? 14)
-                            visible: false
-
-                            Rectangle {
-                                anchors.fill: parent
-                                radius: height / 2
-                                color: {
-                                    var n = window.sphereModel[index];
-                                    return n && n.isWindowNode
-                                        ? (cfg.appCard?.windowCountBadge?.windowBgColor ?? "#ff4400")
-                                        : (cfg.appCard?.windowCountBadge?.bgColor ?? "#2b2b2b");
-                                }
-                                opacity: {
-                                    var n = window.sphereModel[index];
-                                    return n && n.isWindowNode
-                                        ? (cfg.appCard?.windowCountBadge?.windowBgOpacity ?? 0.5)
-                                        : (cfg.appCard?.windowCountBadge?.bgOpacity ?? 0.5);
-                                }
-                            }
-
-                            Text {
-                                id: badgeLabel
-                                anchors.centerIn: parent
-                                text: {
-                                    var n = window.sphereModel[index];
-                                    if (!n) return "";
-                                    if (n.isWindowNode) {
-                                        if (n.badgeIndex) return String(n.badgeIndex);
-                                        var winList = window.windowsForApp ? window.windowsForApp(n.appId) : [];
-                                        var oi = winList.indexOf(n.address || "");
-                                        return String(oi >= 0 ? oi + 1 : "");
-                                    }
-                                    return "";
-                                }
-                                font.family: "JetBrains Mono"
-                                font.pixelSize: window.s(cfg.appCard?.windowCountBadge?.fontSize ?? 18)
-                                font.weight: Font.Bold
-                                color: {
-                                    var n = window.sphereModel[index];
-                                    return n && n.isWindowNode
-                                        ? (cfg.appCard?.windowCountBadge?.windowColor ?? "#2b2b2b")
-                                        : (cfg.appCard?.windowCountBadge?.color ?? "#ff4400");
-                                }
-                                horizontalAlignment: Text.AlignHCenter
-                                verticalAlignment: Text.AlignVCenter
-                            }
-                        }
                     }
 
                     // ── Satellite (selected card) ──────────────────────
@@ -1500,10 +1496,9 @@ PanelWindow {
                                         text: {
                                             var n = window.sphereModel[window.selectedAppIndex];
                                             if (!n || !n.isWindowNode) return "";
-                                            if (n.badgeIndex) return String(n.badgeIndex);
                                             var winList = window.windowsForApp ? window.windowsForApp(n.appId) : [];
-                                            var oi = winList.indexOf(n.address || "");
-                                            return String(oi >= 0 ? oi + 1 : "");
+                                            var pos = n.badgeIndex || (winList.indexOf(n.address || "") + 1);
+                                            return window.bracketIcon(pos, winList.length);
                                         }
                                         font.family: "JetBrains Mono"
                                         font.pixelSize: window.s(cfg.appCard?.windowCountBadge?.fontSize ?? 16)

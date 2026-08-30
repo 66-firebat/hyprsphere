@@ -127,7 +127,7 @@
     "cardBorderColor": "transparent",
     "windowIconOpacity": 1.0,
     "nonSelectedLayerLabels": {
-      "layer_0": false,
+      "layer_0": true,
       "layer_1": true,
       "layer_2": true
     }
@@ -201,8 +201,11 @@
   ],
 
   "fullscreenOnActivate": true,
-  "focusOnTab": false,
   "debug": true,
+
+  "peek": {
+    "enabled": true
+  },
 
   "misc": {}
 }

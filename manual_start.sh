@@ -56,7 +56,9 @@ fi
 # ── Launch ────────────────────────────────────────────────────────────────
 
 echo "Launching quickshell..."
-quickshell &
+LOG_FILE="$QUICKSHELL_DIR/hyprsphere.log"
+quickshell > "$LOG_FILE" 2>&1 &
+echo "Logs: $LOG_FILE"
 
 for i in $(seq 1 10); do
     if qs list --all 2>/dev/null | grep -q "shell.qml"; then

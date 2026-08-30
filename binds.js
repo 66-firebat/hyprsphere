@@ -13,13 +13,12 @@
 
 function resolveTargetAddress(window, node) {
     if (!node || node.isPlaceholder || node.isWhitelistPlaceholder) return "";
-    // Layer 0 and layer 2 now have individual window nodes (isWindowNode=true).
-    // For window nodes, target is the window itself. For app group nodes
-    // (layer 2 only, whitelisted placeholders), target is MRU-most window.
+    // Window nodes (layers 1/2) target the window itself. App-group nodes
+    // (layer 0) target the MRU-most window.
     if (node.isWindowNode) {
         return node.address || "";
     }
-    // App-level node (whitelisted placeholder at layer 2): target MRU-most
+    // App-group node: target MRU-most window
     var addrs = window.windowsForApp ? window.windowsForApp(node.appId) : [];
     return addrs.length >= 1 ? addrs[0] : "";
 }
@@ -36,28 +35,8 @@ function advance(window, dir) {
     else if (next >= count) next = wrap ? 0 : count - 1;
     window.selectedAppIndex = next;
     window.centerOnApp(next);
+    window.refreshPeek();
     window.log("advance: dir=" + dir + " idx=" + next + " app=" + window.sphereModel[next].appId + " layer=" + window.layer);
-}
-
-// ── Slash Preview (\ key) ─────────────────────────────────────────────────
-
-function slashPreview(window, dir) {
-    advance(window, dir);
-    var node = window.sphereModel[window.selectedAppIndex];
-    var addr = resolveTargetAddress(window, node);
-    if (addr) {
-        window.dispatchFocus(addr);
-        if (window.visible) {
-            window._togglingVisibility = true;
-            window.visible = false;
-            Qt.callLater(function() {
-                window.visible = true;
-                window._togglingVisibility = false;
-            });
-        }
-        if (window.cfg.maximizeOnSlash && addr) window.dispatchFullscreen(addr);
-    }
-    window.log("slashPreview: dir=" + dir + " addr=" + (addr ? addr.substring(addr.length-6) : "none"));
 }
 
 // ── Drill-Down (;) ────────────────────────────────────────────────────────
@@ -93,14 +72,15 @@ function drillDown(window) {
         window.projDirty = true;
         window.rebuildProjCache();
         window.centerOnApp(window.selectedAppIndex);
+        window.refreshPeek();
         window.log("drillDown 0→1: app=" + selNode.appId + " wasAddr=" + (wasAddr ? wasAddr.substring(wasAddr.length-6) : "none") + " sel=" + window.selectedAppIndex);
 
     } else if (window.layer === 2) {
-        // Layer 2 → Layer 0: return to flat window list, select the same
-        // window by address that we were on in the search results.
+        // Layer 2 → Layer 0: return to app-group list, select the app that
+        // owns the window we were viewing in the search results.
         var searchNode = window.sphereModel[window.selectedAppIndex];
         if (!searchNode || searchNode.isPlaceholder) return;
-        var targetAddr = searchNode.address || "";
+        var targetAppId = searchNode.appId || "";
 
         window.layer = 0;
         window.drilledAppId = "";
@@ -113,11 +93,11 @@ function drillDown(window) {
         window.rebuildProjCache();
         window.sphereZoom = 1.0;
 
-        // Select by address (exact window match)
+        // Select by appId (app-group match)
         var matched = false;
-        if (targetAddr) {
+        if (targetAppId) {
             for (var _si = 0; _si < window.sphereModel.length; _si++) {
-                if (window.sphereModel[_si].address === targetAddr) {
+                if (window.sphereModel[_si].appId === targetAppId) {
                     window.selectedAppIndex = _si;
                     window.centerOnApp(_si);
                     matched = true;
@@ -129,13 +109,14 @@ function drillDown(window) {
             window.selectedAppIndex = 0;
             window.centerOnApp(0);
         }
-        window.log("drillDown 2→0: addr=" + (targetAddr ? targetAddr.substring(targetAddr.length-6) : "none") + (matched ? " selected" : " not found, fallback to 0"));
+        window.refreshPeek();
+        window.log("drillDown 2→0: app=" + targetAppId + (matched ? " selected" : " not found, fallback to 0"));
 
     } else {
-        // Layer 1 → Layer 0: return to flat window list, select the same
-        // window we were viewing by address.
-        var returnAddr = window.sphereModel[window.selectedAppIndex]
-            ? window.sphereModel[window.selectedAppIndex].address : null;
+        // Layer 1 → Layer 0: return to app-group list, select the app we
+        // were drilling into.
+        var returnAppId = window.sphereModel[window.selectedAppIndex]
+            ? window.sphereModel[window.selectedAppIndex].appId : null;
         window.layer = 0;
         window.drilledAppId = "";
         var raw = window.buildLayer0();
@@ -146,11 +127,11 @@ function drillDown(window) {
         window.rebuildProjCache();
         window.sphereZoom = 1.0;
 
-        // Select by address (exact window match)
+        // Select by appId (app-group match)
         var matched = false;
-        if (returnAddr) {
+        if (returnAppId) {
             for (var _si = 0; _si < window.sphereModel.length; _si++) {
-                if (window.sphereModel[_si].address === returnAddr) {
+                if (window.sphereModel[_si].appId === returnAppId) {
                     window.selectedAppIndex = _si;
                     window.centerOnApp(_si);
                     matched = true;
@@ -162,7 +143,8 @@ function drillDown(window) {
             window.selectedAppIndex = 0;
             window.centerOnApp(0);
         }
-        window.log("drillDown 1→0: addr=" + (returnAddr ? returnAddr.substring(returnAddr.length-6) : "none") + (matched ? " selected" : " not found, fallback to 0"));
+        window.refreshPeek();
+        window.log("drillDown 1→0: app=" + returnAppId + (matched ? " selected" : " not found, fallback to 0"));
     }
 }
 
@@ -236,7 +218,7 @@ function closeSelection(window) {
         // Individual window node (layer 0, 1, or 2): close the specific window
         window.dispatchClose(node.address);
     } else {
-        // App-level node (layer 2 whitelisted placeholder): close all windows
+        // App-group node (layer 0): close all windows
         for (var w = 0; w < node.windows.length; w++)
             window.dispatchClose(node.windows[w].address);
     }
