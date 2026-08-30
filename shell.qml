@@ -1469,7 +1469,7 @@ PanelWindow {
                                     id: satBadge
                                     anchors.horizontalCenter: satIcon.horizontalCenter
                                     anchors.verticalCenter: satIcon.verticalCenter
-                                    anchors.verticalCenterOffset: window.s(-60)
+                                    anchors.verticalCenterOffset: window.s(-50)
                                     width: satBadgeLabel.width + window.s(14)
                                     height: satBadgeLabel.height + window.s(14)
                                     z: 10
@@ -1491,11 +1491,12 @@ PanelWindow {
                                             var n = window.sphereModel[window.selectedAppIndex];
                                             if (!n || !n.isWindowNode) return "";
                                             var winList = window.windowsForApp ? window.windowsForApp(n.appId) : [];
-                                            var pos = n.badgeIndex || (winList.indexOf(n.address || "") + 1);
-                                            return window.bracketIcon(pos, winList.length);
+                                            var idx = winList.indexOf(n.address || "");
+                                            if (idx < 0) idx = 0;
+                                            return "[" + idx + "/" + winList.length + "]";
                                         }
                                         font.family: "JetBrainsMono Nerd Font Mono"
-                                        font.pixelSize: window.s(cfg.appCard?.windowCountBadge?.fontSize ?? 36)
+                                        font.pixelSize: window.s(cfg.appCard?.windowCountBadge?.fontSize ?? 18)
                                         font.weight: Font.Bold
                                         color: "#ff4400"
                                         horizontalAlignment: Text.AlignHCenter
