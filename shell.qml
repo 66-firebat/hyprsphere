@@ -1501,7 +1501,7 @@ PanelWindow {
                                     Rectangle {
                                         anchors.fill: parent
                                         radius: height / 2
-                                        color: "#2b2b2b"
+                                        color: "#ff4400"
                                     }
 
                                     Text {
@@ -1518,7 +1518,7 @@ PanelWindow {
                                         font.family: "JetBrainsMono Nerd Font Mono"
                                         font.pixelSize: window.s(cfg.appCard?.windowCountBadge?.fontSize ?? 12)
                                         font.weight: Font.Bold
-                                        color: "#ff4400"
+                                        color: "#2b2b2b"
                                         horizontalAlignment: Text.AlignHCenter
                                         verticalAlignment: Text.AlignVCenter
                                     }
