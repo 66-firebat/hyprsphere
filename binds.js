@@ -153,6 +153,7 @@ function drillDown(window) {
 function commitSelection(window, closeSequence) {
     if (!window.overlayActive) return;
     if (closeSequence.running) return;
+    if (window.commitFading) return;
 
     var node = window.sphereModel[window.selectedAppIndex];
     if (!node || node.isPlaceholder) {
@@ -191,14 +192,18 @@ function commitSelection(window, closeSequence) {
     // secondary focus event that corrupts the MRU order.
 
     window.stopPerpetual();
-    window.overlayActive = false;
-    window.visible = false;
     // Sentinel: only this address can update MRU. All other focus
     // changes (submap reset, surface unmap) are ignored.
     if (addr) {
         window._mruCommitAddr = addr.indexOf("0x") === 0 ? addr : "0x" + addr;
     }
+    // Disable input immediately (the fade is purely visual).
+    window.focusable = false;
+    // Dispatch focus immediately (async) — completes during the fade.
     window.dispatchCommit(addr);
+    // Hide sphere + searchbar instantly, then fade the peek snapshot out.
+    window.introPhase = 0;
+    window.startCommitFade();
 }
 
 // ── Close Selection (Ctrl+C) ──────────────────────────────────────────────

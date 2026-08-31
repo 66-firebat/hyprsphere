@@ -207,5 +207,7 @@
     "enabled": true
   },
 
+  "peekFadeOutMs": 300,
+
   "misc": {}
 }
