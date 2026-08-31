@@ -201,8 +201,7 @@ function commitSelection(window, closeSequence) {
     window.focusable = false;
     // Dispatch focus immediately (async) — completes during the fade.
     window.dispatchCommit(addr);
-    // Hide sphere + searchbar instantly, then fade the peek snapshot out.
-    window.introPhase = 0;
+    // Fade the whole overlay (sphere + searchbar + peek) out, then close.
     window.startCommitFade();
 }
 

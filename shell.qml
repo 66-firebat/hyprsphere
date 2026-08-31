@@ -871,7 +871,6 @@ PanelWindow {
             if (window.visible) {
                 window.sphereZoom = 1.0;
                 introPhaseAnim.restart();
-                peekFadeInAnim.restart();
                 focusGrabber.forceActiveFocus();
             }
         }
@@ -1192,14 +1191,6 @@ PanelWindow {
         from: 0.0; to: 1.0; duration: cfg.animations?.entranceFadeDurationMs ?? 800; easing.type: Easing.OutExpo; running: true
     }
 
-    // Peek snapshot opacity — decoupled from introPhase so the peek can fade
-    // out on commit independently of the sphere (which hides instantly).
-    property real peekOpacity: 0.0
-    NumberAnimation on peekOpacity {
-        id: peekFadeInAnim
-        from: 0.0; to: 1.0; duration: cfg.animations?.entranceFadeDurationMs ?? 800; easing.type: Easing.OutExpo; running: true
-    }
-
     SequentialAnimation {
         id: closeSequence
         NumberAnimation { target: window; property: "introPhase"; to: 0.0; duration: cfg.animations?.exitFadeDurationMs ?? 400; easing.type: Easing.OutQuint }
@@ -1211,12 +1202,13 @@ PanelWindow {
     function startCommitFade() {
         if (commitFading) return;
         commitFading = true;
+        introPhaseAnim.stop();   // stop the entrance animation so it can't fight the fade-out
         commitFade.restart();
     }
 
     SequentialAnimation {
         id: commitFade
-        NumberAnimation { target: window; property: "peekOpacity"; to: 0.0; duration: cfg.peekFadeOutMs ?? 300; easing.type: Easing.OutCubic }
+        NumberAnimation { target: window; property: "introPhase"; to: 0.0; duration: cfg.peekFadeOutMs ?? 300; easing.type: Easing.OutCubic }
         ScriptAction { script: {
             window.overlayActive = false;
             window.visible = false;
@@ -1280,7 +1272,7 @@ PanelWindow {
         z: -1
         live: false
         paintCursor: false
-        opacity: window.peekOpacity
+        opacity: window.introPhase
         captureSource: null
         constraintSize: Qt.size(window.width, window.height)
     }
