@@ -1488,8 +1488,8 @@ PanelWindow {
                                 Item {
                                     id: satBadge
                                     anchors.horizontalCenter: satIcon.horizontalCenter
-                                    anchors.verticalCenter: satIcon.verticalCenter
-                                    anchors.verticalCenterOffset: 38
+                                    anchors.bottom: satIcon.bottom
+                                    anchors.bottomMargin: window.s(6)
                                     width: satBadgeLabel.width + window.s(14)
                                     height: satBadgeLabel.height + window.s(14)
                                     z: 10
