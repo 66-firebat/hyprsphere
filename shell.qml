@@ -464,7 +464,62 @@ PanelWindow {
     property int layer: 0           // 0=apps, 1=windows, 2=search
     property string drilledAppId: ""
 
+    function isGroupedLayer0() {
+        return cfg.layer_0 === "grouped";
+    }
+
     function buildLayer0() {
+        return isGroupedLayer0() ? buildLayer0Grouped() : buildLayer0Flat();
+    }
+
+    function buildLayer0Flat() {
+        var result = [];
+        var whitelist = cfg.whitelist || [];
+        var seenCounts = {};
+
+        // One node per window (flat), MRU-first order from focusHistory
+        for (var i = 0; i < focusHistory.length; i++) {
+            var entry = focusHistory[i];
+            var appId = entry.appId;
+            if (!appId) continue;
+            if (!seenCounts[appId]) seenCounts[appId] = 0;
+            seenCounts[appId]++;
+
+            var title = entry.title || window._resolveTitle(entry.address) || appId;
+            result.push({
+                address: entry.address,
+                appId: appId,
+                title: title,
+                label: window.resolveName(appId),
+                icon: window.resolveIcon(appId),
+                isWindowNode: true,
+                badgeIndex: seenCounts[appId],
+                windows: [],
+                windowCount: 0,
+            });
+        }
+
+        // Append whitelisted placeholders (dedup case-insensitively)
+        for (var w = 0; w < whitelist.length; w++) {
+            var entry2 = whitelist[w];
+            var alreadyPresent = false;
+            for (var a = 0; a < focusHistory.length; a++) {
+                if (focusHistory[a].appId.toLowerCase() === entry2.appId.toLowerCase()) { alreadyPresent = true; break; }
+            }
+            if (!alreadyPresent) {
+                result.push({
+                    appId: entry2.appId, label: entry2.label, icon: entry2.icon,
+                    exec: entry2.exec, windows: [], windowCount: 0,
+                    isWhitelistPlaceholder: true,
+                });
+            }
+        }
+
+        log("buildLayer0: " + result.length + " flat nodes, first=" + (result.length > 0 ? result[0].appId + "#" + result[0].badgeIndex : "empty"));
+        return result;
+    }
+
+    function buildLayer0Grouped() {
         var result = [];
         var whitelist = cfg.whitelist || [];
         var order = appOrder();   // unique appIds, MRU-first
@@ -775,14 +830,17 @@ PanelWindow {
                 centerOnApp(0);
             }
         } else {
-            var prevAppId = sphereModel[selectedAppIndex]
-                ? sphereModel[selectedAppIndex].appId : null;
+            var prevNode = sphereModel[selectedAppIndex] ? sphereModel[selectedAppIndex] : null;
+            var grouped = isGroupedLayer0();
+            var prevKey = prevNode ? (grouped ? prevNode.appId : prevNode.address) : null;
             sphereModel = raw.length === 0
                 ? [{ label: "No windows", icon: "", appId: "", windows: [], isPlaceholder: true }]
                 : raw;
             selectedAppIndex = 0;
             for (var ri = 0; ri < sphereModel.length; ri++) {
-                if (sphereModel[ri].appId === prevAppId) { selectedAppIndex = ri; break; }
+                var n = sphereModel[ri];
+                var hit = grouped ? (n.appId === prevKey) : (n.address === prevKey);
+                if (hit) { selectedAppIndex = ri; break; }
             }
             centerOnApp(selectedAppIndex);
         }

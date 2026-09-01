@@ -1,50 +1,74 @@
 {
   "colors": {
-    "base":      "#1e1e2e",
-    "mantle":    "#181825",
-    "crust":     "#11111b",
-    "surface0":  "#313244",
-    "surface1":  "#45475a",
-    "surface2":  "#585b70",
-    "text":      "#cdd6f4",
-    "subtext0":  "#a6adc8",
-    "blue":      "#89b4fa",
-    "mauve":     "#cba6f7",
-    "teal":      "#94e2d5",
-    "overlay0":  "#6c7086",
-    "peach":     "#fab387",
-    "yellow":    "#f9e2af",
-    "sapphire":  "#74c7ec"
+    "base": "#1e1e2e",
+    "mantle": "#181825",
+    "crust": "#11111b",
+    "surface0": "#313244",
+    "surface1": "#45475a",
+    "surface2": "#585b70",
+    "text": "#cdd6f4",
+    "subtext0": "#a6adc8",
+    "blue": "#89b4fa",
+    "mauve": "#cba6f7",
+    "teal": "#94e2d5",
+    "overlay0": "#6c7086",
+    "peach": "#fab387",
+    "yellow": "#f9e2af",
+    "sapphire": "#74c7ec"
   },
-
   "scaler": {
     "referenceWidth": 1920,
     "minRatio": 0.5,
     "maxRatio": 2.0
   },
-
   "sizes": {
-    "s2": 2, "s3": 3, "s4": 4, "s5": 5, "s8": 8, "s9": 9, "s10": 10,
-    "s11": 11, "s12": 12, "s15": 15, "s16": 16, "s18": 18,
-    "s20": 20, "s28": 28, "s40": 40, "s50": 50, "s55": 55,
-    "s56": 56, "s63": 63, "s74": 74, "s104": 104
+    "s2": 2,
+    "s3": 3,
+    "s4": 4,
+    "s5": 5,
+    "s8": 8,
+    "s9": 9,
+    "s10": 10,
+    "s11": 11,
+    "s12": 12,
+    "s15": 15,
+    "s16": 16,
+    "s18": 18,
+    "s20": 20,
+    "s28": 28,
+    "s40": 40,
+    "s50": 50,
+    "s55": 55,
+    "s56": 56,
+    "s63": 63,
+    "s74": 74,
+    "s104": 104
   },
-
   "satellite": {
-    "hullWidth": 216, "hullHeight": 148,
-    "panelWidth": 64, "panelHeight": 51,
-    "strutWidth": 10, "strutHeight": 4,
-    "antennaHeight": 16, "thrusterHeight": 11,
-    "radius12": 10, "radius8": 7, "radius4": 3,
-    "antBall": 6, "antStick": 2, "antOffX": 14,
-    "screenMargin": 8, "innerMargin": 10,
-    "iconSize": 160, "fontSize": 10,
-    "thrusterBase": 16, "spacing": 5,
+    "hullWidth": 216,
+    "hullHeight": 148,
+    "panelWidth": 64,
+    "panelHeight": 51,
+    "strutWidth": 10,
+    "strutHeight": 4,
+    "antennaHeight": 16,
+    "thrusterHeight": 11,
+    "radius12": 10,
+    "radius8": 7,
+    "radius4": 3,
+    "antBall": 6,
+    "antStick": 2,
+    "antOffX": 14,
+    "screenMargin": 8,
+    "innerMargin": 10,
+    "iconSize": 160,
+    "fontSize": 10,
+    "thrusterBase": 16,
+    "spacing": 5,
     "extraHeight": 11,
     "hullBorderWidth": 1.5,
     "selectedBackground": false
   },
-
   "sphere": {
     "baseRadius": 360,
     "initialZoom": 1.0,
@@ -73,7 +97,6 @@
       }
     }
   },
-
   "animations": {
     "searchRotateDurationMs": 250,
     "cardFadeDurationMs": 200,
@@ -86,11 +109,9 @@
     "exitFadeDurationMs": 400,
     "borderColorDurationMs": 150
   },
-
   "mouse": {
     "dragSensitivity": 0.005
   },
-
   "searchBar": {
     "width": 560,
     "height": 56,
@@ -107,7 +128,6 @@
     "placeholderText": "Search apps and windows...",
     "placeholderColor": "#ff4400"
   },
-
   "search": {
     "delayMs": 150,
     "maxResults": 30,
@@ -116,7 +136,6 @@
     "ignoreLocation": true,
     "layer2Zoom": 1.5
   },
-
   "appCard": {
     "satelliteAppLabel": true,
     "labelBgOpacity": 0.5,
@@ -132,7 +151,6 @@
       "layer_2": true
     }
   },
-
   "cardTilt": {
     "maxAngleX": 45,
     "maxAngleY": 35,
@@ -142,7 +160,6 @@
     "depthOpacityMultiplier": 4.0,
     "nonMatchOpacity": 0.15
   },
-
   "whitelist": [
     {
       "appId": "blender",
@@ -199,15 +216,12 @@
       "exec": "gimp"
     }
   ],
-
   "fullscreenOnActivate": true,
   "debug": true,
-
   "peek": {
     "enabled": true
   },
-
   "peekFadeOutMs": 300,
-
+  "layer_0": "ungrouped",
   "misc": {}
 }

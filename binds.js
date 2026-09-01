@@ -76,11 +76,12 @@ function drillDown(window) {
         window.log("drillDown 0→1: app=" + selNode.appId + " wasAddr=" + (wasAddr ? wasAddr.substring(wasAddr.length-6) : "none") + " sel=" + window.selectedAppIndex);
 
     } else if (window.layer === 2) {
-        // Layer 2 → Layer 0: return to app-group list, select the app that
-        // owns the window we were viewing in the search results.
+        // Layer 2 → Layer 0: return to layer 0, selecting the node matching
+        // the window we were viewing (by appId when grouped, address when ungrouped).
         var searchNode = window.sphereModel[window.selectedAppIndex];
         if (!searchNode || searchNode.isPlaceholder) return;
-        var targetAppId = searchNode.appId || "";
+        var grouped = window.isGroupedLayer0();
+        var targetKey = grouped ? (searchNode.appId || "") : (searchNode.address || "");
 
         window.layer = 0;
         window.drilledAppId = "";
@@ -93,11 +94,13 @@ function drillDown(window) {
         window.rebuildProjCache();
         window.sphereZoom = 1.0;
 
-        // Select by appId (app-group match)
+        // Select by appId (grouped) or address (ungrouped)
         var matched = false;
-        if (targetAppId) {
+        if (targetKey) {
             for (var _si = 0; _si < window.sphereModel.length; _si++) {
-                if (window.sphereModel[_si].appId === targetAppId) {
+                var n = window.sphereModel[_si];
+                var hit = grouped ? (n.appId === targetKey) : (n.address === targetKey);
+                if (hit) {
                     window.selectedAppIndex = _si;
                     window.centerOnApp(_si);
                     matched = true;
@@ -110,13 +113,16 @@ function drillDown(window) {
             window.centerOnApp(0);
         }
         window.refreshPeek();
-        window.log("drillDown 2→0: app=" + targetAppId + (matched ? " selected" : " not found, fallback to 0"));
+        window.log("drillDown 2→0: key=" + targetKey + (matched ? " selected" : " not found, fallback to 0"));
 
     } else {
-        // Layer 1 → Layer 0: return to app-group list, select the app we
-        // were drilling into.
-        var returnAppId = window.sphereModel[window.selectedAppIndex]
-            ? window.sphereModel[window.selectedAppIndex].appId : null;
+        // Layer 1 → Layer 0: return to layer 0, selecting the window we were
+        // viewing (by address when ungrouped, appId when grouped).
+        var returnNode = window.sphereModel[window.selectedAppIndex];
+        var grouped = window.isGroupedLayer0();
+        var returnKey = returnNode
+            ? (grouped ? returnNode.appId : returnNode.address)
+            : null;
         window.layer = 0;
         window.drilledAppId = "";
         var raw = window.buildLayer0();
@@ -127,11 +133,13 @@ function drillDown(window) {
         window.rebuildProjCache();
         window.sphereZoom = 1.0;
 
-        // Select by appId (app-group match)
+        // Select by appId (grouped) or address (ungrouped)
         var matched = false;
-        if (returnAppId) {
+        if (returnKey) {
             for (var _si = 0; _si < window.sphereModel.length; _si++) {
-                if (window.sphereModel[_si].appId === returnAppId) {
+                var n = window.sphereModel[_si];
+                var hit = grouped ? (n.appId === returnKey) : (n.address === returnKey);
+                if (hit) {
                     window.selectedAppIndex = _si;
                     window.centerOnApp(_si);
                     matched = true;
@@ -144,7 +152,7 @@ function drillDown(window) {
             window.centerOnApp(0);
         }
         window.refreshPeek();
-        window.log("drillDown 1→0: app=" + returnAppId + (matched ? " selected" : " not found, fallback to 0"));
+        window.log("drillDown 1→0: key=" + returnKey + (matched ? " selected" : " not found, fallback to 0"));
     }
 }
 
