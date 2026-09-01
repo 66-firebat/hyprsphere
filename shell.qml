@@ -1573,7 +1573,7 @@ PanelWindow {
                                             if (idx < 0) idx = 0;
                                             return " " + (idx + 1) + "/" + winList.length + " ";
                                         }
-                                        font.family: "JetBrainsMono Nerd Font Mono"
+                                        font.family: "JuliaMono"
                                         font.pixelSize: window.s(cfg.appCard?.windowCountBadge?.fontSize ?? 12)
                                         font.weight: Font.Bold
                                         color: "#2b2b2b"
