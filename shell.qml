@@ -1688,8 +1688,8 @@ PanelWindow {
                 Layout.fillHeight: true
                 background: Item {}
                 color: cfg.searchBar?.textColor ?? "#ff4400"
-                font.family: "JetBrains Mono"
-                font.pixelSize: window._s15
+                font.family: "JuliaMono"
+                font.pixelSize: window.s(18)
                 font.weight: Font.Medium
                 selectByMouse: true
                 selectionColor: Qt.rgba(
@@ -1717,9 +1717,9 @@ PanelWindow {
                 Layout.preferredWidth: implicitWidth + window._s16
                 horizontalAlignment: Text.AlignHCenter
                 verticalAlignment: Text.AlignVCenter
-                font.pixelSize: window._s12
+                font.pixelSize: window.s(18)
                 font.weight: Font.Bold
-                font.family: "JetBrains Mono"
+                font.family: "JuliaMono"
                 color: "#ff4400"
                 text: {
                     var n = window.sphereModel[window.selectedAppIndex];
