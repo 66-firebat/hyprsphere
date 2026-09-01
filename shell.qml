@@ -1547,7 +1547,7 @@ PanelWindow {
                                     id: satBadge
                                     anchors.horizontalCenter: satIcon.horizontalCenter
                                     anchors.bottom: satIcon.bottom
-                                    anchors.bottomMargin: window.s(6)
+                                    anchors.bottomMargin: window.s(8)
                                     width: satBadgeLabel.width + window.s(14)
                                     height: satBadgeLabel.height + window.s(14)
                                     z: 10
@@ -1670,7 +1670,7 @@ PanelWindow {
         transform: Translate { y: (1 - window.introPhase) * window._s40 }
         layer.enabled: window.introPhase > 0.01
         layer.effect: MultiEffect {
-            shadowEnabled: true; shadowColor: "#000000"
+            shadowEnabled: false; shadowColor: "#000000"
             shadowOpacity: cfg.searchBar?.shadowOpacity ?? 0.4
             shadowBlur: cfg.searchBar?.shadowBlur ?? 1.5
             shadowVerticalOffset: window._s4
@@ -1720,12 +1720,18 @@ PanelWindow {
                 font.pixelSize: window._s12
                 font.weight: Font.Bold
                 font.family: "JetBrains Mono"
-                color: cfg.colors?.crust ?? "#11111b"
-                text: window.sphereModel.length.toString()
-                visible: window.sphereModel.length > 0
+                color: "#ff4400"
+                text: {
+                    var n = window.sphereModel[window.selectedAppIndex];
+                    return n && n.address ? n.address : "";
+                }
+                visible: {
+                    var n = window.sphereModel[window.selectedAppIndex];
+                    return !!(n && n.address);
+                }
                 background: Rectangle {
                     radius: nodeCountBadge.height / 2
-                    color: cfg.searchBar?.textColor ?? "#ff4400"
+                    color: "transparent"
                 }
             }
         }
