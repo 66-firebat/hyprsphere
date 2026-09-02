@@ -1274,6 +1274,11 @@ PanelWindow {
         commitFade.restart();
     }
 
+    function startCancelFade() {
+        introPhaseAnim.stop();   // stop the entrance animation so it can't fight the fade-out
+        closeSequence.restart();
+    }
+
     SequentialAnimation {
         id: commitFade
         NumberAnimation { target: window; property: "introPhase"; to: 0.0; duration: cfg.peekFadeOutMs ?? 300; easing.type: Easing.OutCubic }
@@ -1319,6 +1324,7 @@ PanelWindow {
     }
 
     function cancelIdleFade() {
+        idleFadeOutAnim.stop();
         idleFadeInAnim.stop();
         idleTimer.stop();
     }
@@ -1334,7 +1340,10 @@ PanelWindow {
         Keys.priority: Keys.BeforeItem
 
         Keys.onPressed: (event) => {
-            if (event.key !== Qt.Key_Escape) window.notifyInteraction();
+            var isModifier = (event.key === Qt.Key_Control || event.key === Qt.Key_Alt ||
+                              event.key === Qt.Key_Shift || event.key === Qt.Key_Meta ||
+                              event.key === Qt.Key_CapsLock || event.key === Qt.Key_AltGr);
+            if (!isModifier && event.key !== Qt.Key_Escape) window.notifyInteraction();
             if (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab) {
                 var dir = (event.modifiers & Qt.ShiftModifier || event.key === Qt.Key_Backtab) ? -1 : 1;
                 Binds.advance(window, dir);

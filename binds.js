@@ -272,7 +272,7 @@ function cancelSwitch(window, closeSequence) {
     window.cancelIdleFade();
     window.log("cancelSwitch");
     window._mruCommitAddr = "";
-    closeSequence.start();
+    window.startCancelFade();
     window.dispatchSubmap("reset");
     window.log("cancelSwitch done");
 }
