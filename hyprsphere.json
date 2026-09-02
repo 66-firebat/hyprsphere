@@ -223,5 +223,12 @@
   },
   "peekFadeOutMs": 300,
   "layer_0": "ungrouped",
+  "fadeConfig": {
+    "enabled": true,
+    "fadeOutDelay": 500,
+    "fadeOutDuration": 300,
+    "fadeOutOpacity": 0.15,
+    "fadeInDuration": 100
+  },
   "misc": {}
 }

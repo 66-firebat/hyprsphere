@@ -739,6 +739,9 @@ PanelWindow {
         window._pendingSpawnAppId = "";
         window._pendingSpawnAddr = "";
 
+        window.idleOpacity = 1.0;
+        idleTimer.restart();
+
         dispatchSubmap("hyprsphere");
         Hyprland.refreshToplevels();
         Qt.callLater(function() { finishOpenSwitcher(); });
@@ -1206,7 +1209,14 @@ PanelWindow {
     onOverlayActiveChanged: {
         // Clear the peek snapshot whenever the overlay closes so the capture
         // buffer is released (all close paths set overlayActive = false).
-        if (!overlayActive) peekView.captureSource = null;
+        if (!overlayActive) {
+            peekView.captureSource = null;
+            idleFadeInAnim.stop();
+            idleTimer.stop();
+            // Do NOT reset idleOpacity here — resetting it instantly brightens
+            // the overlay for a frame before close. It is reset on the next
+            // open (openSwitcher) instead.
+        }
     }
 
     function centerOnApp(index) {
@@ -1275,6 +1285,44 @@ PanelWindow {
         } }
     }
 
+    // ── Idle fade-out (fadeConfig) ──────────────────────────────────────────
+    // idleOpacity is a multiplier on top of introPhase: 1.0 = fully opaque,
+    // fades to fadeOutOpacity when idle, back to 1.0 on interaction.
+    property real idleOpacity: 1.0
+
+    NumberAnimation {
+        id: idleFadeOutAnim
+        target: window; property: "idleOpacity"
+        to: cfg.fadeConfig?.fadeOutOpacity ?? 0.15
+        duration: cfg.fadeConfig?.fadeOutDuration ?? 300
+        easing.type: Easing.OutCubic
+    }
+    NumberAnimation {
+        id: idleFadeInAnim
+        target: window; property: "idleOpacity"
+        to: 1.0
+        duration: cfg.fadeConfig?.fadeInDuration ?? 100
+        easing.type: Easing.OutCubic
+    }
+
+    Timer {
+        id: idleTimer
+        interval: cfg.fadeConfig?.fadeOutDelay ?? 500
+        repeat: false
+        onTriggered: idleFadeOutAnim.restart()
+    }
+
+    function notifyInteraction() {
+        if (cfg.fadeConfig?.enabled !== true) return;
+        idleFadeInAnim.restart();   // reverse from current opacity
+        idleTimer.restart();
+    }
+
+    function cancelIdleFade() {
+        idleFadeInAnim.stop();
+        idleTimer.stop();
+    }
+
     // ══════════════════════════════════════════════════════════════════════════
     // KEY HANDLERS — Focus Grabber
     // ══════════════════════════════════════════════════════════════════════════
@@ -1286,6 +1334,7 @@ PanelWindow {
         Keys.priority: Keys.BeforeItem
 
         Keys.onPressed: (event) => {
+            if (event.key !== Qt.Key_Escape) window.notifyInteraction();
             if (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab) {
                 var dir = (event.modifiers & Qt.ShiftModifier || event.key === Qt.Key_Backtab) ? -1 : 1;
                 Binds.advance(window, dir);
@@ -1342,7 +1391,7 @@ PanelWindow {
     Item {
         id: scene3D
         anchors.fill: parent
-        opacity: window.introPhase
+        opacity: window.introPhase * window.idleOpacity
         scale: 0.8 + (0.2 * window.introPhase)
 
         MouseArea {
@@ -1666,7 +1715,7 @@ PanelWindow {
             ? (cfg.searchBar?.activeBorderColor ?? "#ff4400")
             : (cfg.searchBar?.borderColor ?? "#2b2b2b")
         border.width: window.s(cfg.searchBar?.borderWidth ?? 1.5)
-        opacity: window.introPhase
+        opacity: window.introPhase * window.idleOpacity
         transform: Translate { y: (1 - window.introPhase) * window._s40 }
         layer.enabled: window.introPhase > 0.01
         layer.effect: MultiEffect {

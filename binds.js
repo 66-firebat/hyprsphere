@@ -209,7 +209,8 @@ function commitSelection(window, closeSequence) {
     window.focusable = false;
     // Dispatch focus immediately (async) — completes during the fade.
     window.dispatchCommit(addr);
-    // Fade the whole overlay (sphere + searchbar + peek) out, then close.
+    // Stop any in-flight idle fade, then fade the whole overlay out and close.
+    window.cancelIdleFade();
     window.startCommitFade();
 }
 
@@ -268,8 +269,7 @@ function cancelSwitch(window, closeSequence) {
     window.drilledAppId = "";
     window.searchQuery = "";
     window.stopPerpetual();
-    window.overlayActive = false;
-    window.visible = false;
+    window.cancelIdleFade();
     window.log("cancelSwitch");
     window._mruCommitAddr = "";
     closeSequence.start();
