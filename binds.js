@@ -28,6 +28,7 @@ function resolveTargetAddress(window, node) {
 function advance(window, dir) {
     if (window.sphereModel.length === 0) return;
     if (window.sphereModel[0].isPlaceholder) return;
+    window.notifyInteraction();
     var count = window.sphereModel.length;
     var next = window.selectedAppIndex + dir;
     var wrap = window.cfg.cycling?.wrapAround !== false;
@@ -42,6 +43,7 @@ function advance(window, dir) {
 // ── Drill-Down (;) ────────────────────────────────────────────────────────
 
 function drillDown(window) {
+    window.notifyInteraction();
     if (window.layer === 0) {
         // Layer 0 → Layer 1: drill into this app's windows
         var selNode = window.sphereModel[window.selectedAppIndex];

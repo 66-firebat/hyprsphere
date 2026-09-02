@@ -643,6 +643,7 @@ PanelWindow {
     }
 
     function _handleSearchInput(text) {
+        notifyInteraction();
         searchQuery = text;
         if (searchQuery === "" && window.layer === 2) {
             cancelSearch();
@@ -1319,7 +1320,8 @@ PanelWindow {
 
     function notifyInteraction() {
         if (cfg.fadeConfig?.enabled !== true) return;
-        idleFadeInAnim.restart();   // reverse from current opacity
+        idleFadeOutAnim.stop();   // stop the fade-out so it can't fight the fade-in
+        idleFadeInAnim.restart();
         idleTimer.restart();
     }
 
@@ -1340,10 +1342,6 @@ PanelWindow {
         Keys.priority: Keys.BeforeItem
 
         Keys.onPressed: (event) => {
-            var isModifier = (event.key === Qt.Key_Control || event.key === Qt.Key_Alt ||
-                              event.key === Qt.Key_Shift || event.key === Qt.Key_Meta ||
-                              event.key === Qt.Key_CapsLock || event.key === Qt.Key_AltGr);
-            if (!isModifier && event.key !== Qt.Key_Escape) window.notifyInteraction();
             if (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab) {
                 var dir = (event.modifiers & Qt.ShiftModifier || event.key === Qt.Key_Backtab) ? -1 : 1;
                 Binds.advance(window, dir);
