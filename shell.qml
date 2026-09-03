@@ -723,6 +723,7 @@ PanelWindow {
     property string _pendingSpawnAppId: ""
     property string _pendingSpawnAddr: ""
     property string _mruCommitAddr: ""
+    property bool _spawnToggling: false
 
     // ══════════════════════════════════════════════════════════════════════════
     // OPEN / REBUILD
@@ -901,8 +902,12 @@ PanelWindow {
                     if (window._pendingSpawnAppId === appId) {
                         window._pendingSpawnAddr = addr;
                         if (window.visible) {
+                            window._spawnToggling = true;
                             window.visible = false;
-                            Qt.callLater(function() { window.visible = true; });
+                            Qt.callLater(function() {
+                                window.visible = true;
+                                window._spawnToggling = false;
+                            });
                             window.scheduleRebuild();
                         }
                     }
@@ -932,7 +937,9 @@ PanelWindow {
         function onVisibleChanged() {
             if (window.visible) {
                 window.sphereZoom = 1.0;
-                introPhaseAnim.restart();
+                if (!window._spawnToggling) {
+                    introPhaseAnim.restart();
+                }
                 focusGrabber.forceActiveFocus();
             }
         }

@@ -251,6 +251,8 @@ function openNewWindow(window, closeSequence) {
     var appId = node.appId;
     if (!appId) return;
 
+    window.notifyInteraction();   // fade back in so the user can see the new window
+
     var execCmd = node.exec || window.resolveExec(appId) || appId;
 
     if (window.cfg.fullscreenOnActivate) {
