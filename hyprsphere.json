@@ -106,7 +106,7 @@
     "satelliteInitialScale": 0.4,
     "satelliteTargetScale": 1.5,
     "entranceFadeDurationMs": 300,
-    "exitFadeDurationMs": 400,
+    "exitFadeDurationMs": 200,
     "borderColorDurationMs": 150
   },
   "mouse": {

@@ -1262,7 +1262,7 @@ PanelWindow {
 
     SequentialAnimation {
         id: closeSequence
-        NumberAnimation { target: window; property: "introPhase"; to: 0.0; duration: cfg.animations?.exitFadeDurationMs ?? 400; easing.type: Easing.OutQuint }
+        NumberAnimation { target: window; property: "introPhase"; to: 0.0; duration: cfg.animations?.exitFadeDurationMs ?? 200; easing.type: Easing.OutQuint }
         ScriptAction { script: { window.overlayActive = false; window.visible = false; } }
     }
 
