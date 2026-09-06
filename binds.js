@@ -40,6 +40,40 @@ function advance(window, dir) {
     window.log("advance: dir=" + dir + " idx=" + next + " app=" + window.sphereModel[next].appId + " layer=" + window.layer);
 }
 
+// ── Shared drill helper: build the window sphere (layer 1) for an app ──────
+// and pre-select the "other window" — the window NOT matching the address
+// we were just on (a layer 0 node or a search-result window). Used by both
+// the 0→1 and 2→1 drill paths so the "other window" rule stays identical
+// everywhere (see PATCH_3 / PATCH_8; REFACTOR_TESTS D3).
+
+function drillToLayer1(window, appId, wasAddr) {
+    window.layer = 1;
+    window.drilledAppId = appId;
+    window.sphereModel = window.buildLayer1(appId);
+
+    // Pre-select the "other window" — the one NOT matching the address
+    // we were just on.
+    window.selectedAppIndex = 0;
+    if (window.sphereModel.length >= 2 && wasAddr) {
+        var wasIdx = -1;
+        for (var i = 0; i < window.sphereModel.length; i++) {
+            if (window.sphereModel[i].address === wasAddr) {
+                wasIdx = i;
+                break;
+            }
+        }
+        if (wasIdx === 0) window.selectedAppIndex = 1;
+        else if (wasIdx === 1) window.selectedAppIndex = 0;
+        else window.selectedAppIndex = 1;
+    }
+
+    window.sphereZoom = window.cfg.sphere?.layer1Zoom ?? 0.5;
+    window.projDirty = true;
+    window.rebuildProjCache();
+    window.centerOnApp(window.selectedAppIndex);
+    window.refreshPeek();
+}
+
 // ── Drill-Down (;) ────────────────────────────────────────────────────────
 
 function drillDown(window) {
@@ -48,40 +82,29 @@ function drillDown(window) {
         // Layer 0 → Layer 1: drill into this app's windows
         var selNode = window.sphereModel[window.selectedAppIndex];
         if (!selNode || selNode.isPlaceholder || selNode.isWhitelistPlaceholder) return;
-        var wasAddr = selNode.address;  // ← save for "other window" logic
-
-        window.layer = 1;
-        window.drilledAppId = selNode.appId;
-        window.sphereModel = window.buildLayer1(selNode.appId);
-
-        // Pre-select the "other window" — the one NOT matching the address
-        // we were just on at layer 0.
-        window.selectedAppIndex = 0;
-        if (window.sphereModel.length >= 2 && wasAddr) {
-            var wasIdx = -1;
-            for (var i = 0; i < window.sphereModel.length; i++) {
-                if (window.sphereModel[i].address === wasAddr) {
-                    wasIdx = i;
-                    break;
-                }
-            }
-            if (wasIdx === 0) window.selectedAppIndex = 1;
-            else if (wasIdx === 1) window.selectedAppIndex = 0;
-            else window.selectedAppIndex = 1;
-        }
-
-        window.sphereZoom = window.cfg.sphere?.layer1Zoom ?? 0.5;
-        window.projDirty = true;
-        window.rebuildProjCache();
-        window.centerOnApp(window.selectedAppIndex);
-        window.refreshPeek();
-        window.log("drillDown 0→1: app=" + selNode.appId + " wasAddr=" + (wasAddr ? wasAddr.substring(wasAddr.length-6) : "none") + " sel=" + window.selectedAppIndex);
+        drillToLayer1(window, selNode.appId, selNode.address);
+        window.log("drillDown 0→1: app=" + selNode.appId + " wasAddr=" + (selNode.address ? selNode.address.substring(selNode.address.length-6) : "none") + " sel=" + window.selectedAppIndex);
 
     } else if (window.layer === 2) {
-        // Layer 2 → Layer 0: return to layer 0, selecting the node matching
-        // the window we were viewing (by appId when grouped, address when ungrouped).
         var searchNode = window.sphereModel[window.selectedAppIndex];
         if (!searchNode || searchNode.isPlaceholder) return;
+
+        // Restored 2→1 drill (REFACTOR_TESTS D3): a search-result WINDOW node
+        // drills into its app's window sphere (layer 1) with the same "other
+        // window" pre-selection as the 0→1 path. The search is deliberately
+        // NOT saved (no savedLayer2Model/Query round trip — REFACTOR_TESTS
+        // D4): the query is dropped here, so pressing ";" again from layer 1
+        // returns to the plain app list, not back to the search results.
+        if (searchNode.isWindowNode && !searchNode.isWhitelistPlaceholder) {
+            window.searchQuery = "";   // discard the search — no round trip
+            drillToLayer1(window, searchNode.appId, searchNode.address);
+            window.log("drillDown 2→1: app=" + searchNode.appId + " windows=" + window.sphereModel.length + " sel=" + window.selectedAppIndex);
+            return;
+        }
+
+        // Whitelisted placeholders (dormant apps) have no windows to drill
+        // into — keep the existing 2→0 pop-back (select by appId when
+        // grouped, address when ungrouped).
         var grouped = window.isGroupedLayer0();
         var targetKey = grouped ? (searchNode.appId || "") : (searchNode.address || "");
 
