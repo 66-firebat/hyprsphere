@@ -117,7 +117,7 @@ function drillDown(window) {
             : raw;
         window.projDirty = true;
         window.rebuildProjCache();
-        window.sphereZoom = 1.0;
+        window.sphereZoom = window.cfg.sphere?.initialZoom ?? 1.0;
 
         // Select by appId (grouped) or address (ungrouped)
         var matched = false;
@@ -156,7 +156,7 @@ function drillDown(window) {
             : raw;
         window.projDirty = true;
         window.rebuildProjCache();
-        window.sphereZoom = 1.0;
+        window.sphereZoom = window.cfg.sphere?.initialZoom ?? 1.0;
 
         // Select by appId (grouped) or address (ungrouped)
         var matched = false;

@@ -704,7 +704,7 @@ PanelWindow {
         sphereModel = raw.length === 0
             ? [{ label: "No windows", icon: "", appId: "", windows: [], isPlaceholder: true }]
             : raw;
-        sphereZoom = 1.0;
+        sphereZoom = cfg.sphere?.initialZoom ?? 1.0;
         projDirty = true;
         rebuildProjCache();
         if (sphereModel.length > 0 && !sphereModel[0].isPlaceholder) {
@@ -936,7 +936,7 @@ PanelWindow {
         target: window
         function onVisibleChanged() {
             if (window.visible) {
-                window.sphereZoom = 1.0;
+                window.sphereZoom = window.cfg.sphere?.initialZoom ?? 1.0;
                 if (!window._spawnToggling) {
                     introPhaseAnim.restart();
                 }
