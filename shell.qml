@@ -729,6 +729,18 @@ PanelWindow {
     property string _pendingSpawnAddr: ""
     property string _mruCommitAddr: ""
     property bool _spawnToggling: false
+    // Bounded retry state for finishOpenSwitcher() (see below): ~1 s max.
+    property int _finishAttempts: 0
+    readonly property int _maxFinishAttempts: 20
+
+    // Retry timer for finishOpenSwitcher() — waits for the async icon reader /
+    // first reconcile without busy-waiting on Qt.callLater.
+    Timer {
+        id: finishRetryTimer
+        interval: 50
+        repeat: false
+        onTriggered: window.finishOpenSwitcher()
+    }
 
     // ══════════════════════════════════════════════════════════════════════════
     // OPEN / REBUILD
@@ -745,6 +757,8 @@ PanelWindow {
     window.log("openSwitcher: MRU blocked");
         window._pendingSpawnAppId = "";
         window._pendingSpawnAddr = "";
+        window._finishAttempts = 0;
+        finishRetryTimer.stop();
 
         window.idleOpacity = 1.0;
         idleTimer.restart();
@@ -759,17 +773,31 @@ PanelWindow {
 
         var iconReady = Object.keys(iconMap).length > 0;
         if (!iconReady) {
-            Qt.callLater(function() { finishOpenSwitcher(); });
-            return;
+            if (window._finishAttempts < window._maxFinishAttempts) {
+                window._finishAttempts++;
+                log("finishOpenSwitcher: waiting for icons ("
+                    + window._finishAttempts + "/" + window._maxFinishAttempts + ")");
+                finishRetryTimer.restart();
+                return;
+            }
+            log("finishOpenSwitcher: icon timeout — opening with fallback icons");
         }
 
         reconcileFocusHistory();
 
         var raw = buildLayer0();
         if (raw.length === 0) {
-            Qt.callLater(function() { finishOpenSwitcher(); });
-            return;
+            if (window._finishAttempts < window._maxFinishAttempts) {
+                window._finishAttempts++;
+                log("finishOpenSwitcher: no nodes yet ("
+                    + window._finishAttempts + "/" + window._maxFinishAttempts + ")");
+                finishRetryTimer.restart();
+                return;
+            }
+            log("finishOpenSwitcher: node timeout — opening with placeholder");
+            raw = [{ label: "No windows", icon: "", appId: "", windows: [], isPlaceholder: true }];
         }
+        window._finishAttempts = 0;
 
         sphereModel = raw;
         if (sphereModel.length > 0 && !sphereModel[0].isPlaceholder) {
@@ -1226,6 +1254,8 @@ PanelWindow {
         // Clear the peek snapshot whenever the overlay closes so the capture
         // buffer is released (all close paths set overlayActive = false).
         if (!overlayActive) {
+            // Cancel any pending finish-open retry.
+            finishRetryTimer.stop();
             // Stop the 60 FPS perpetual effect timer — it must only run while
             // the overlay is visible (started by finishOpenSwitcher()).
             stopPerpetual();
