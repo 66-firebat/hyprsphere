@@ -28,14 +28,19 @@ rm -rf "$QUICKSHELL_DIR/shaders"            # old directory, no longer used
 
 mkdir -p "$QUICKSHELL_DIR"
 
-# Files/directories that quickshell needs at runtime
-ln -sf "$SCRIPT_DIR/shell.qml"        "$QUICKSHELL_DIR/shell.qml"
-ln -sf "$SCRIPT_DIR/binds.js"         "$QUICKSHELL_DIR/binds.js"
-ln -sf "$SCRIPT_DIR/effects.js"       "$QUICKSHELL_DIR/effects.js"
-ln -sf "$SCRIPT_DIR/rotations.js"     "$QUICKSHELL_DIR/rotations.js"
-ln -sf "$SCRIPT_DIR/hyprsphere.json"  "$QUICKSHELL_DIR/hyprsphere.json"
-ln -sf "$SCRIPT_DIR/lib"              "$QUICKSHELL_DIR/lib"
-ln -sf "$SCRIPT_DIR/assets"           "$QUICKSHELL_DIR/assets"
+# Files/directories that quickshell needs at runtime.
+# lib/ and assets/ are directories (or symlinks to directories). `ln -sf`
+# follows an existing symlink-to-directory and creates a nested link inside
+# it instead of replacing it, which leaves a stale path in ~/.config.
+# Remove them first and use `ln -sfn` (-n treats a symlink-to-dir as a file).
+rm -rf "$QUICKSHELL_DIR/lib" "$QUICKSHELL_DIR/assets"
+ln -sfn "$SCRIPT_DIR/shell.qml"        "$QUICKSHELL_DIR/shell.qml"
+ln -sfn "$SCRIPT_DIR/binds.js"         "$QUICKSHELL_DIR/binds.js"
+ln -sfn "$SCRIPT_DIR/effects.js"       "$QUICKSHELL_DIR/effects.js"
+ln -sfn "$SCRIPT_DIR/rotations.js"     "$QUICKSHELL_DIR/rotations.js"
+ln -sfn "$SCRIPT_DIR/hyprsphere.json"  "$QUICKSHELL_DIR/hyprsphere.json"
+ln -sfn "$SCRIPT_DIR/lib"              "$QUICKSHELL_DIR/lib"
+ln -sfn "$SCRIPT_DIR/assets"           "$QUICKSHELL_DIR/assets"
 
 echo "Symlinks → $QUICKSHELL_DIR/:"
 echo "  shell.qml  effects.js  binds.js  rotations.js  hyprsphere.json  lib/  assets/"

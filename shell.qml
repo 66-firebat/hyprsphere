@@ -400,7 +400,12 @@ PanelWindow {
         var tls = Hyprland.toplevels;
         var arr = (tls && tls.values) || [];
         if (arr.length === 0) {
-            Qt.callLater(function() { window.reconcileFocusHistory(); });
+            // Do NOT self-schedule via Qt.callLater here — that busy-waits
+            // (pegging a CPU core) for as long as the session has no windows.
+            // Callers re-run reconcile once a toplevel exists: openwindow
+            // events call scheduleRebuild(), and finishOpenSwitcher() defers
+            // a rebuild, so real windows appear on the next pass.
+            log("reconcileFocusHistory: no toplevels yet, skipping");
             return;
         }
         log("reconcileFocusHistory: toplevels.length=" + arr.length);
@@ -978,7 +983,10 @@ PanelWindow {
         iconReader.running = true;
         Hyprland.refreshToplevels();
         Qt.callLater(function() { window.reconcileFocusHistory(); });
-        startPerpetual();
+        // NOTE: the perpetual animation timer is intentionally NOT started
+        // here. It is started by finishOpenSwitcher() (i.e. only while the
+        // overlay is open) and stopped when the overlay deactivates, so an
+        // idle session does not burn CPU on a 60 FPS timer.
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -1218,6 +1226,9 @@ PanelWindow {
         // Clear the peek snapshot whenever the overlay closes so the capture
         // buffer is released (all close paths set overlayActive = false).
         if (!overlayActive) {
+            // Stop the 60 FPS perpetual effect timer — it must only run while
+            // the overlay is visible (started by finishOpenSwitcher()).
+            stopPerpetual();
             peekView.captureSource = null;
             idleFadeInAnim.stop();
             idleTimer.stop();

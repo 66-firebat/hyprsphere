@@ -217,7 +217,7 @@
     }
   ],
   "fullscreenOnActivate": true,
-  "debug": true,
+  "debug": false,
   "peek": {
     "enabled": true
   },
