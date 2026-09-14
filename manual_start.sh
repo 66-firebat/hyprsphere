@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Start hyprsphere: kill old instances, symlink config, launch.
+# Start/restart hyprsphere: symlink config, stop ONLY the hyprsphere
+# quickshell instance, launch. Other quickshell configs (e.g.
+# DankMaterialShell, which runs with `-p <dir>`) are left running.
 # After this, open the overlay with:  qs ipc call hyprsphere toggle
 #
 # Run from anywhere — SCRIPT_DIR resolves to this file's location.
@@ -11,12 +13,46 @@ QUICKSHELL_DIR="$HOME/.config/quickshell"
 
 echo "=== hyprsphere manual start ==="
 
-# ── Kill any existing quickshell instances ─────────────────────────────────
+# ── Stop ONLY the hyprsphere quickshell instance ───────────────────────────
+# hyprsphere is the 'default' quickshell config (~/.config/quickshell/shell.qml)
+# and runs with no --path/-p argument. Other instances (e.g. DankMaterialShell
+# runs `quickshell -p .../dms`) must NOT be killed.
 
-echo "Killing existing quickshell processes..."
-pkill quickshell 2>/dev/null || true
-pkill -f "/nix/store.*quickshell/bin/quickshell" 2>/dev/null || true
-sleep 1
+HYPRSPHERE_QML="$QUICKSHELL_DIR/shell.qml"
+
+find_hyprsphere_pids() {
+    {
+        # (a) instances registered over IPC for our config path
+        qs list --all 2>/dev/null | awk -v want="$HYPRSPHERE_QML" '
+            /^[[:space:]]*Process ID:/ { pid = $3 }
+            /^[[:space:]]*Config path:/ { if (index($0, want) > 0) print pid }' || true
+        # (b) fallback for an unregistered/orphaned default-config instance:
+        #     a quickshell process with no "-" argument (DMS has `-p`).
+        for p in $(pgrep quickshell 2>/dev/null || true); do
+            if ! tr '\0' ' ' < "/proc/$p/cmdline" 2>/dev/null | grep -q -- ' -'; then
+                echo "$p"
+            fi
+        done
+    } | sort -u | grep -E '^[0-9]+$' || true
+}
+
+OLD_PIDS="$(find_hyprsphere_pids)"
+if [ -n "$OLD_PIDS" ]; then
+    echo "Stopping existing hyprsphere instance(s): $OLD_PIDS"
+    kill $OLD_PIDS 2>/dev/null || true
+    for i in $(seq 1 20); do
+        if [ -z "$(find_hyprsphere_pids)" ]; then break; fi
+        sleep 0.25
+    done
+    REMAIN="$(find_hyprsphere_pids)"
+    if [ -n "$REMAIN" ]; then
+        echo "Force-killing unresponsive instance(s): $REMAIN"
+        kill -9 $REMAIN 2>/dev/null || true
+        sleep 0.5
+    fi
+else
+    echo "No running hyprsphere instance found."
+fi
 
 # ── Clean stale artifacts (old codebase, old nix-store symlinks) ─────────
 
@@ -65,8 +101,11 @@ LOG_FILE="$QUICKSHELL_DIR/hyprsphere.log"
 quickshell > "$LOG_FILE" 2>&1 &
 echo "Logs: $LOG_FILE"
 
-for i in $(seq 1 10); do
-    if qs list --all 2>/dev/null | grep -q "shell.qml"; then
+for i in $(seq 1 15); do
+    # match the hyprsphere config path specifically (DMS is also *.qml)
+    if qs list --all 2>/dev/null | awk -v want="$HYPRSPHERE_QML" '
+        /^[[:space:]]*Config path:/ { if (index($0, want) > 0) found = 1 }
+        END { exit !found }'; then
         echo
         echo "hyprsphere is running."
         echo "Open overlay:  qs ipc call hyprsphere toggle"
