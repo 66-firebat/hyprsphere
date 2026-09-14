@@ -8,7 +8,7 @@
 
 ## Summary
 
-The machine is an **AMD Ryzen 7 PRO 6850H = Rembrandt, Zen 3+, Family 19h Model 44h (0x44), FP7/FP7r2 APU** — *not* a Ryzen 7000/8000 AM5 desktop part (those are different Family 19h models). CPU:0 is reporting a **corrected (UC=0, CECC) error from one of the four Unified Memory Controller (UMC) instances**; the kernel’s AMD decoder prints **“Unified Memory Controller Ext. Error Code: 12”** (XEC = 12). Critically, the Linux kernel treats a UMC error as a **DRAM ECC memory error only when XEC == 0**; **XEC 12 is not defined in any public UMC error‑code table (kernel or rasdaemon) and therefore cannot be attributed to a DRAM row/rank/DIMM from public sources (confidence: Low)**. The on‑host SMCA threshold counters corroborate that the hardware itself files these under the **`misc_umc`** (non‑DRAM) block while `dram_ecc` stays at 0. Because the same status is reported by **all four UMC instances** continuously, a systematic platform/BIOS‑training or link‑margin cause is more likely than four independently failing DIMMs; the storm is nonetheless a real hardware‑error signal that should be worked up with a BIOS/AGESA update, MemTest86+, and module isolation.
+The machine is an **AMD Ryzen 7 PRO 6850H = Rembrandt, Zen 3+, Family 19h Model 44h (0x44), FP7/FP7r2 APU** — *not* a Ryzen 7000/8000 AM5 desktop part (those are different Family 19h models). CPU:0 is reporting a **corrected (UC=0, CECC) error from one of the four Unified Memory Controller (UMC) instances**; the kernel’s AMD decoder prints **“Unified Memory Controller Ext. Error Code: 12”** (XEC = 12). Critically, the Linux kernel treats a UMC error as a **DRAM ECC memory error only when XEC == 0**; **XEC 12 is not defined in any public UMC error‑code table (kernel or rasdaemon) and therefore cannot be attributed to a DRAM row/rank/DIMM from public sources (confidence: Low)**. The on‑host SMCA threshold counters corroborate that the hardware itself files these under the **`misc_umc`** (non‑DRAM) block while `dram_ecc` stays at 0. Because the same status is reported by **all four UMC instances** continuously, a systematic platform/BIOS‑training or link‑margin cause is more likely than four independently failing DIMMs; the storm is nonetheless a real hardware‑error signal that should be worked up with a BIOS/AGESA update and MemTest86+. Memory is soldered LPDDR5, so module isolation is impossible and the hardware remedy is the mini‑PC vendor.
 
 ---
 
@@ -26,7 +26,7 @@ The machine is an **AMD Ryzen 7 PRO 6850H = Rembrandt, Zen 3+, Family 19h Model 
 | UMC counters | `umc_*/misc_umc/error_count = 4095` (saturated at `threshold_limit`), `umc_*/dram_ecc/error_count = 0` |
 | EDAC | `EDAC MC: Ver: 3.0.0` loaded, but `/sys/devices/system/edac/mc` has **no `mcX` devices** |
 | DMI memory | 4 × DMI Type‑17 records (4 memory‑device entries) |
-| Memory form factor | **Unconfirmed** — some `GT68` variants ship **soldered LPDDR5**, others SO‑DIMMs; read DMI Type‑16/17 as root before planning any physical reseating |
+| Memory form factor | **Soldered onboard LPDDR5 (confirmed by owner)** — no SO‑DIMM slots; no user‑replaceable memory |
 | Installed RAS tools | `rasdaemon`/`ras-mc-ctl`/`mcelog`/`edac-util` **not installed**; `lshw` present but shows no DIMM detail as non‑root |
 
 Representative raw lines (verbatim, first burst on this host):
@@ -41,6 +41,8 @@ Representative raw lines (verbatim, first burst on this host):
 ```
 
 The four banks always report the same status value but *different* addresses that are frequently **consecutive cache lines within the same page** (e.g. `0x…f7ce8b00`, `0x…f7ce8bc0`, `0x…f7ce8b40`), which is a burst/stream signature rather than isolated random bit flips.
+
+**Episodic, not constant (observed 2026‑09‑13).** On this boot the storm started **14:33:57** (~5 min 32 s after boot), ramped to a plateau of **240 events/min = one per UMC per second** by 15:09, ran until ~16:18, then **stopped on its own** — no further MCEs for 3+ hours (last event 16:30:49). Other boots range from a **single 28‑line burst** (boot −4, then ~35 h quiet) to **2,045,239 lines** (boot −1). The storm is therefore **intermittent and boot‑dependent**, which argues against a permanently dead DRAM cell and for a memory‑training/margin/firmware condition — or an intermittent reporting path. Practical consequences: (a) a quiet period does **not** prove a fix, so any change must be judged over multiple boots/episodes; (b) a **continuous recorder (rasdaemon)** is needed so the next episode is captured with full decode data.
 
 ---
 
@@ -188,7 +190,68 @@ Ranking is by how well each fits the *whole* pattern: corrected, `XEC 12`, non�
    Against: this is a locked OEM AMI BIOS on a mini‑PC; EXPO/DOCP may not be exposed, and the storm begins at boot before any user tuning.
    Confidence: **Low** for this specific box, but the test is cheap.
 
-> Ranking note: causes 1–4 are not mutually exclusive. The fastest way to separate them is a BIOS update + MemTest86+ + module isolation (where possible), as below.
+> Ranking note: causes 1–4 are not mutually exclusive. The fastest way to separate them is a BIOS update + a kernel A/B + MemTest86+, as below.
+
+---
+
+## Lowest-hanging fruit (do these before any reboot)
+
+Memory form factor is settled — **soldered onboard LPDDR5, no SO‑DIMM slots** — so there is no physical remediation path. Two steps decide the plan and cost almost nothing:
+
+1. **Check for a newer vendor BIOS than `1.00 (2025‑06‑19)`** on the AOOSTAR/Tianbei GT68 support page (`fwupdmgr` found none via LVFS). If a newer **`RembrandtPI‑FP7`** build exists, it is the leading fix (Cause 1).
+2. **Capture the RAM details for the RMA file:** `sudo dmidecode -t 16,17` (sizes/speeds/part numbers/ECC reporting). It no longer chooses a path — with soldered memory the only paths are firmware fixes or vendor RMA — but it documents what shipped.
+
+Still no reboot: install **rasdaemon**, snapshot the evidence (`journalctl -k`, the `umc_*/{misc_umc,dram_ecc}` counters, current MCE count) so every later test has a "before" baseline.
+
+The cheapest **fix attempt** is then one BIOS visit: **load optimized defaults → disable PFEH → disable EXPO/XMP/DOCP → save → clear CMOS/retrain.** That tests Cause 1 and Cause 5 without needing new firmware.
+
+---
+
+## Cause-by-cause approach
+
+For each ranked cause: the cheapest discriminating move, cost/risk, and what each outcome means.
+
+### Cause 1 — Platform/BIOS‑AGESA memory‑training or UMC‑configuration defect *(leading hypothesis)*
+- **Approach:** flash the latest vendor BIOS (`RembrandtPI‑FP7`, never an AM5 `ComboAM5PI` image); load defaults; **disable PFEH** (it can suppress ECC reporting); disable EXPO/XMP/DOCP; clear CMOS and let memory retrain; observe 1–2 boots.
+- **Cheapest first step:** confirm a newer BIOS exists (see above).
+- **Cost/risk:** one reboot; low risk with a vendor BIOS; reversible via re-flash / CMOS clear.
+- **Outcomes:** storm stops → confirmed and fixed. Unchanged → hypothesis weakened; move to Cause 2/4.
+- **Why first:** the only step that can *fix* rather than characterize, and the best fit for "all four UMCs identical."
+
+### Cause 2 — Marginal DRAM link / contact / SPD / training margin
+- **Approach:** **memory is soldered LPDDR5 — there is no physical remediation** (nothing to reseat, clean, or swap). Address it only indirectly: a BIOS/AGESA update and JEDEC defaults (Cause 1) can improve link/training margin, and MemTest86+ (Cause 3) characterizes whether the memory path is actually failing. A genuine soldered‑memory/PHY link fault ends at the **vendor RMA path**.
+- **Cost/risk:** no physical cost; one reboot for the firmware/training attempt.
+- **Outcomes:** storm stops after BIOS/defaults → training/margin issue resolved. Persists → soldered‑memory/board fault or a reporting artifact (Cause 4), both handled through the vendor.
+
+### Cause 3 — Failing DIMM or failing CPU memory controller (IMC)
+- **Approach:** MemTest86+ **v7.00+** booted with the **`ecc`** option, **≥4 passes / overnight**; keep rasdaemon running to correlate. With soldered memory there is **no stick/slot isolation step** — it can confirm/deny a memory‑path fault, not localize it to a replaceable part.
+- **Decision rule:** a MemTest86+ failure on soldered memory → **vendor RMA of the whole unit** (there is no module to replace). A pass is not a clean bill of health for an intermittent fault, so repeat.
+- **Cost/risk:** one reboot + several hours; low risk.
+- **Caveat:** because `dram_ecc = 0`, MemTest86+ **may pass** — and that is informative: it pushes the diagnosis back toward firmware/link/reporting rather than dead DRAM cells.
+
+### Cause 4 — Firmware reporting artifact / undocumented reassigned UMC code
+- **Approach:** (a) **A/B one different kernel** (a Linux 7.1 build exists in the store) and compare MCE rate/counters — a material change implicates the kernel/decoder; (b) **file raw evidence with AMD + the mini‑PC vendor** (status, IPID, syndrome, `misc_umc` vs `dram_ecc` counters, DMI memory data) and explicitly request the **F19h 40h–4Fh UMC error‑code table for XEC 12**; (c) if confirmed cosmetic, decide between accepting it with log suppression or pressing for a fixed BIOS.
+- **Cost/risk:** one reboot for the A/B; the ticket costs only effort. No data risk.
+- **Outcomes:** you learn code 12's meaning / get a fixed BIOS, or you establish it is benign‑but‑noisy and mitigate deliberately.
+
+### Cause 5 — Memory overclock profile / timings / voltages
+- **Approach:** covered by Cause 1 ("load defaults + disable EXPO/XMP/DOCP"). Do **not** tune VSOC/VDDIO/VDDP on this locked FP7 OEM BIOS without vendor guidance and a published safe range.
+- **Cost/risk:** free if the options exist; wrong voltages are genuinely risky.
+- **Outcome:** storm stops at JEDEC → done; otherwise crossed off.
+
+### Recommended execution order
+
+| # | Action | Reboot? | Rules in / out |
+|---|---|---|---|
+| 0 | BIOS availability check + `dmidecode -t 16,17` + rasdaemon/evidence snapshot | no | is a BIOS fix available; document soldered memory for RMA |
+| 1 | BIOS defaults + PFEH off + EXPO off + CMOS clear/retrain | yes | Cause 1, Cause 5 |
+| 2 | Observe 1–2 boots; if persistent, kernel A/B (Linux 7.1) | yes | Cause 4 |
+| 3 | MemTest86+ (4+ passes, `ecc`); no stick isolation (soldered) | yes | Cause 2, Cause 3 |
+| 4 | AMD/vendor report with raw evidence | no | Cause 4 (code‑12 definition) |
+| 5 | Vendor RMA if persistent on latest firmware / memtest fails | — | definitive hardware resolution |
+| 6 | Journald `SystemMaxUse` cap now; `mce=dont_log_ce`/`ignore_ce` only as last resort | no | mitigation only; hides growth |
+
+**Lowest hanging fruit:** step 0 (BIOS availability + evidence capture; no risk). **Cheapest fix attempt:** step 1 (one reboot, no new firmware needed). **Most decisive for hardware:** step 3.
 
 ---
 
@@ -198,10 +261,10 @@ Ranking is by how well each fits the *whole* pattern: corrected, `XEC 12`, non�
 1. Snapshot the current evidence:
    - `journalctl -k -b | grep -E "Hardware Error|Machine check" > ~/mce-capture-$(date +%F).log`
    - `dmesg > ~/dmesg-$(date +%F).log` (root)
-   - `sudo dmidecode -t 16,17 > ~/dmi-memory.txt` — the only reliable way here to name slots, sizes, speed, part numbers, and whether ECC modules are installed. Also determines whether the memory is **SO‑DIMM or soldered LPDDR5**.
+   - `sudo dmidecode -t 16,17 > ~/dmi-memory.txt` — names sizes, speed, part numbers, and ECC reporting. Memory is **soldered LPDDR5**, so this is for the RMA record, not a reseat plan.
    - Archive `/sys/devices/system/machinecheck/machinecheck0/umc_*/{dram_ecc,misc_umc}/{error_count,threshold_limit,interrupt_enable}`.
 2. Install **rasdaemon** (NixOS: enable `services.rasdaemon` or `nix-shell -p rasdaemon`). It **persists** MCEs to a SQLite DB and decodes AMD SMCA. Current upstream CLI is grouped: `sudo rasdaemon --foreground [--record]`; `ras-mc-ctl db --summary|--errors`; `ras-mc-ctl dimm --status|--layout|--error-count [--per-rank]|--guess-labels|--register-labels|--print-labels` (legacy ≤0.8.5 Perl used top‑level `--summary`/`--errors`/`--layout`). Offline decode: `rasdaemon -p --status <status> --ipid <ipid> --smca [--family 0x19 --model 0x44 --bank <n>]`. Note: `ras-mc-ctl --error-label` is **not** an upstream option — attach a label via `dimm --register-labels` / `dimm_label`. Use rasdaemon to translate `IPID → memory_channel=%d, csrow=%d`.
-3. **The localization limit on this kernel:** `amd64_edac` support for Family 19h models 40h–4Fh landed only around **Linux 7.1** (and was AUTOSEL’d to 7.0/6.19), so this **6.18.38** kernel has **no `/sys/devices/system/edac/mc/mcX/dimmY` nodes** and cannot print a DIMM label — exactly as observed. No rasdaemon/edac‑util setting creates them. Until a 7.1+ (or backport‑carrying) kernel is running, localization is at **channel + csrow** granularity, which you must map to a slot via DMI / `ras-mc-ctl dimm --guess-labels`. EDAC hardware error *injection* exists only for families ≤0x16, so it is unavailable on Zen.
+3. **The localization limit on this kernel:** `amd64_edac` support for Family 19h models 40h–4Fh landed only around **Linux 7.1** (and was AUTOSEL’d to 7.0/6.19), so this **6.18.38** kernel has **no `/sys/devices/system/edac/mc/mcX/dimmY` nodes** and cannot print a DIMM label — exactly as observed. No rasdaemon/edac‑util setting creates them. Until a 7.1+ (or backport‑carrying) kernel is running, localization is at **channel + csrow** granularity; with soldered memory that is RMA evidence only, not a replaceable‑module location. EDAC hardware error *injection* exists only for families ≤0x16, so it is unavailable on Zen.
 4. Remember **lock‑step / mirroring**: ras.rst warns that in these modes “there’s no way to know what memory module is to blame,” so a channel/csrow hit may implicate more than one module until a swap test is done.
 
 ### B. Memory testing
@@ -212,7 +275,7 @@ Ranking is by how well each fits the *whole* pattern: corrected, `XEC 12`, non�
   - **Prime95** “Large FFTs” / “Blend”: official guidance is **6–24 h**; the vendor docs note that a Blend failure with smaller‑FFT passes points at memory/IMC.
   - **y‑cruncher** stress tests (e.g. VT3) exercise the memory path; no official duration.
   - A **failure = any reported mismatch, crash, or a rise in the MCE rate** under load. A pass is *not* proof of health for an intermittent fault; repeat. OS stress tests generally **do not surface corrected ECC counts** — run rasdaemon/EDAC alongside.
-- **Interpretation caveats:** channel interleaving, lock‑step and mirroring mean a channel/csrow hit may implicate more than one module; a swap test is required to attribute it to a stick. If the memory is **soldered LPDDR5**, stick‑swapping is impossible and the unit goes straight to vendor RMA.
+- **Interpretation caveats:** channel interleaving, lock‑step and mirroring mean a channel/csrow hit may implicate more than one module; normally a swap test attributes it to a stick. Here the memory is **soldered LPDDR5**, so stick‑swapping is impossible and the unit goes straight to vendor RMA.
 
 ### C. BIOS / hardware steps (ordered)
 1. **Update BIOS/AGESA** to the latest vendor release for `GT68`. Rembrandt uses a dedicated **`RembrandtPI‑FP7`** AGESA line — **not** AM5’s `ComboAM5PI`; do **not** cross‑flash. The OEM “BIOS 1.00” string does not reveal AGESA — read it from **SMBIOS Type 40** (recent kernels print `AGESA: <Codename>PI‑<socket> <version>`). Memory‑training fixes are the most common cure for corrected UMC error storms; ask the vendor for a `RembrandtPI‑FP7` build (CVE‑2023‑20555‑class memory fixes were first in `RembrandtPI‑FP7 1.0.0.8`).
@@ -220,15 +283,14 @@ Ranking is by how well each fits the *whole* pattern: corrected, `XEC 12`, non�
 3. **Set “Platform First Error Handling” (PFEH) to disabled** if present — PassMark documents that PFEH can stop ECC/memory errors reaching the OS and test tools.
 4. **Disable Memory Context Restore / Power Down Enable** if exposed, and any “memory fast boot”. These are AM5‑desktop‑era labels and may not exist in an FP7 mobile BIOS; they are not themselves ECC knobs.
 5. **Clear CMOS / RTC**, then retrain memory (first boot is slow — normal).
-6. **Only if the modules are socketed SO‑DIMMs:** reseat and clean the gold contacts with ≥90% isopropyl alcohol and a lint‑free swab; ensure the clips latch. If the unit has **soldered LPDDR5**, skip all physical memory manipulation and go to vendor RMA.
-7. **One stick at a time, each slot** (SO‑DIMM only), at JEDEC defaults; run MemTest86+ on each configuration.
+6. **Memory is soldered LPDDR5 — do not attempt any physical memory manipulation.** There are no SO‑DIMM slots to reseat or swap; if firmware/defaults do not resolve the storm, this is a vendor‑RMA path.
 8. **If the BIOS exposes voltages, prefer defaults.** There is **no published AMD conservative VSOC/VDDIO range for Rembrandt/FP7** (the well‑known ~1.3 V SoC guidance is AM5‑specific). Change one value at a time.
 9. Re‑read DMI afterwards to confirm the module SKU/timings did not silently change.
 
 ### D. Deciding RAM vs CPU vs motherboard RMA
 **Warranty scoping comes first:** the Ryzen 7 PRO 6850H is an **OEM/mobile FP7 part**. AMD’s direct boxed‑processor warranty applies only to sealed retail‑boxed (“PIB”) processors; preinstalled/mobile processors are warranted by the **system builder**. So the correct RMA path for the CPU/board/memory that shipped in this mini‑PC is the **mini‑PC vendor**, *not* AMD‑direct. Only separately purchased **retail** SO‑DIMMs carry the module brand’s limited‑lifetime warranty.
-- **RAM RMA (retail modules only)** if MemTest86+ errors follow a specific stick into any slot, or if errors disappear with one stick removed.
-- **Whole‑unit (mini‑PC vendor) RMA** if the memory is soldered, if any stick fails in all slots / errors persist with a single known‑good DIMM, if the IMC shows errors independent of the module, or if there are CPU‑wide symptoms (uncorrectable MCEs, crashes, PCIe/GPU faults).
+- **RAM RMA does not apply:** the memory is soldered LPDDR5 (no retail modules to return).
+- **Whole‑unit (mini‑PC vendor) RMA** is the hardware path: soldered memory, suspected IMC error, a MemTest86+ failure, or CPU‑wide symptoms (uncorrectable MCEs, crashes, PCIe/GPU faults).
 - **Thresholds:** any **uncorrectable** error, any reproducible MemTest86+ failure at JEDEC defaults, or a corrected‑error rate that does not fall after a BIOS update is sufficient grounds to open a case. Because the current event is `XEC 12`/`misc_umc` and not a DRAM ECC error, include the raw dmesg + rasdaemon records + DMIDecode memory data so the vendor can decode it.
 - **AMD’s boxed‑processor process** asks for a “Component Swap Test” (move the CPU to another compatible system). For a soldered mobile APU this is impossible; use the vendor’s process instead.
 
@@ -253,10 +315,10 @@ These reduce log/notification load; none repairs hardware or silences a real fau
 | 1 | Update BIOS/AGESA (**RembrandtPI‑FP7**) to latest vendor release; reload defaults | Low | Fixes memory‑training/AGESA bugs, the leading hypothesis |
 | 2 | Install rasdaemon; capture DMI memory; run MemTest86+ (multiple passes, `ecc` option) | Low | Converts the storm into evidence and separates RAM from platform |
 | 3 | Disable EXPO/XMP/DOCP (run JEDEC); disable **PFEH**; disable Memory Context Restore / Power Down if present | Low | Removes overclock/training variables; makes ECC reporting visible |
-| 4 | If SO‑DIMM: reseat/clean, test one stick per slot; if soldered LPDDR5, skip and go to vendor | Low | Fixes contact/SPD problems; localises DIMM vs slot vs IMC |
+| 4 | ~~Reseat / one‑stick isolation~~ — **not applicable: soldered LPDDR5** | — | No user‑serviceable memory; physical isolation impossible |
 | 5 | Clear CMOS / RTC, retrain | Low | Clears stale training/config |
 | 6 | Conservative VSOC/VDDIO/VDDP **only if exposed and only one at a time** | Medium | May improve link margin; no published FP7 safe range |
-| 7 | RMA via the **mini‑PC vendor** (whole unit); retail SO‑DIMMs via the module brand | Medium (downtime) | Definitive for a hardware fault; AMD‑direct does not cover OEM/mobile |
+| 7 | RMA via the **mini‑PC vendor** (whole unit only; no retail modules) | Medium (downtime) | Definitive for a hardware fault; AMD‑direct does not cover OEM/mobile |
 | 8 | Kernel `mce=ignore_ce` / `dont_log_ce` while awaiting service | Low (but hides errors) | **Mitigation only** for log/machine‑check load |
 
 **What this document does *not* recommend:** blindly enabling/disabling the error, flashing a non‑vendor or AM5 BIOS, or assuming ECC DIMMs are the fix. Because XEC 12 is undefined for this model, the highest‑value non‑hardware action is to **file the full raw log + rasdaemon decode + DMI data with AMD and the mini‑PC vendor**, explicitly asking for the `Family 19h Models 40h‑4Fh` UMC extended‑error‑code table for code 12 and whether the model‑44h syndrome layout differs from the documented `XEC == 0` DRAM‑ECC format.
@@ -280,7 +342,7 @@ These reduce log/notification load; none repairs hardware or silences a real fau
 | Whether these syndromes are DRAM ECC despite XEC 12 | **Low — unresolved contradiction** |
 | Rembrandt has 4 memory controllers | **High (AMD patch text)** |
 | `amd64_edac` does not bind on kernel 6.18.38 (no EDAC DIMM nodes) | **High (observed + patch timing)** |
-| Whether this box has ECC SO‑DIMMs or soldered LPDDR5 | **Low (could not read DMI as non‑root)** |
+| Memory form factor | **High — soldered onboard LPDDR5 (confirmed by owner)** |
 | CECC does not by itself prove ECC DIMMs | **High (from UMC error‑source tables)** |
 
 **Single biggest unknown:** the physical meaning of UMC Extended Error Code **12** on Family 19h Model 44h. Every other conclusion is provisional on it.

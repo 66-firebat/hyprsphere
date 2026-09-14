@@ -1,0 +1,30 @@
+captured: 2026-09-13T19:37:27-06:00
+host: fireshark   kernel: 6.18.38
+
+== counts (this boot) ==
+Machine check events logged              12992
+Corrected error, no action required      12992
+Hardware Error                           90944
+Unified Memory Controller                12992
+
+== MC bank statuses ==
+   3242 MC18_STATUS[Over|CE|MiscV|AddrV|-|-|SyndV|CECC|-|-|-]: 0xdc204000000c011b
+   3189 MC17_STATUS[Over|CE|MiscV|AddrV|-|-|SyndV|CECC|-|-|-]: 0xdc204000000c011b
+   3160 MC15_STATUS[Over|CE|MiscV|AddrV|-|-|SyndV|CECC|-|-|-]: 0xdc204000000c011b
+   3158 MC16_STATUS[Over|CE|MiscV|AddrV|-|-|SyndV|CECC|-|-|-]: 0xdc204000000c011b
+     94 MC18_STATUS[-|CE|MiscV|AddrV|-|-|SyndV|CECC|-|-|-]: 0x9c204000000c011b
+     53 MC16_STATUS[-|CE|MiscV|AddrV|-|-|SyndV|CECC|-|-|-]: 0x9c204000000c011b
+     50 MC15_STATUS[-|CE|MiscV|AddrV|-|-|SyndV|CECC|-|-|-]: 0x9c204000000c011b
+     46 MC17_STATUS[-|CE|MiscV|AddrV|-|-|SyndV|CECC|-|-|-]: 0x9c204000000c011b
+
+== IPID distribution ==
+   3336 IPID: 0x0000009600350f00
+   3235 IPID: 0x0000009600250f00
+   3211 IPID: 0x0000009600150f00
+   3210 IPID: 0x0000009600050f00
+
+== UMC counters (misc_umc / dram_ecc) ==
+umc_0 misc=4095/4095 dram=0/4095 intr_misc=1 intr_dram=1
+umc_1 misc=4095/4095 dram=0/4095 intr_misc=1 intr_dram=1
+umc_2 misc=4095/4095 dram=0/4095 intr_misc=1 intr_dram=1
+umc_3 misc=4095/4095 dram=0/4095 intr_misc=1 intr_dram=1

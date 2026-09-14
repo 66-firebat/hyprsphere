@@ -255,9 +255,15 @@ PanelWindow {
 
     function normalizeAddress(addr) {
         if (!addr) return "";
-        if (addr.indexOf("0x") === 0) return addr;
-        var num = Number(addr);
-        if (!isNaN(num)) return "0x" + num.toString(16);
+        addr = String(addr);
+        if (addr.indexOf("0x") === 0 || addr.indexOf("0X") === 0)
+            return "0x" + addr.substring(2);
+        // Quickshell's Hyprland.toplevels exposes `address` as a HEX string
+        // WITHOUT the "0x" prefix (e.g. "5e4901304920"). Never route it through
+        // Number(): a hex string that looks like scientific notation
+        // ("5e4901304920") evaluates to Infinity, and an all-digit hex string is
+        // parsed as decimal — either way the address is corrupted, so every
+        // address-based dispatch (focus/close/fullscreen) silently misses.
         return "0x" + addr;
     }
 
