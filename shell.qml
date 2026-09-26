@@ -183,7 +183,14 @@ PanelWindow {
         log("moveToFront: address " + normAddr.substring(normAddr.length - 6) + " NOT FOUND in focusHistory");
     }
 
-    // --- Mutation: add new entry (on window open) ---
+    // --- Mutation: insert new entry (on window open) at the MRU-next slot ---
+    // New windows go to index 1, not index 0. While the overlay is open the
+    // MRU sentinel is "blocked" (openSwitcher), so onActiveToplevelChanged
+    // deliberately does not call moveToFront — the new window therefore stays
+    // at index 1 and the currently-focused app keeps index 0. When the overlay
+    // is closed the new window receives focus normally and moveToFront promotes
+    // it to index 0, so ordinary MRU behaviour is unchanged. On an empty
+    // history the insert clamps to index 0 (the only slot available).
     function addToFront(address, appId, title) {
         if (!address || !appId) return;
         var normAddr = address.indexOf("0x") === 0 ? address : "0x" + address;
@@ -194,8 +201,9 @@ PanelWindow {
                 break;
             }
         }
-        focusHistory.unshift({ address: normAddr, appId: appId, title: title || "" });
-        log("addToFront: " + normAddr.substring(normAddr.length - 6) + " app=" + appId);
+        var insertIdx = Math.min(1, focusHistory.length);
+        focusHistory.splice(insertIdx, 0, { address: normAddr, appId: appId, title: title || "" });
+        log("addToFront: " + normAddr.substring(normAddr.length - 6) + " app=" + appId + " idx=" + insertIdx);
     }
 
     // --- Mutation: remove entry (on window close) ---
