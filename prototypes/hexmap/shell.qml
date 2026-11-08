@@ -207,6 +207,9 @@ PanelWindow {
     }
 
     // ── Open / Close ───────────────────────────────────────────────────────
+    property real fadeProgress: 0.0
+    Behavior on fadeProgress { NumberAnimation { duration: 200; easing.type: Easing.InOutCubic } }
+
     function openSwitcher() {
         overlayActive = true
         pressCount = 0
@@ -217,14 +220,24 @@ PanelWindow {
         itemAtSlot = []
         for (var i = 0; i < grid.length; i++) itemAtSlot.push(i < mruCount ? i : -1)
         window.visible = true
+        fadeProgress = 1.0
         Qt.callLater(function() { focusGrabber.forceActiveFocus() })
         log("opened, " + mruCount + " nodes")
     }
 
     function closeSwitcher() {
         overlayActive = false
-        window.visible = false
+        fadeProgress = 0.0
+        hideTimer.restart()
         log("closed")
+    }
+
+    // Defer hiding the window until the fade-out completes.
+    Timer {
+        id: hideTimer
+        interval: 200
+        repeat: false
+        onTriggered: { window.visible = false }
     }
 
     // ── IPC handlers (SUPER+Tab drives these) ──────────────────────────────
@@ -274,10 +287,16 @@ PanelWindow {
         }
     }
 
-    // ── Node rendering: Repeater of Items (SVG icon hex grid) ─────────────
-    Repeater {
-        id: nodeRepeater
-        model: window.mruCount
+    // ── Fade container: fades the whole overlay (grid + icons + HUD). ─────
+    Item {
+        id: fadeContainer
+        anchors.fill: parent
+        opacity: window.fadeProgress
+
+        // ── Node rendering: Repeater of Items (SVG icon hex grid) ────────
+        Repeater {
+            id: nodeRepeater
+            model: window.mruCount
 
         delegate: Item {
             id: node
@@ -317,18 +336,19 @@ PanelWindow {
                     fillMode: Image.PreserveAspectFit
                 }
             }
-    }
+        }
 
-    // ── HUD caption (bottom) ──────────────────────────────────────────────
-    Text {
-        anchors.horizontalCenter: parent.horizontalCenter
-        anchors.bottom: parent.bottom
-        anchors.bottomMargin: 20
-        visible: window.overlayActive
-        text: "focus: " + (window.itemAtSlot[0] !== undefined ? window.appNameFor(window.itemAtSlot[0]) : "")
-        color: window.cfg.colors?.accent ?? "#ff4400"
-        font.family: "JetBrains Mono"
-        font.pixelSize: 14
+        // ── HUD caption (bottom) ──────────────────────────────────────────
+        Text {
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: 20
+            visible: window.overlayActive
+            text: "focus: " + (window.itemAtSlot[0] !== undefined ? window.appNameFor(window.itemAtSlot[0]) : "")
+            color: window.cfg.colors?.accent ?? "#ff4400"
+            font.family: "JetBrains Mono"
+            font.pixelSize: 14
+        }
     }
 
     // ── Load config at startup (mirrors shell.qml configReader) ────────────
