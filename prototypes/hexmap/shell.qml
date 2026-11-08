@@ -1,79 +1,106 @@
 // ══════════════════════════════════════════════════════════════════════════════
-// HYPRSPHERE — Hexagonal grid on a FLAT plane (v8 — swap-based focus)
+// hexmap — Hexagonal MRU window switcher (fresh prototype)
 //
-// A gap-free hexagonal mesh on a flat 2D plane, transparent background,
-// opaque #ff4400 hexagons with Nerd Font glyphs. No curvature/sphere: the
-// focused item always sits in the CENTER hexagon, face-on and undistorted.
+// Architecture modelled on the main hyprsphere shell.qml:
+//   * PanelWindow layer-shell overlay, starts HIDDEN, toggled via IPC.
+//   * Nodes rendered as a Repeater of QML Items (no Canvas) — crisp, and
+//     avoids the Canvas first-paint lifecycle bug.
+//   * Each node is a Nerd Font glyph (Text) placed on a flat hexagonal grid.
+//   * Alt/Super+Tab swap mechanism: every press brings a never-yet-focused
+//     node to the CENTER (right-rotating the MRU "spine"), and the prior
+//     centers walk outward.
 //
-// Alt+Tab drives a SWAP animation (not a rotation): on the K-th press in a
-// chain we right-rotate the ordered "spine" [center, slot1(12o'clock),
-// slot2(2o'clock), ...] so a fresh item enters center and the prior centers
-// walk outward (never returning). Items glide between cells over swapMs.
-//
-// Run:  quickshell -p prototypes/hexmap/
-// Controls: Tab / Shift+Tab swap · Esc quit.
+// Sample MRU data (hardcoded) — live Hyprland wiring comes later.
 // ══════════════════════════════════════════════════════════════════════════════
 
 import QtQuick
 import Quickshell
+import Quickshell.Io
 import Quickshell.Wayland
 
 PanelWindow {
-    id: root
-    visible: true
+    id: window
     focusable: true
-    color: "transparent"
 
-    property int timeoutMs: 0
+    // The overlay is HIDDEN until toggled via IPC (qs ipc call hexmap toggle),
+    // exactly like hyprsphere's shell.qml.
+    // (No visible:true here — visible is driven by the toggle lifecycle.)
 
-    WlrLayershell.namespace: "hexmap-prototype"
+    WlrLayershell.namespace: "hexmap-overlay"
     WlrLayershell.layer: WlrLayer.Overlay
-    anchors.left: true; anchors.right: true; anchors.top: true; anchors.bottom: true
+    anchors.left: true
+    anchors.right: true
+    anchors.top: true
+    anchors.bottom: true
     exclusiveZone: 0
     exclusionMode: ExclusionMode.Ignore
+    color: "transparent"
     implicitWidth: Screen.width
     implicitHeight: Screen.height
 
-    // The item→slot mapping is a property binding (initialized immediately),
-    // so no explicit init is needed on Completed.
+    // ── Config ─────────────────────────────────────────────────────────────
+    property string configPath: String(Qt.resolvedUrl("config.json")).replace(/^file:\/\//, "")
+    property var cfg: ({"hexmap":{"hexScale":34,"rings":6,"swapMs":80},"appCard":{"glyphColor":"#1a0a00","fontFamily":"JetBrainsMono Nerd Font Mono"},"colors":{"accent":"#ff4400"}})
 
-    // ── Flat plane grid parameters ─────────────────────────────────────────
-    property real hexScale: 34      // screen px per flat grid unit
-    property int  rings: 6
-    property real swapMs: 80
-    property real animProgress: 1.0     // 1.0 = settled, 0..1 during a swap
+    property string logPrefix: "[hexmap] "
+    function log(msg) { console.log(logPrefix + msg) }
 
-    // ── Selection / chain state ────────────────────────────────────────────
-    property int mruCount: 19         // MRU items (matches glyph set)
-    property int pressCount: 0        // number of Tabs in current chain
-
-    // Identity mapping built once as a binding: item i -> slot i (slot i is a
-    // fixed screen position). This guarantees the grid has data from the very
-    // first paint, with no dependency on Component.onCompleted ordering.
-    property var slotOfItem: {
-        var arr = []
-        for (var j = 0; j < mruCount; j++) arr.push(j)
-        return arr
-    }
-    property var itemAtSlot: {
-        var arr = []
-        for (var i = 0; i < grid.length; i++) arr.push(i < mruCount ? i : -1)
-        return arr
-    }
-
-    // ── Hex corner helper (flat-top, unit hex, size 1) ────────────────────
-    function hexCorners(q, r) {
-        var cx = 1.5 * q
-        var cy = Math.sqrt(3) * (r + q / 2)
-        var out = []
-        for (var i = 0; i < 6; i++) {
-            var a = Math.PI / 3 * i
-            out.push({ x: cx + Math.cos(a), y: cy + Math.sin(a) })
+    Process {
+        id: configReader
+        command: ["cat", window.configPath]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                var txt = this.text.trim()
+                if (txt.length > 0) {
+                    try { window.cfg = JSON.parse(txt) }
+                    catch(e) { window.log("config parse error: " + e) }
+                }
+            }
         }
-        return out
     }
 
-    // Ordered hex cell list: center, then rings clockwise from 12 o'clock.
+    // ── Hex grid geometry (flat-top) ───────────────────────────────────────
+    property real hexScale: cfg.hexmap?.hexScale ?? 34
+    property int  rings:     cfg.hexmap?.rings     ?? 6
+    property real swapMs:    cfg.hexmap?.swapMs    ?? 80
+
+    // ── State ──────────────────────────────────────────────────────────────
+    property bool overlayActive: false
+    property int  pressCount: 0          // Tabs pressed in the current chain
+    property real animProgress: 1.0
+
+    // ── Sample MRU list (hardcoded; live data wiring comes later) ──────────
+    // Covers multiple apps and multiple windows per app to exercise the
+    // eventual drill-down / search layers.
+    property var apps: [
+        { name: "Ghostty",  glyph: "\uE795", windows: 3 },   // terminal
+        { name: "Firefox",  glyph: "\uF269", windows: 1 },   // firefox
+        { name: "Emacs",    glyph: "\uE7C5", windows: 4 },   // editor
+        { name: "Blender",  glyph: "\uF447", windows: 1 },   // cube
+        { name: "KiCad",    glyph: "\uF11B", windows: 1 },   // circuit
+        { name: "GIMP",     glyph: "\uF1FC", windows: 2 },   // paint
+        { name: "Element",  glyph: "\uF0E0", windows: 1 },   // mail
+        { name: "Anki",     glyph: "\uF005", windows: 1 },   // star
+        { name: "Zathura",  glyph: "\uF518", windows: 2 },   // book
+        { name: "Telegram", glyph: "\uF3FE", windows: 1 },   // telegram
+        { name: "Discord",  glyph: "\uF392", windows: 1 },   // discord
+        { name: "Settings", glyph: "\uF013", windows: 1 },   // gear
+        { name: "Spotify",  glyph: "\uF001", windows: 1 },   // music
+        { name: "VSCode",   glyph: "\uE70C", windows: 2 },   // code
+        { name: "Steam",    glyph: "\uF1B6", windows: 1 },   // steam
+        { name: "Obsidian", glyph: "\uF02D", windows: 2 },   // note
+        { name: "Kitty",    glyph: "\uE795", windows: 1 },   // terminal
+        { name: "Nautilus", glyph: "\uF07B", windows: 1 },   // folder
+        { name: "Grafana",  glyph: "\uF201", windows: 1 }    // chart
+    ]
+
+    property int mruCount: apps.length
+
+    // ── Hex grid (ordered: center, then rings clockwise from 12 o'clock) ───
+    function hexCenter(q, r) {
+        return { cx: 1.5 * q, cy: Math.sqrt(3) * (r + q / 2) }
+    }
+
     function buildGrid() {
         var list = []
         for (var k = 0; k <= rings; k++) {
@@ -95,78 +122,54 @@ PanelWindow {
     }
     property var grid: buildGrid()
 
-    // ── App icon map: item index → real app name + pre-rasterized PNG ────
-    property string iconDir: "file:///home/fireshark/nixos-dotfiles/git_repositories/hyprsphere/prototypes/hexmap/icons/"
-    property var appIcons: [
-        { name: "Ghostty",  icon: "com.mitchellh.ghostty.png" },
-        { name: "Firefox",  icon: "firefox.png" },
-        { name: "Emacs",    icon: "emacs.png" },
-        { name: "Blender",  icon: "blender.png" },
-        { name: "KiCad",    icon: "kicad.png" },
-        { name: "GIMP",     icon: "gimp.png" },
-        { name: "Sioyek",   icon: "sioyek-icon-linux.png" },
-        { name: "Element",  icon: "element.png" },
-        { name: "Anki",     icon: "anki.png" },
-        { name: "Zathura",  icon: "org.pwmt.zathura.png" },
-        { name: "Inkscape", icon: "org.inkscape.Inkscape.png" },
-        { name: "Telegram", icon: "org.telegram.desktop.png" },
-        { name: "Discord",  icon: "discord.png" },
-        { name: "Settings", icon: "org.gnome.Settings.png" },
-        { name: "Extensions", icon: "org.gnome.Extensions.png" },
-        { name: "Swappy",   icon: "swappy.png" },
-        { name: "DocViewer", icon: "document-viewer.png" },
-        { name: "Main",     icon: "main.png" },
-        { name: "GnomeExt", icon: "gnome-extensions.png" }
-    ]
+    // Slot i = grid[i] (center = slot 0, then 12 o'clock = slot 1, etc.).
+    // slotOfItem[item] = which slot (grid index) this MRU item currently owns.
+    // itemAtSlot[slot] = which MRU item is at this slot.
+    property var slotOfItem: {
+        var arr = []
+        for (var j = 0; j < mruCount; j++) arr.push(j)
+        return arr
+    }
+    property var itemAtSlot: {
+        var arr = []
+        var n = grid.length
+        for (var i = 0; i < n; i++) arr.push(i < mruCount ? i : -1)
+        return arr
+    }
+    property var oldSlotOfItem: []
 
-    function iconName(item) {
-        var e = appIcons[item % appIcons.length]
-        return e ? e.icon : "main.png"
-    }
-    function appName(item) {
-        var e = appIcons[item % appIcons.length]
-        return e ? e.name : ""
-    }
-    function iconImg(item) {
-        if (item < 0) return null
-        var it = iconRepeater.itemAt(item)
-        return it ? it : null
-    }
+    function glyphFor(item) { return apps[item % apps.length].glyph }
+    function appNameFor(item) { return apps[item % apps.length].name }
 
-    // ── Flat orthogonal projection (no curvature, no sphere) ──────────────
-    // Flat hex coords (px, py) map directly to screen at a uniform scale.
-    function flatToScreen(px, py) {
-        return { x: px * hexScale, y: py * hexScale, z: 1.0, s: 1.0 }
-    }
-
-    // Screen center of a given slot (relative to sphere center).
+    // Screen position (logical px) of a slot's center, relative to screen center.
     function slotCenter(slot) {
         var h = grid[slot]
-        if (!h) return { x: 0, y: 0, z: 1.0, s: 1.0 }
-        var cx = 1.5 * h.q, cy = Math.sqrt(3) * (h.r + h.q / 2)
-        return flatToScreen(cx, cy)
+        if (!h) return { x: 0, y: 0 }
+        var c = hexCenter(h.q, h.r)
+        return { x: c.cx * hexScale, y: c.cy * hexScale }
     }
 
-    // On-screen pixel size of a hexagon slot (constant on a flat plane).
-    function hexPxSize(slot) {
-        return hexScale * 2.0
+    function ringOpacity(ring) {
+        if (ring === 0) return 1.0
+        return Math.max(0.25, 1.0 - ring * 0.10)
     }
 
-    function ringOpacity(r) {
-        if (r === 0) return 1.0
-        return Math.max(0.12, 1.0 - r * 0.13)
+    // ── Swap mechanism ─────────────────────────────────────────────────────
+    function rebuildSlots() {
+        slotOfItem = []
+        var n = mruCount
+        for (var j = 0; j < n; j++) slotOfItem.push(-1)
+        for (var s = 0; s < itemAtSlot.length; s++) {
+            var it = itemAtSlot[s]
+            if (it >= 0) slotOfItem[it] = s
+        }
     }
 
-    // ── Forward Tab: left-rotate spine [slot0..slotK] ──────────────────────
-    // On press K (1-based after increment), rotate the first (K+1) slots.
     function advanceForward() {
         var maxK = mruCount - 1
-        pressCount = pressCount + 1
-        if (pressCount > maxK) pressCount = maxK
+        pressCount = Math.min(pressCount + 1, maxK)
         var K = pressCount
-        // RIGHT-rotate the spine [slot0..slotK] by 1: the fresh item at slot K
-        // wraps to center, and everything else shifts one slot outward. This
-        // guarantees a never-before-focused node enters center on each press.
+        // RIGHT-rotate spine [0..K]: the fresh item at slot K comes to center.
         var spine = []
         for (var s = 0; s <= K; s++) spine.push(itemAtSlot[s])
         var last = spine[K]
@@ -179,7 +182,6 @@ PanelWindow {
     function advanceBackward() {
         if (pressCount === 0) return
         var K = pressCount
-        // LEFT-rotate the spine [slot0..slotK] by 1 (inverse of forward).
         var spine = []
         for (var s = 0; s <= K; s++) spine.push(itemAtSlot[s])
         var first = spine[0]
@@ -190,140 +192,130 @@ PanelWindow {
         pressCount = pressCount - 1
     }
 
-    function rebuildSlots() {
-        slotOfItem = []
-        for (var j = 0; j < mruCount; j++) slotOfItem.push(-1)
-        for (var s = 0; s < itemAtSlot.length; s++) {
-            var it = itemAtSlot[s]
-            if (it >= 0) slotOfItem[it] = s
-        }
-    }
-
-    // ── Animation: animate animProgress 0→1; canvas lerps item positions ──
-    NumberAnimation { id: swapAnim; target: root; property: "animProgress"; from: 0.0; to: 1.0; duration: root.swapMs; easing.type: Easing.InOutCubic }
-
-    property var oldSlotOfItem: []
-
     function doAdvance(dir) {
         oldSlotOfItem = slotOfItem.slice()
         if (dir >= 1) advanceForward()
         else advanceBackward()
         animProgress = 0.0
-        swapAnim.from = 0.0
-        swapAnim.to = 1.0
-        swapAnim.restart()
-        scene.requestPaint()
+        animProgress = 1.0   // for now: no smooth glide (items just re-place). Kept simple.
     }
 
-    // ── Canvas: draw hex wireframe (static) + items at interpolated slots ──
-    Canvas {
-        id: scene
-        width: Screen.width
-        height: Screen.height
-        x: 0
-        y: 0
-        renderStrategy: Canvas.Threaded
+    // ── Open / Close ───────────────────────────────────────────────────────
+    function openSwitcher() {
+        overlayActive = true
+        pressCount = 0
+        animProgress = 1.0
+        // reset mapping to identity on open
+        slotOfItem = []
+        for (var j = 0; j < mruCount; j++) slotOfItem.push(j)
+        itemAtSlot = []
+        for (var i = 0; i < grid.length; i++) itemAtSlot.push(i < mruCount ? i : -1)
+        window.visible = true
+        log("opened, " + mruCount + " nodes")
+    }
 
-        onPaint: {
-            var W = width, H = height
-            var ctx = getContext("2d")
-            ctx.clearRect(0, 0, W, H)
-            // Center on the actual screen, not the (smaller) panel size.
-            var ox = Screen.width / 2, oy = Screen.height / 2
-            var t = root.animProgress   // 0..1
+    function closeSwitcher() {
+        overlayActive = false
+        window.visible = false
+        log("closed")
+    }
 
-            // draw each item's icon at its interpolated position
-            for (var item = 0; item < root.mruCount; item++) {
-                var oldS = root.oldSlotOfItem[item]
-                var newS = root.slotOfItem[item]
-                if (newS < 0) continue
-                var oc = root.slotCenter(oldS >= 0 ? oldS : newS)
-                var nc = root.slotCenter(newS)
-                // lerp screen position
-                var lx = ox + oc.x + (nc.x - oc.x) * t
-                var ly = oy + oc.y + (nc.y - oc.y) * t
-                var isFocus = (newS === 0)
-
-                var img = root.iconImg(item)
-                if (img && img.status === Image.Ready) {
-                    var sz = root.hexPxSize(newS) * 1.1   // ~full hex flat-to-flat
-                    ctx.globalAlpha = isFocus ? 1.0 : root.ringOpacity(root.grid[newS].ring)
-                    ctx.drawImage(img, lx - sz / 2, ly - sz / 2, sz, sz)
-                }
-
-                // emissive glow on focused item (slot 0)
-                if (isFocus) {
-                    var gr = root.hexPxSize(0) * 1.5
-                    var grd = ctx.createRadialGradient(lx, ly, gr * 0.1, lx, ly, gr)
-                    grd.addColorStop(0, "rgba(43,43,43,0.55)")
-                    grd.addColorStop(0.5, "rgba(43,43,43,0.25)")
-                    grd.addColorStop(1, "rgba(43,43,43,0.0)")
-                    ctx.globalAlpha = 1.0
-                    ctx.fillStyle = grd
-                    ctx.beginPath()
-                    ctx.arc(lx, ly, gr, 0, 2 * Math.PI)
-                    ctx.fill()
-                }
+    // ── IPC handlers (SUPER+Tab drives these) ──────────────────────────────
+    IpcHandler {
+        target: "hexmap"
+        function toggle(): void {
+            if (window.overlayActive) {
+                window.doAdvance(1)
+            } else {
+                window.openSwitcher()
             }
-            ctx.globalAlpha = 1.0
         }
-
-        Connections {
-            target: root
-            function onAnimProgressChanged() { scene.requestPaint() }
-            function onItemAtSlotChanged() { scene.requestPaint() }
+        function commit(): void {
+            window.closeSwitcher()
         }
-        Component.onCompleted: {
-            // Defer the first paint via Qt.callLater so it runs after the
-            // full scene graph is constructed (matches shell.qml's pattern
-            // of deferring work via Qt.callLater). Without this, Canvas.onPaint
-            // may not fire on the initial visible=true until something forces
-            // a repaint (e.g. the first Alt+Tab).
-            Qt.callLater(function() { scene.requestPaint() })
+        function cancel(): void {
+            window.closeSwitcher()
         }
     }
 
-    // ── Preloaded icon images (one per MRU item), hidden from rendering ──
-    Repeater {
-        id: iconRepeater
-        model: root.mruCount
-        delegate: Image {
-            property int itemIdx: index
-            visible: false
-            source: root.iconDir + root.iconName(index)
-            sourceSize.width: 512
-            sourceSize.height: 512
-            smooth: true
-            asynchronous: false
-            onStatusChanged: if (status === Image.Ready) scene.requestPaint()
-        }
-    }
-
-    // ── HUD caption ────────────────────────────────────────────────────────
-    Text {
-        anchors.horizontalCenter: parent.horizontalCenter
-        anchors.bottom: parent.bottom
-        anchors.bottomMargin: 20
-        text: "focus: " + root.appName(root.itemAtSlot[0] !== undefined ? root.itemAtSlot[0] : 0)
-              + " · press " + root.pressCount + " · Tab/Shift+Tab swap · Esc quit"
-        color: "#ff4400"
-        font.pixelSize: 13
-        font.family: "JetBrains Mono"
-    }
-
-    // ── Keyboard ───────────────────────────────────────────────────────────
+    // ── Keyboard (Tab/Shift+Tab swap, Esc cancel) ──────────────────────────
     Item {
+        id: focusGrabber
         anchors.fill: parent
         focus: true
         Keys.onPressed: (event) => {
             if (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab) {
                 var dir = (event.modifiers & Qt.ShiftModifier || event.key === Qt.Key_Backtab) ? -1 : 1
-                root.doAdvance(dir)
+                window.doAdvance(dir)
                 event.accepted = true
             } else if (event.key === Qt.Key_Escape) {
-                Qt.quit()
+                window.closeSwitcher()
                 event.accepted = true
             }
         }
+    }
+
+    // ── Node rendering: Repeater of Items (hex grid of Nerd Font glyphs) ───
+    Item {
+        id: origin
+        anchors.centerIn: parent
+        width: 1
+        height: 1
+
+        Repeater {
+            id: nodeRepeater
+            model: window.mruCount      // one node per MRU item
+
+            delegate: Item {
+                id: node
+                property int item: index
+                property int slot: window.slotOfItem[index]      // current slot (grid index)
+                property var h: window.grid[slot]
+                property int ring: h ? h.ring : 99
+                property var c: window.slotCenter(slot)
+
+                x: c.x
+                y: c.y
+                width: window.hexScale * 2
+                height: window.hexScale * 2
+                z: slot === 0 ? 10 : 1
+
+                // Focused (slot 0) is full opacity; outer rings fade.
+                opacity: slot === 0 ? 1.0 : window.ringOpacity(ring)
+
+                visible: slot >= 0 && slot < window.grid.length
+
+                // Hex background tile (crisp `#ff4400` hexagon outline behind glyph)
+                // Drawn as a subtle Rectangle + glyph; no Canvas.
+                Text {
+                    id: glyphText
+                    anchors.centerIn: parent
+                    text: window.glyphFor(item)
+                    color: window.cfg.appCard?.glyphColor ?? "#1a0a00"
+                    font.family: window.cfg.appCard?.fontFamily ?? "JetBrainsMono Nerd Font Mono"
+                    font.pixelSize: window.hexScale * 1.4
+                    font.bold: true
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
+            }
+        }
+    }
+
+    // ── HUD caption (bottom) ──────────────────────────────────────────────
+    Text {
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: 20
+        visible: window.overlayActive
+        text: "focus: " + (window.itemAtSlot[0] !== undefined ? window.appNameFor(window.itemAtSlot[0]) : "")
+        color: window.cfg.colors?.accent ?? "#ff4400"
+        font.family: "JetBrains Mono"
+        font.pixelSize: 14
+    }
+
+    // ── Load config at startup (mirrors shell.qml configReader) ────────────
+    Component.onCompleted: {
+        configReader.running = true
     }
 }

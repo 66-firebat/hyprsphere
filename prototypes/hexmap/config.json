@@ -1,0 +1,27 @@
+{
+  "colors": {
+    "base": "#1e1e2e",
+    "mantle": "#181825",
+    "crust": "#11111b",
+    "surface0": "#313244",
+    "surface1": "#45475a",
+    "surface2": "#585b70",
+    "text": "#cdd6f4",
+    "subtext0": "#a6adc8",
+    "accent": "#ff4400",
+    "glyph": "#1a0a00"
+  },
+  "hexmap": {
+    "hexScale": 34,
+    "rings": 6,
+    "swapMs": 80
+  },
+  "appCard": {
+    "fontFamily": "JetBrainsMono Nerd Font Mono",
+    "labelFontFamily": "JetBrainsMono Nerd Font Mono",
+    "glyphColor": "#1a0a00",
+    "hexColor": "#ff4400",
+    "focusedScale": 1.0,
+    "nonFocusedScale": 1.0
+  }
+}
