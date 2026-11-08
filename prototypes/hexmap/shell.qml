@@ -352,14 +352,21 @@ PanelWindow {
                 }
 
                 // Nerd Font glyph (fg #2b2b2b, transparent background).
+                // Fused with the hexagon: same box, no anchors drift. The glyph
+                // is drawn in a Text that fills the hexagon cell; verticalAlignment
+                // + a small -2px correction centers the Nerd Font ink (which sits
+                // slightly below the geometric center of the em-box).
                 Text {
                     id: glyphText
-                    anchors.centerIn: parent
+                    width: parent.width
+                    height: parent.height
+                    x: 0
+                    y: -2
                     z: 1
                     text: window.glyphFor(item)
                     color: "#2b2b2b"
                     font.family: window.cfg.appCard?.fontFamily ?? "JetBrainsMono Nerd Font Mono"
-                    font.pixelSize: window.hexScale * 1.4
+                    font.pixelSize: window.hexScale
                     font.bold: true
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
