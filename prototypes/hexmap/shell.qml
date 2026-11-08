@@ -40,7 +40,7 @@ PanelWindow {
 
     // ── Config ─────────────────────────────────────────────────────────────
     property string configPath: String(Qt.resolvedUrl("config.json")).replace(/^file:\/\//, "")
-    property var cfg: ({"hexmap":{"hexScale":34,"rings":6,"swapMs":80},"appCard":{"glyphColor":"#1a0a00","fontFamily":"JetBrainsMono Nerd Font Mono"},"colors":{"accent":"#ff4400"}})
+    property var cfg: ({"hexmap":{"hexScale":68,"rings":6,"swapMs":80},"appCard":{"glyphColor":"#1a0a00","fontFamily":"JetBrainsMono Nerd Font Mono"},"colors":{"accent":"#ff4400"}})
 
     property string logPrefix: "[hexmap] "
     function log(msg) { console.log(logPrefix + msg) }
