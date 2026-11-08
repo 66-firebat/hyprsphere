@@ -500,7 +500,7 @@ PanelWindow {
                     id: badge
                     anchors.horizontalCenter: parent.horizontalCenter
                     // Vertical midpoint above the hexagon's bottom edge.
-                    y: parent.height - height / 2 - 5
+                    y: parent.height - height / 2 - 15
                     width: badgeText.width + window._badgePad * 2
                     height: badgeText.height + window._badgePad * 2
                     radius: height / 2
