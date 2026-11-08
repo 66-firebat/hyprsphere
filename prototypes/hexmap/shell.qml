@@ -62,6 +62,10 @@ PanelWindow {
     property int  pressCount: 0
     property real animProgress: 1.0
 
+    // Badge metrics (match hyprsphere's windowCountBadge hardcoded values).
+    readonly property real _badgeFontSize: 12
+    readonly property real _badgePad: 7
+
     property var sphereModel: []       // current node list (per layer)
     property int layer: 0              // 0=apps, 1=windows, 2=search(soon)
     property string drilledAppId: ""   // which app is drilled into (layer 1)
@@ -254,8 +258,11 @@ PanelWindow {
     function badgeText(item) {
         var n = sphereModel[item]
         if (!n) return ""
-        if (n.isAppGroup) return "+" + n.windowCount
-        if (n.isWindowNode) return (n.windowIndex + 1) + "/" + n.windowCount
+        // Match hyprsphere's badge format: window nodes show " N/Total ",
+        // app groups show " +N " (both with padding spaces like hyprsphere's
+        // " " + (idx+1) + "/" + total + " " pattern).
+        if (n.isAppGroup) return " +" + n.windowCount + " "
+        if (n.isWindowNode) return " " + (n.windowIndex + 1) + "/" + n.windowCount + " "
         return ""
     }
 
@@ -487,24 +494,26 @@ PanelWindow {
                 }
 
                 // Window-count badge on the bottom edge (6 o'clock).
+                // Matches hyprsphere's badge: #ff4400 pill, #2b2b2b JuliaMono
+                // bold text, pad on both width and height (~14px equivalent).
                 Rectangle {
                     id: badge
                     anchors.horizontalCenter: parent.horizontalCenter
                     anchors.bottom: parent.bottom
                     anchors.bottomMargin: window.hexScale * 0.12
-                    width: badgeText.width + window.hexScale * 0.30
-                    height: badgeText.height + window.hexScale * 0.16
+                    width: badgeText.width + window._badgePad * 2
+                    height: badgeText.height + window._badgePad * 2
                     radius: height / 2
-                    color: window.cfg.colors?.badgeBg ?? "#ff4400"
+                    color: "#ff4400"
                     visible: window.hasBadge(item)
 
                     Text {
                         id: badgeText
                         anchors.centerIn: parent
                         text: window.badgeText(item)
-                        color: window.cfg.colors?.badgeFg ?? "#2b2b2b"
-                        font.family: "JetBrains Mono"
-                        font.pixelSize: window.hexScale * 0.32
+                        color: "#2b2b2b"
+                        font.family: "JuliaMono"
+                        font.pixelSize: window._badgeFontSize
                         font.bold: true
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
