@@ -37,7 +37,7 @@ PanelWindow {
     // ── Flat plane grid parameters ─────────────────────────────────────────
     property real hexScale: 34      // screen px per flat grid unit
     property int  rings: 6
-    property real swapMs: 150
+    property real swapMs: 80
     property real animProgress: 1.0     // 1.0 = settled, 0..1 during a swap
 
     // ── Selection / chain state ────────────────────────────────────────────
