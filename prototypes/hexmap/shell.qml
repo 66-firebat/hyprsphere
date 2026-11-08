@@ -506,14 +506,14 @@ PanelWindow {
                     width: badgeText.width + window._badgePad * 2
                     height: badgeText.height + window._badgePad * 2
                     radius: height / 2
-                    color: "#ff4400"
+                    color: "#2b2b2b"
                     visible: window.hasBadge(item)
 
                     Text {
                         id: badgeText
                         anchors.centerIn: parent
                         text: window.badgeText(item)
-                        color: "#2b2b2b"
+                        color: "#ff4400"
                         font.family: "JuliaMono"
                         font.pixelSize: window._badgeFontSize
                         font.bold: true
