@@ -44,7 +44,7 @@ PanelWindow {
     property real hexScale: 40
     property real rotX: 0.0               // pitch — rest = 0 (dead-on front)
     property real rotY: 0.0               // yaw
-    property real spinMs: 300
+    property real spinMs: 150
 
     // ── Selection state ────────────────────────────────────────────────────
     property int focusedIdx: 0            // MRU index currently front-and-center
