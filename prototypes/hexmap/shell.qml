@@ -34,6 +34,10 @@ PanelWindow {
     implicitWidth: Screen.width
     implicitHeight: Screen.height
 
+    // Initialize the item→slot assignment BEFORE any canvas paints, so the
+    // grid renders on first show (not only after the first Alt+Tab).
+    Component.onCompleted: { root.initAssignment() }
+
     // ── Flat plane grid parameters ─────────────────────────────────────────
     property real hexScale: 34      // screen px per flat grid unit
     property int  rings: 6
@@ -278,8 +282,9 @@ PanelWindow {
             target: root
             function onAnimProgressChanged() { scene.requestPaint() }
             function onItemAtSlotChanged() { scene.requestPaint() }
+            function onSlotOfItemChanged() { scene.requestPaint() }
         }
-        Component.onCompleted: { root.initAssignment(); requestPaint() }
+        Component.onCompleted: { requestPaint() }
     }
 
     // ── Preloaded icon images (one per MRU item), hidden from rendering ──
@@ -288,13 +293,17 @@ PanelWindow {
         model: root.mruCount
         delegate: Image {
             property int itemIdx: index
-            visible: false
+            x: -4096
+            y: -4096
+            width: 2
+            height: 2
+            opacity: 0
             source: root.iconDir + root.iconName(index)
             sourceSize.width: 256
             sourceSize.height: 256
             smooth: true
             mipmap: true
-            asynchronous: false
+            asynchronous: true
             onStatusChanged: if (status === Image.Ready) scene.requestPaint()
         }
     }
