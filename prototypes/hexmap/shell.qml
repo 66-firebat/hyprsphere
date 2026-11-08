@@ -500,7 +500,9 @@ PanelWindow {
                     id: badge
                     anchors.horizontalCenter: parent.horizontalCenter
                     // Vertical midpoint above the hexagon's bottom edge.
-                    y: parent.height - height / 2 - 20
+                    // Proportional to hexScale so alignment is invariant across
+                    // screen sizes (20px at hexScale 68 == 0.294x).
+                    y: parent.height - height / 2 - window.hexScale * 0.294
                     width: badgeText.width + window._badgePad * 2
                     height: badgeText.height + window._badgePad * 2
                     radius: height / 2
