@@ -50,13 +50,13 @@ PanelWindow {
     property int focusedIdx: 0            // MRU index currently front-and-center
     property int mruCount: 30             // number of MRU items (sample)
 
-    // ── Hex corner helper (pointy-top, unit hex, size 1) ───────────────────
+    // ── Hex corner helper (flat-top, unit hex, size 1) ────────────────────
     function hexCorners(q, r) {
-        var cx = Math.sqrt(3) * (q + r / 2)
-        var cy = 1.5 * r
+        var cx = 1.5 * q
+        var cy = Math.sqrt(3) * (r + q / 2)
         var out = []
         for (var i = 0; i < 6; i++) {
-            var a = Math.PI / 3 * i + Math.PI / 6
+            var a = Math.PI / 3 * i
             out.push({ x: cx + Math.cos(a), y: cy + Math.sin(a) })
         }
         return out
@@ -73,8 +73,8 @@ PanelWindow {
                     if (Math.max(Math.abs(q), Math.abs(r), Math.abs(-q - r)) === k)
                         ring.push({ q: q, r: r, ring: k })
             ring.sort(function(a, b) {
-                var aa = Math.atan2(Math.sqrt(3) * (a.q + a.r / 2), -(1.5 * a.r))
-                var ab = Math.atan2(Math.sqrt(3) * (b.q + b.r / 2), -(1.5 * b.r))
+                var aa = Math.atan2(1.5 * a.q, -(Math.sqrt(3) * (a.r + a.q / 2)))
+                var ab = Math.atan2(1.5 * b.q, -(Math.sqrt(3) * (b.r + b.q / 2)))
                 if (aa < 0) aa += 2 * Math.PI
                 if (ab < 0) ab += 2 * Math.PI
                 return aa - ab
@@ -150,8 +150,8 @@ PanelWindow {
     function slotCenterUnrotated(slot) {
         var h = grid[slot]
         if (!h) return null
-        var cx = Math.sqrt(3) * (h.q + h.r / 2)
-        var cy = 1.5 * h.r
+        var cx = 1.5 * h.q
+        var cy = Math.sqrt(3) * (h.r + h.q / 2)
         return toSphere(cx, cy)
     }
 
@@ -269,8 +269,8 @@ PanelWindow {
                 // Draw a Nerd Font glyph centered in the hexagon. The glyph is
                 // a plain text character, drawn at the hexagon's screen center,
                 // scaled to the hex's projected size.
-                var fcx = Math.sqrt(3) * (h.q + h.r / 2)
-                var fcy = 1.5 * h.r
+                var fcx = 1.5 * h.q
+                var fcy = Math.sqrt(3) * (h.r + h.q / 2)
                 var pC = root.flatToScreen(fcx, fcy)
                 var gx = ox + pC.x
                 var gy = oy + pC.y
@@ -327,7 +327,7 @@ PanelWindow {
     function hexPxSize(slot) {
         var h = grid[slot]
         if (!h) return 60
-        var fx = Math.sqrt(3) * (h.q + h.r / 2), fy = 1.5 * h.r
+        var fx = 1.5 * h.q, fy = Math.sqrt(3) * (h.r + h.q / 2)
         var c1 = root.flatToScreen(fx, fy)
         var c2 = root.flatToScreen(fx + 1.0, fy)
         var dx = c2.x - c1.x, dy = c2.y - c1.y
