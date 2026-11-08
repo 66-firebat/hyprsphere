@@ -14,6 +14,7 @@
 // ══════════════════════════════════════════════════════════════════════════════
 
 import QtQuick
+import QtQuick.Shapes
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
@@ -140,6 +141,18 @@ PanelWindow {
 
     function glyphFor(item) { return apps[item % apps.length].glyph }
     function appNameFor(item) { return apps[item % apps.length].name }
+
+    // Flat-top hexagon corners (6 vertices) in LOGICAL px, relative to the
+    // hex cell center, for a given hex size.
+    function hexVerts(size) {
+        var R = size / 2   // circumradius = half the cell width
+        var out = []
+        for (var i = 0; i < 6; i++) {
+            var a = Math.PI / 3 * i
+            out.push({ x: R * Math.cos(a), y: R * Math.sin(a) })
+        }
+        return out
+    }
 
     // Screen position (logical px) of a slot's center, relative to screen center.
     function slotCenter(slot) {
@@ -302,18 +315,46 @@ PanelWindow {
                 Behavior on x { NumberAnimation { duration: window.swapMs; easing.type: Easing.InOutCubic } }
                 Behavior on y { NumberAnimation { duration: window.swapMs; easing.type: Easing.InOutCubic } }
 
-                // Focused (slot 0) is full opacity; outer rings fade.
-                opacity: slot === 0 ? 1.0 : window.ringOpacity(ring)
-
+                // Focused (slot 0) is full opacity; outer rings fade the
+                // HEXAGON only — the glyph stays at full #2b2b2b.
                 visible: slot >= 0 && slot < window.grid.length
 
-                // Hex background tile (crisp `#ff4400` hexagon outline behind glyph)
-                // Drawn as a subtle Rectangle + glyph; no Canvas.
+                // Hexagon background tile (#ff4400), opacity driven by ring.
+                // The glyph is laid on top of this. Focused (slot 0) is full
+                // opacity; each ring outward fades further.
+                Shape {
+                    id: hexShape
+                    anchors.centerIn: parent
+                    width: parent.width
+                    height: parent.height
+                    asynchronous: true
+                    opacity: slot === 0 ? 1.0 : window.ringOpacity(ring)
+
+                    ShapePath {
+                        fillColor: window.cfg.colors?.accent ?? "#ff4400"
+                        strokeColor: "transparent"
+                        strokeWidth: 0
+
+                        PathPolyline {
+                            path: {
+                                var v = window.hexVerts(window.hexScale * 2)
+                                var pts = []
+                                for (var i = 0; i < v.length; i++)
+                                    pts.push(Qt.point(v[i].x, v[i].y))
+                                // close the polygon
+                                pts.push(Qt.point(v[0].x, v[0].y))
+                                return pts
+                            }
+                        }
+                    }
+                }
+
+                // Nerd Font glyph (fg #2b2b2b, transparent background).
                 Text {
                     id: glyphText
                     anchors.centerIn: parent
                     text: window.glyphFor(item)
-                    color: window.cfg.appCard?.glyphColor ?? "#1a0a00"
+                    color: "#2b2b2b"
                     font.family: window.cfg.appCard?.fontFamily ?? "JetBrainsMono Nerd Font Mono"
                     font.pixelSize: window.hexScale * 1.4
                     font.bold: true
