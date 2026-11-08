@@ -152,15 +152,18 @@ PanelWindow {
     // ── Forward Tab: left-rotate spine [slot0..slotK] ──────────────────────
     // On press K (1-based after increment), rotate the first (K+1) slots.
     function advanceForward() {
-        var maxK = mruCount - 1   // highest slot involved (covers ring 1 + ring 2)
+        var maxK = mruCount - 1
         pressCount = pressCount + 1
         if (pressCount > maxK) pressCount = maxK
         var K = pressCount
+        // RIGHT-rotate the spine [slot0..slotK] by 1: the fresh item at slot K
+        // wraps to center, and everything else shifts one slot outward. This
+        // guarantees a never-before-focused node enters center on each press.
         var spine = []
         for (var s = 0; s <= K; s++) spine.push(itemAtSlot[s])
-        var first = spine[0]
-        for (var i = 0; i < K; i++) spine[i] = spine[i + 1]
-        spine[K] = first
+        var last = spine[K]
+        for (var i = K; i > 0; i--) spine[i] = spine[i - 1]
+        spine[0] = last
         for (var w = 0; w <= K; w++) itemAtSlot[w] = spine[w]
         rebuildSlots()
     }
@@ -168,11 +171,12 @@ PanelWindow {
     function advanceBackward() {
         if (pressCount === 0) return
         var K = pressCount
+        // LEFT-rotate the spine [slot0..slotK] by 1 (inverse of forward).
         var spine = []
         for (var s = 0; s <= K; s++) spine.push(itemAtSlot[s])
-        var last = spine[K]
-        for (var i = K; i > 0; i--) spine[i] = spine[i - 1]
-        spine[0] = last
+        var first = spine[0]
+        for (var i = 0; i < K; i++) spine[i] = spine[i + 1]
+        spine[K] = first
         for (var w = 0; w <= K; w++) itemAtSlot[w] = spine[w]
         rebuildSlots()
         pressCount = pressCount - 1
