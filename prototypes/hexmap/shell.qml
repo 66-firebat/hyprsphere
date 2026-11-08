@@ -213,14 +213,18 @@ PanelWindow {
     // ── Canvas: draw hex wireframe (static) + items at interpolated slots ──
     Canvas {
         id: scene
-        anchors.fill: parent
+        width: Screen.width
+        height: Screen.height
+        x: 0
+        y: 0
         renderStrategy: Canvas.Threaded
 
         onPaint: {
             var W = width, H = height
             var ctx = getContext("2d")
             ctx.clearRect(0, 0, W, H)
-            var ox = W / 2, oy = H / 2
+            // Center on the actual screen, not the (smaller) panel size.
+            var ox = Screen.width / 2, oy = Screen.height / 2
             var t = root.animProgress   // 0..1
 
             // draw each item's icon at its interpolated position
@@ -267,17 +271,18 @@ PanelWindow {
         Component.onCompleted: { root.initAssignment(); requestPaint() }
     }
 
-    // ── Preloaded icon images (one per MRU item) ──────────────────────────
+    // ── Preloaded icon images (one per MRU item), hidden from rendering ──
     Repeater {
         id: iconRepeater
         model: root.mruCount
         delegate: Image {
             property int itemIdx: index
+            visible: false
             source: root.iconDir + root.iconName(index)
-            sourceSize.width: 256
-            sourceSize.height: 256
+            sourceSize.width: 512
+            sourceSize.height: 512
             smooth: true
-            asynchronous: true
+            asynchronous: false
             onStatusChanged: if (status === Image.Ready) scene.requestPaint()
         }
     }
