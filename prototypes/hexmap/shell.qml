@@ -288,11 +288,11 @@ PanelWindow {
             property int ring: h ? h.ring : 99
             property var c: window.slotCenter(slot)
 
-            x: c.x
-            y: c.y
-                width: window.hexScale * 2
-                height: window.hexScale * 2
-                z: slot === 0 ? 10 : 1
+            x: c.x - width / 2
+            y: c.y - height / 2
+            width: window.hexScale * 2
+            height: window.hexScale * 2
+            z: slot === 0 ? 10 : 1
 
                 // Animate the glide between slots when the swap re-assigns
                 // this item to a different hex cell.
