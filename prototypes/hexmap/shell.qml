@@ -156,14 +156,17 @@ PanelWindow {
 
     // ── Swap mechanism ─────────────────────────────────────────────────────
     function rebuildSlots() {
-        slotOfItem = []
-        var n = mruCount
-        for (var j = 0; j < n; j++) slotOfItem.push(-1)
+        // Build a fresh array and assign once, so QML sees ONE change
+        // notification and re-binds the delegate `slot` properties.
+        var arr = []
+        for (var j = 0; j < mruCount; j++) arr.push(-1)
         for (var s = 0; s < itemAtSlot.length; s++) {
             var it = itemAtSlot[s]
-            if (it >= 0) slotOfItem[it] = s
+            if (it >= 0 && it < mruCount) arr[it] = s
         }
+        slotOfItem = arr
     }
+
 
     function advanceForward() {
         var maxK = mruCount - 1
@@ -197,7 +200,6 @@ PanelWindow {
         oldSlotOfItem = slotOfItem.slice()
         if (dir >= 1) advanceForward()
         else advanceBackward()
-        animProgress = 1.0
         window.log("doAdvance dir=" + dir + " -> focusItem=" + window.itemAtSlot[0])
     }
 
@@ -294,6 +296,11 @@ PanelWindow {
                 width: window.hexScale * 2
                 height: window.hexScale * 2
                 z: slot === 0 ? 10 : 1
+
+                // Animate the glide between slots when the swap re-assigns
+                // this item to a different hex cell.
+                Behavior on x { NumberAnimation { duration: window.swapMs; easing.type: Easing.InOutCubic } }
+                Behavior on y { NumberAnimation { duration: window.swapMs; easing.type: Easing.InOutCubic } }
 
                 // Focused (slot 0) is full opacity; outer rings fade.
                 opacity: slot === 0 ? 1.0 : window.ringOpacity(ring)
