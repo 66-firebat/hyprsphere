@@ -39,9 +39,9 @@ PanelWindow {
     implicitHeight: Screen.height
 
     // ── Sphere / grid parameters ───────────────────────────────────────────
-    property real sphereR: 360
+    property real sphereR: 280
     property int  rings: 6
-    property real hexScale: 40
+    property real hexScale: 34
     property real swapMs: 150
     property real animProgress: 1.0     // 1.0 = settled, 0..1 during a swap
 
@@ -152,8 +152,9 @@ PanelWindow {
     // ── Forward Tab: left-rotate spine [slot0..slotK] ──────────────────────
     // On press K (1-based after increment), rotate the first (K+1) slots.
     function advanceForward() {
+        var maxK = mruCount - 1   // highest slot involved (covers ring 1 + ring 2)
         pressCount = pressCount + 1
-        if (pressCount > 6) pressCount = 6
+        if (pressCount > maxK) pressCount = maxK
         var K = pressCount
         var spine = []
         for (var s = 0; s <= K; s++) spine.push(itemAtSlot[s])
