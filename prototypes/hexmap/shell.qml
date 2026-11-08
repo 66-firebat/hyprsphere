@@ -80,33 +80,33 @@ PanelWindow {
     }
     property var grid: buildGrid()
 
-    // ── App icon map: item index → real app name + pre-rasterized PNG ────
-    property string iconDir: "file:///home/fireshark/nixos-dotfiles/git_repositories/hyprsphere/prototypes/hexmap/icons/"
+    // ── App icon map: item index → real app name + SVG filename ──────────
+    property string iconDir: "file:///home/fireshark/nixos-dotfiles/git_repositories/assets/icon_packs/fireshark/48/apps/"
     property var appIcons: [
-        { name: "Ghostty",  icon: "com.mitchellh.ghostty.png" },
-        { name: "Firefox",  icon: "firefox.png" },
-        { name: "Emacs",    icon: "emacs.png" },
-        { name: "Blender",  icon: "blender.png" },
-        { name: "KiCad",    icon: "kicad.png" },
-        { name: "GIMP",     icon: "gimp.png" },
-        { name: "Sioyek",   icon: "sioyek-icon-linux.png" },
-        { name: "Element",  icon: "element.png" },
-        { name: "Anki",     icon: "anki.png" },
-        { name: "Zathura",  icon: "org.pwmt.zathura.png" },
-        { name: "Inkscape", icon: "org.inkscape.Inkscape.png" },
-        { name: "Telegram", icon: "org.telegram.desktop.png" },
-        { name: "Discord",  icon: "discord.png" },
-        { name: "Settings", icon: "org.gnome.Settings.png" },
-        { name: "Extensions", icon: "org.gnome.Extensions.png" },
-        { name: "Swappy",   icon: "swappy.png" },
-        { name: "DocViewer", icon: "document-viewer.png" },
-        { name: "Main",     icon: "main.png" },
-        { name: "GnomeExt", icon: "gnome-extensions.png" }
+        { name: "Ghostty",  icon: "com.mitchellh.ghostty.svg" },
+        { name: "Firefox",  icon: "firefox.svg" },
+        { name: "Emacs",    icon: "emacs.svg" },
+        { name: "Blender",  icon: "blender.svg" },
+        { name: "KiCad",    icon: "kicad.svg" },
+        { name: "GIMP",     icon: "gimp.svg" },
+        { name: "Sioyek",   icon: "sioyek-icon-linux.svg" },
+        { name: "Element",  icon: "element.svg" },
+        { name: "Anki",     icon: "anki.svg" },
+        { name: "Zathura",  icon: "org.pwmt.zathura.svg" },
+        { name: "Inkscape", icon: "org.inkscape.Inkscape.svg" },
+        { name: "Telegram", icon: "org.telegram.desktop.svg" },
+        { name: "Discord",  icon: "discord.svg" },
+        { name: "Settings", icon: "org.gnome.Settings.svg" },
+        { name: "Extensions", icon: "org.gnome.Extensions.svg" },
+        { name: "Swappy",   icon: "swappy.svg" },
+        { name: "DocViewer", icon: "document-viewer.svg" },
+        { name: "Main",     icon: "main.svg" },
+        { name: "GnomeExt", icon: "gnome-extensions.svg" }
     ]
 
     function iconName(item) {
         var e = appIcons[item % appIcons.length]
-        return e ? e.icon : "main.png"
+        return e ? e.icon : "main.svg"
     }
     function appName(item) {
         var e = appIcons[item % appIcons.length]
@@ -279,8 +279,8 @@ PanelWindow {
             property int itemIdx: index
             visible: false
             source: root.iconDir + root.iconName(index)
-            sourceSize.width: 512
-            sourceSize.height: 512
+            sourceSize.width: 256
+            sourceSize.height: 256
             smooth: true
             asynchronous: false
             onStatusChanged: if (status === Image.Ready) scene.requestPaint()
