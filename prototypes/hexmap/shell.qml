@@ -34,10 +34,8 @@ PanelWindow {
     implicitWidth: Screen.width
     implicitHeight: Screen.height
 
-    // Initialize the item→slot assignment BEFORE any canvas paints so the grid
-    // renders on first show (the Canvas would otherwise paint first with an
-    // empty slotOfItem, and only Alt+Tab would make it appear).
-    Component.onCompleted: { root.initAssignment() }
+    // The item→slot mapping is a property binding (initialized immediately),
+    // so no explicit init is needed on Completed.
 
     // ── Flat plane grid parameters ─────────────────────────────────────────
     property real hexScale: 34      // screen px per flat grid unit
@@ -48,8 +46,20 @@ PanelWindow {
     // ── Selection / chain state ────────────────────────────────────────────
     property int mruCount: 19         // MRU items (matches glyph set)
     property int pressCount: 0        // number of Tabs in current chain
-    property var itemAtSlot: []       // itemAtSlot[slot] = item index (or -1)
-    property var slotOfItem: []       // slotOfItem[item] = slot index
+
+    // Identity mapping built once as a binding: item i -> slot i (slot i is a
+    // fixed screen position). This guarantees the grid has data from the very
+    // first paint, with no dependency on Component.onCompleted ordering.
+    property var slotOfItem: {
+        var arr = []
+        for (var j = 0; j < mruCount; j++) arr.push(j)
+        return arr
+    }
+    property var itemAtSlot: {
+        var arr = []
+        for (var i = 0; i < grid.length; i++) arr.push(i < mruCount ? i : -1)
+        return arr
+    }
 
     // ── Hex corner helper (flat-top, unit hex, size 1) ────────────────────
     function hexCorners(q, r) {
@@ -145,16 +155,6 @@ PanelWindow {
     function ringOpacity(r) {
         if (r === 0) return 1.0
         return Math.max(0.12, 1.0 - r * 0.13)
-    }
-
-    // ── Init: item i owns slot i ───────────────────────────────────────────
-    function initAssignment() {
-        itemAtSlot = []
-        slotOfItem = []
-        for (var i = 0; i < grid.length; i++) itemAtSlot.push(i < mruCount ? i : -1)
-        for (var j = 0; j < mruCount; j++) slotOfItem.push(j)
-        pressCount = 0
-        animProgress = 1.0
     }
 
     // ── Forward Tab: left-rotate spine [slot0..slotK] ──────────────────────
@@ -273,7 +273,7 @@ PanelWindow {
             function onAnimProgressChanged() { scene.requestPaint() }
             function onItemAtSlotChanged() { scene.requestPaint() }
         }
-        Component.onCompleted: { root.initAssignment(); requestPaint() }
+        Component.onCompleted: { requestPaint() }
     }
 
     // ── Preloaded icon images (one per MRU item), hidden from rendering ──
