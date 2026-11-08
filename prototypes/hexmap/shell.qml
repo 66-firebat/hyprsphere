@@ -144,12 +144,12 @@ PanelWindow {
 
     function appNameFor(item) { return apps[item % apps.length].name }
 
-    // Screen position (logical px) of a slot's center, relative to screen center.
+    // Screen position (absolute logical px) of a slot's center.
     function slotCenter(slot) {
         var h = grid[slot]
-        if (!h) return { x: 0, y: 0 }
+        if (!h) return { x: Screen.width / 2, y: Screen.height / 2 }
         var c = hexCenter(h.q, h.r)
-        return { x: c.cx * hexScale, y: c.cy * hexScale }
+        return { x: Screen.width / 2 + c.cx * hexScale, y: Screen.height / 2 + c.cy * hexScale }
     }
 
     function ringOpacity(ring) {
@@ -274,28 +274,22 @@ PanelWindow {
         }
     }
 
-    // ── Node rendering: Repeater of Items (hex grid of Nerd Font glyphs) ───
-    Item {
-        id: origin
-        anchors.centerIn: parent
-        width: 1
-        height: 1
+    // ── Node rendering: Repeater of Items (SVG icon hex grid) ─────────────
+    Repeater {
+        id: nodeRepeater
+        model: window.mruCount
 
-        Repeater {
-            id: nodeRepeater
-            model: window.mruCount      // one node per MRU item
+        delegate: Item {
+            id: node
+            property int item: index
+            property var slotVar: window.slotOfItem[index] !== undefined ? window.slotOfItem[index] : index
+            property int slot: slotVar >= 0 ? slotVar : index
+            property var h: slot >= 0 && slot < window.grid.length ? window.grid[slot] : null
+            property int ring: h ? h.ring : 99
+            property var c: window.slotCenter(slot)
 
-            delegate: Item {
-                id: node
-                property int item: index
-                property var slotVar: window.slotOfItem[index] !== undefined ? window.slotOfItem[index] : index
-                property int slot: slotVar >= 0 ? slotVar : index
-                property var h: slot >= 0 && slot < window.grid.length ? window.grid[slot] : null
-                property int ring: h ? h.ring : 99
-                property var c: window.slotCenter(slot)
-
-                x: c.x
-                y: c.y
+            x: c.x
+            y: c.y
                 width: window.hexScale * 2
                 height: window.hexScale * 2
                 z: slot === 0 ? 10 : 1
@@ -323,7 +317,6 @@ PanelWindow {
                     fillMode: Image.PreserveAspectFit
                 }
             }
-        }
     }
 
     // ── HUD caption (bottom) ──────────────────────────────────────────────
