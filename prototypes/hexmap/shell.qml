@@ -62,9 +62,10 @@ PanelWindow {
     property int  pressCount: 0
     property real animProgress: 1.0
 
-    // Badge metrics (match hyprsphere's windowCountBadge hardcoded values).
-    readonly property real _badgeFontSize: 12
-    readonly property real _badgePad: 7
+    // Badge metrics — responsively scaled to hexScale (≈12px font + 7px pad
+    // at the default hexScale 68, matching hyprsphere's proportions).
+    readonly property real _badgeFontSize: hexScale * 0.18
+    readonly property real _badgePad: hexScale * 0.10
 
     property var sphereModel: []       // current node list (per layer)
     property int layer: 0              // 0=apps, 1=windows, 2=search(soon)
@@ -493,14 +494,14 @@ PanelWindow {
                     fillMode: Image.PreserveAspectFit
                 }
 
-                // Window-count badge on the bottom edge (6 o'clock).
-                // Matches hyprsphere's badge: #ff4400 pill, #2b2b2b JuliaMono
-                // bold text, pad on both width and height (~14px equivalent).
+                // Window-count badge centered on the bottom edge (6 o'clock).
+                // Responsively sized: font + padding scale with hexScale.
                 Rectangle {
                     id: badge
                     anchors.horizontalCenter: parent.horizontalCenter
-                    anchors.bottom: parent.bottom
-                    anchors.bottomMargin: window.hexScale * 0.12
+                    // Center the badge's vertical midpoint on the hexagon's
+                    // bottom edge (the 6-o'clock vertex).
+                    y: parent.height - height / 2
                     width: badgeText.width + window._badgePad * 2
                     height: badgeText.height + window._badgePad * 2
                     radius: height / 2
