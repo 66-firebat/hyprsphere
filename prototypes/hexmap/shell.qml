@@ -14,7 +14,6 @@
 // ══════════════════════════════════════════════════════════════════════════════
 
 import QtQuick
-import QtQuick.Shapes
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
@@ -73,29 +72,33 @@ PanelWindow {
     // ── Sample MRU list (hardcoded; live data wiring comes later) ──────────
     // Covers multiple apps and multiple windows per app to exercise the
     // eventual drill-down / search layers.
+    property string iconDir: "file:///home/fireshark/nixos-dotfiles/git_repositories/assets/icon_packs/fireshark/48/apps/"
+
     property var apps: [
-        { name: "Ghostty",  glyph: "\uE795", windows: 3 },   // terminal
-        { name: "Firefox",  glyph: "\uF269", windows: 1 },   // firefox
-        { name: "Emacs",    glyph: "\uE7C5", windows: 4 },   // editor
-        { name: "Blender",  glyph: "\uF447", windows: 1 },   // cube
-        { name: "KiCad",    glyph: "\uF11B", windows: 1 },   // circuit
-        { name: "GIMP",     glyph: "\uF1FC", windows: 2 },   // paint
-        { name: "Element",  glyph: "\uF0E0", windows: 1 },   // mail
-        { name: "Anki",     glyph: "\uF005", windows: 1 },   // star
-        { name: "Zathura",  glyph: "\uF518", windows: 2 },   // book
-        { name: "Telegram", glyph: "\uF3FE", windows: 1 },   // telegram
-        { name: "Discord",  glyph: "\uF392", windows: 1 },   // discord
-        { name: "Settings", glyph: "\uF013", windows: 1 },   // gear
-        { name: "Spotify",  glyph: "\uF001", windows: 1 },   // music
-        { name: "VSCode",   glyph: "\uE70C", windows: 2 },   // code
-        { name: "Steam",    glyph: "\uF1B6", windows: 1 },   // steam
-        { name: "Obsidian", glyph: "\uF02D", windows: 2 },   // note
-        { name: "Kitty",    glyph: "\uE795", windows: 1 },   // terminal
-        { name: "Nautilus", glyph: "\uF07B", windows: 1 },   // folder
-        { name: "Grafana",  glyph: "\uF201", windows: 1 }    // chart
+        { name: "Ghostty",  icon: "com.mitchellh.ghostty.svg", windows: 3 },
+        { name: "Firefox",  icon: "firefox.svg",               windows: 1 },
+        { name: "Emacs",    icon: "emacs.svg",                 windows: 4 },
+        { name: "Blender",  icon: "blender.svg",               windows: 1 },
+        { name: "KiCad",    icon: "kicad.svg",                 windows: 1 },
+        { name: "GIMP",     icon: "gimp.svg",                  windows: 2 },
+        { name: "Element",  icon: "element.svg",               windows: 1 },
+        { name: "Anki",     icon: "anki.svg",                  windows: 1 },
+        { name: "Zathura",  icon: "org.pwmt.zathura.svg",      windows: 2 },
+        { name: "Telegram", icon: "org.telegram.desktop.svg",  windows: 1 },
+        { name: "Discord",  icon: "discord.svg",               windows: 1 },
+        { name: "Settings", icon: "org.gnome.Settings.svg",    windows: 1 },
+        { name: "Inkscape", icon: "org.inkscape.Inkscape.svg", windows: 1 },
+        { name: "Sioyek",   icon: "sioyek-icon-linux.svg",     windows: 2 },
+        { name: "Swappy",   icon: "swappy.svg",                windows: 1 },
+        { name: "Extensions", icon: "org.gnome.Extensions.svg", windows: 2 },
+        { name: "DocViewer", icon: "document-viewer.svg",      windows: 1 },
+        { name: "GnomeExt", icon: "gnome-extensions.svg",      windows: 1 },
+        { name: "Main",     icon: "main.svg",                  windows: 1 }
     ]
 
     property int mruCount: apps.length
+
+    function iconFor(item) { return apps[item % apps.length].icon }
 
     // ── Hex grid (ordered: center, then rings clockwise from 12 o'clock) ───
     function hexCenter(q, r) {
@@ -139,31 +142,7 @@ PanelWindow {
     }
     property var oldSlotOfItem: []
 
-    function glyphFor(item) { return apps[item % apps.length].glyph }
     function appNameFor(item) { return apps[item % apps.length].name }
-
-    // Flat-top hexagon corners (6 vertices) in LOGICAL px, relative to the
-    // hex cell center, for a given hex size.
-    function hexVerts(size) {
-        var R = size / 2   // circumradius = half the cell width
-        var out = []
-        for (var i = 0; i < 6; i++) {
-            var a = Math.PI / 3 * i
-            out.push({ x: R * Math.cos(a), y: R * Math.sin(a) })
-        }
-        return out
-    }
-
-    // SVG path string for a flat-top hexagon centered at 0,0 with
-    // circumradius = hexScale. Used by the Shape's PathSvg.
-    function hexPath() {
-        var v = hexVerts(hexScale * 2)
-        var parts = []
-        for (var i = 0; i < 6; i++) {
-            parts.push((i === 0 ? "M " : "L ") + v[i].x.toFixed(2) + " " + v[i].y.toFixed(2))
-        }
-        return parts.join(" ") + " Z"
-    }
 
     // Screen position (logical px) of a slot's center, relative to screen center.
     function slotCenter(slot) {
@@ -327,49 +306,21 @@ PanelWindow {
                 Behavior on y { NumberAnimation { duration: window.swapMs; easing.type: Easing.InOutCubic } }
 
                 // Focused (slot 0) is full opacity; outer rings fade the
-                // HEXAGON only — the glyph stays at full #2b2b2b.
+                // icon. The SVG icon IS the hexagonal node.
                 visible: slot >= 0 && slot < window.grid.length
+                opacity: slot === 0 ? 1.0 : window.ringOpacity(ring)
 
-                // Hexagon background tile (#ff4400), opacity driven by ring.
-                // The glyph is laid on top of this. Focused (slot 0) is full
-                // opacity; each ring outward fades further.
-                Shape {
-                    id: hexShape
-                    anchors.centerIn: parent
-                    width: parent.width
-                    height: parent.height
-                    opacity: slot === 0 ? 1.0 : window.ringOpacity(ring)
-                    z: 0
-
-                    ShapePath {
-                        fillColor: window.cfg.colors?.accent ?? "#ff4400"
-                        strokeColor: "transparent"
-                        strokeWidth: 0
-
-                        // Flat-top regular hexagon, actual px (R = hexScale).
-                        PathSvg { path: window.hexPath() }
-                    }
-                }
-
-                // Nerd Font glyph (fg #2b2b2b, transparent background).
-                // Fused with the hexagon: same box, no anchors drift. The glyph
-                // is drawn in a Text that fills the hexagon cell; verticalAlignment
-                // + a small -2px correction centers the Nerd Font ink (which sits
-                // slightly below the geometric center of the em-box).
-                Text {
-                    id: glyphText
-                    width: parent.width
-                    height: parent.height
-                    x: 0
-                    y: -2
-                    z: 1
-                    text: window.glyphFor(item)
-                    color: "#2b2b2b"
-                    font.family: window.cfg.appCard?.fontFamily ?? "JetBrainsMono Nerd Font Mono"
-                    font.pixelSize: window.hexScale
-                    font.bold: true
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
+                // The app icon (already a flat-top hexagon SVG) is the node.
+                Image {
+                    id: iconImage
+                    anchors.fill: parent
+                    source: window.iconDir + window.iconFor(item)
+                    sourceSize.width: 256
+                    sourceSize.height: 256
+                    smooth: true
+                    mipmap: true
+                    asynchronous: true
+                    fillMode: Image.PreserveAspectFit
                 }
             }
         }
