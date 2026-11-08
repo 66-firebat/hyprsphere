@@ -266,31 +266,22 @@ PanelWindow {
                 ctx.fillStyle = "#ff4400"
                 ctx.fill()
 
-                // Draw a Nerd Font glyph AFFINE-TRANSFORMED onto the hexagon
-                // face. The glyph is placed on the flat hex (unit coords) and
-                // warped through the hex's projected basis, so it tilts and
-                // foreshortens exactly like the face it sits on.
+                // Draw a Nerd Font glyph centered in the hexagon. The glyph is
+                // a plain text character, drawn at the hexagon's screen center,
+                // scaled to the hex's projected size.
                 var fcx = Math.sqrt(3) * (h.q + h.r / 2)
                 var fcy = 1.5 * h.r
                 var pC = root.flatToScreen(fcx, fcy)
-                var pX = root.flatToScreen(fcx + 1.0, fcy)   // +flat X
-                var pY = root.flatToScreen(fcx, fcy + 1.0)   // +flat Y
-                var ex = { x: pX.x - pC.x, y: pX.y - pC.y }
-                var ey = { x: pY.x - pC.x, y: pY.y - pC.y }
-
-                var gsz = root.hexPxSize(hi) * 0.42
+                var gx = ox + pC.x
+                var gy = oy + pC.y
+                var gsz = root.hexPxSize(hi) * 0.42   // glyph font size relative to hex
                 var glyph = root.glyphFor(it)
 
-                // setTransform: flat (x,y) -> screen via basis ex,ey at origin
-                ctx.setTransform(ex.x, ex.y, ey.x, ey.y, ox + pC.x, oy + pC.y)
-
-                // In the transformed space, the hex center is the origin; draw
-                // the glyph at font size gsz, centered on the face.
                 ctx.font = "bold " + Math.round(gsz) + "px 'JetBrainsMono Nerd Font Mono'"
                 ctx.textAlign = "center"
                 ctx.textBaseline = "middle"
-                ctx.fillStyle = "#1a0a00"
-                ctx.fillText(glyph, 0, 0)
+                ctx.fillStyle = "#1a0a00"   // dark glyph on the orange tile
+                ctx.fillText(glyph, gx, gy)
                 ctx.restore()
 
                 // crisp #ff4400 edge (visible where the icon hex leaves a rim)
