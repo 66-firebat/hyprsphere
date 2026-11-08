@@ -121,7 +121,7 @@ PanelWindow {
     // ── Flat orthogonal projection (no curvature, no sphere) ──────────────
     // Flat hex coords (px, py) map directly to screen at a uniform scale.
     function flatToScreen(px, py) {
-        return { x: px * hexScale, y: py * hexScale, z: 1.0, s: 1.0 }
+        return { x: px * hexScale * root.dpr, y: py * hexScale * root.dpr, z: 1.0, s: 1.0 }
     }
 
     // Screen center of a given slot (relative to sphere center).
@@ -134,7 +134,7 @@ PanelWindow {
 
     // On-screen pixel size of a hexagon slot (constant on a flat plane).
     function hexPxSize(slot) {
-        return hexScale * 2.0
+        return hexScale * 2.0 * root.dpr
     }
 
     function ringOpacity(r) {
@@ -211,20 +211,31 @@ PanelWindow {
     }
 
     // ── Canvas: draw hex wireframe (static) + items at interpolated slots ──
+    // HiDPI-aware: render the backing store at devicePixelRatio so icons and
+    // lines are crisp on scaled (scale:2) monitors.
+    // dpr: device pixel ratio multiplier for the canvas backing store.
+    // dprX/dprY offset: manual centering corrections (iterate to center).
+    property real dpr: Screen.devicePixelRatio > 0 ? Screen.devicePixelRatio : 1.0
+    property real offsetX: 0
+    property real offsetY: 0
+
     Canvas {
         id: scene
-        width: Screen.width
-        height: Screen.height
+        width: Screen.width * root.dpr
+        height: Screen.height * root.dpr
         x: 0
         y: 0
+        scale: 1 / root.dpr
+        transformOrigin: Item.TopLeft
         renderStrategy: Canvas.Threaded
 
         onPaint: {
             var W = width, H = height
             var ctx = getContext("2d")
             ctx.clearRect(0, 0, W, H)
-            // Center on the actual screen, not the (smaller) panel size.
-            var ox = Screen.width / 2, oy = Screen.height / 2
+            // Center on the physical backing store (already * dpr), plus manual offset.
+            var ox = W / 2 + root.offsetX
+            var oy = H / 2 + root.offsetY
             var t = root.animProgress   // 0..1
 
             // draw each item's icon at its interpolated position
