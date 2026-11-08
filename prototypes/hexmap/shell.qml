@@ -193,11 +193,12 @@ PanelWindow {
     }
 
     function doAdvance(dir) {
+        if (!window.overlayActive) return
         oldSlotOfItem = slotOfItem.slice()
         if (dir >= 1) advanceForward()
         else advanceBackward()
-        animProgress = 0.0
-        animProgress = 1.0   // for now: no smooth glide (items just re-place). Kept simple.
+        animProgress = 1.0
+        window.log("doAdvance dir=" + dir + " -> focusItem=" + window.itemAtSlot[0])
     }
 
     // ── Open / Close ───────────────────────────────────────────────────────
@@ -225,6 +226,7 @@ PanelWindow {
     IpcHandler {
         target: "hexmap"
         function toggle(): void {
+            window.log("IPC toggle, overlayActive=" + window.overlayActive)
             if (window.overlayActive) {
                 window.doAdvance(1)
             } else {
@@ -232,9 +234,11 @@ PanelWindow {
             }
         }
         function next(): void {
+            window.log("IPC next")
             if (window.overlayActive) window.doAdvance(1)
         }
         function prev(): void {
+            window.log("IPC prev")
             if (window.overlayActive) window.doAdvance(-1)
         }
         function commit(): void {
@@ -242,6 +246,9 @@ PanelWindow {
         }
         function cancel(): void {
             window.closeSwitcher()
+        }
+        function status(): void {
+            window.log("STATUS overlayActive=" + window.overlayActive + " pressCount=" + window.pressCount + " focusItem=" + window.itemAtSlot[0] + " slots=" + JSON.stringify(window.slotOfItem))
         }
     }
 
@@ -252,11 +259,10 @@ PanelWindow {
         focus: true
         Keys.priority: Keys.BeforeItem
         Keys.onPressed: (event) => {
-            if (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab) {
-                var dir = (event.modifiers & Qt.ShiftModifier || event.key === Qt.Key_Backtab) ? -1 : 1
-                window.doAdvance(dir)
-                event.accepted = true
-            } else if (event.key === Qt.Key_Escape) {
+            // Note: Tab cycling is driven by the Hyprland global/submap binds
+            // (SUPER+Tab -> toggle, SUPER+Tab in submap -> next/prev), NOT here.
+            // Only Escape is handled locally as a fallback.
+            if (event.key === Qt.Key_Escape) {
                 window.closeSwitcher()
                 event.accepted = true
             }
@@ -277,8 +283,9 @@ PanelWindow {
             delegate: Item {
                 id: node
                 property int item: index
-                property int slot: window.slotOfItem[index]      // current slot (grid index)
-                property var h: window.grid[slot]
+                property var slotVar: window.slotOfItem[index] !== undefined ? window.slotOfItem[index] : index
+                property int slot: slotVar >= 0 ? slotVar : index
+                property var h: slot >= 0 && slot < window.grid.length ? window.grid[slot] : null
                 property int ring: h ? h.ring : 99
                 property var c: window.slotCenter(slot)
 
