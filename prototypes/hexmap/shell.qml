@@ -34,8 +34,9 @@ PanelWindow {
     implicitWidth: Screen.width
     implicitHeight: Screen.height
 
-    // Initialize the item→slot assignment BEFORE any canvas paints, so the
-    // grid renders on first show (not only after the first Alt+Tab).
+    // Initialize the item→slot assignment BEFORE any canvas paints so the grid
+    // renders on first show (the Canvas would otherwise paint first with an
+    // empty slotOfItem, and only Alt+Tab would make it appear).
     Component.onCompleted: { root.initAssignment() }
 
     // ── Flat plane grid parameters ─────────────────────────────────────────
@@ -84,7 +85,7 @@ PanelWindow {
     }
     property var grid: buildGrid()
 
-    // ── App icon map: item index → real app name + PNG filename ──────────
+    // ── App icon map: item index → real app name + pre-rasterized PNG ────
     property string iconDir: "file:///home/fireshark/nixos-dotfiles/git_repositories/hyprsphere/prototypes/hexmap/icons/"
     property var appIcons: [
         { name: "Ghostty",  icon: "com.mitchellh.ghostty.png" },
@@ -125,7 +126,7 @@ PanelWindow {
     // ── Flat orthogonal projection (no curvature, no sphere) ──────────────
     // Flat hex coords (px, py) map directly to screen at a uniform scale.
     function flatToScreen(px, py) {
-        return { x: px * hexScale * root.dpr, y: py * hexScale * root.dpr, z: 1.0, s: 1.0 }
+        return { x: px * hexScale, y: py * hexScale, z: 1.0, s: 1.0 }
     }
 
     // Screen center of a given slot (relative to sphere center).
@@ -138,7 +139,7 @@ PanelWindow {
 
     // On-screen pixel size of a hexagon slot (constant on a flat plane).
     function hexPxSize(slot) {
-        return hexScale * 2.0 * root.dpr
+        return hexScale * 2.0
     }
 
     function ringOpacity(r) {
@@ -215,31 +216,20 @@ PanelWindow {
     }
 
     // ── Canvas: draw hex wireframe (static) + items at interpolated slots ──
-    // HiDPI-aware: render the backing store at devicePixelRatio so icons and
-    // lines are crisp on scaled (scale:2) monitors.
-    // dpr: device pixel ratio multiplier for the canvas backing store.
-    // dprX/dprY offset: manual centering corrections (iterate to center).
-    property real dpr: Screen.devicePixelRatio > 0 ? Screen.devicePixelRatio : 1.0
-    property real offsetX: 0
-    property real offsetY: 0
-
     Canvas {
         id: scene
-        width: Screen.width * root.dpr
-        height: Screen.height * root.dpr
+        width: Screen.width
+        height: Screen.height
         x: 0
         y: 0
-        scale: 1 / root.dpr
-        transformOrigin: Item.TopLeft
         renderStrategy: Canvas.Threaded
 
         onPaint: {
             var W = width, H = height
             var ctx = getContext("2d")
             ctx.clearRect(0, 0, W, H)
-            // Center on the physical backing store (already * dpr), plus manual offset.
-            var ox = W / 2 + root.offsetX
-            var oy = H / 2 + root.offsetY
+            // Center on the actual screen, not the (smaller) panel size.
+            var ox = Screen.width / 2, oy = Screen.height / 2
             var t = root.animProgress   // 0..1
 
             // draw each item's icon at its interpolated position
@@ -282,9 +272,8 @@ PanelWindow {
             target: root
             function onAnimProgressChanged() { scene.requestPaint() }
             function onItemAtSlotChanged() { scene.requestPaint() }
-            function onSlotOfItemChanged() { scene.requestPaint() }
         }
-        Component.onCompleted: { requestPaint() }
+        Component.onCompleted: { root.initAssignment(); requestPaint() }
     }
 
     // ── Preloaded icon images (one per MRU item), hidden from rendering ──
@@ -293,17 +282,12 @@ PanelWindow {
         model: root.mruCount
         delegate: Image {
             property int itemIdx: index
-            x: -4096
-            y: -4096
-            width: 2
-            height: 2
-            opacity: 0
+            visible: false
             source: root.iconDir + root.iconName(index)
-            sourceSize.width: 256
-            sourceSize.height: 256
+            sourceSize.width: 512
+            sourceSize.height: 512
             smooth: true
-            mipmap: true
-            asynchronous: true
+            asynchronous: false
             onStatusChanged: if (status === Image.Ready) scene.requestPaint()
         }
     }
