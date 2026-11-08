@@ -273,7 +273,14 @@ PanelWindow {
             function onAnimProgressChanged() { scene.requestPaint() }
             function onItemAtSlotChanged() { scene.requestPaint() }
         }
-        Component.onCompleted: { requestPaint() }
+        Component.onCompleted: {
+            // Defer the first paint via Qt.callLater so it runs after the
+            // full scene graph is constructed (matches shell.qml's pattern
+            // of deferring work via Qt.callLater). Without this, Canvas.onPaint
+            // may not fire on the initial visible=true until something forces
+            // a repaint (e.g. the first Alt+Tab).
+            Qt.callLater(function() { scene.requestPaint() })
+        }
     }
 
     // ── Preloaded icon images (one per MRU item), hidden from rendering ──
