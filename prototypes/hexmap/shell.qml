@@ -499,9 +499,8 @@ PanelWindow {
                 Rectangle {
                     id: badge
                     anchors.horizontalCenter: parent.horizontalCenter
-                    // Center the badge's vertical midpoint slightly ABOVE the
-                    // hexagon's bottom edge so it straddles the vertex cleanly.
-                    y: parent.height - height / 2 - window.hexScale * 0.12
+                    // Vertical midpoint exactly on the hexagon's bottom edge.
+                    y: parent.height - height / 2
                     width: badgeText.width + window._badgePad * 2
                     height: badgeText.height + window._badgePad * 2
                     radius: height / 2
