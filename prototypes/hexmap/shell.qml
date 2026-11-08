@@ -80,14 +80,42 @@ PanelWindow {
     }
     property var grid: buildGrid()
 
-    // ── Nerd Font glyph map: app index → glyph codepoint ─────────────────
-    property var appGlyphs: [
-        "\uE795", "\uF269", "\uE7C5", "\uF447", "\uF11B", "\uF1FC",
-        "\uF02D", "\uF0E0", "\uF005", "\uF518", "\uF1FC", "\uF3FE",
-        "\uF392", "\uF013", "\uF12E", "\uF03E", "\uF15B", "\uF111", "\uF12E"
+    // ── App icon map: item index → real app name + pre-rasterized PNG ────
+    property string iconDir: "file:///home/fireshark/nixos-dotfiles/git_repositories/hyprsphere/prototypes/hexmap/icons/"
+    property var appIcons: [
+        { name: "Ghostty",  icon: "com.mitchellh.ghostty.png" },
+        { name: "Firefox",  icon: "firefox.png" },
+        { name: "Emacs",    icon: "emacs.png" },
+        { name: "Blender",  icon: "blender.png" },
+        { name: "KiCad",    icon: "kicad.png" },
+        { name: "GIMP",     icon: "gimp.png" },
+        { name: "Sioyek",   icon: "sioyek-icon-linux.png" },
+        { name: "Element",  icon: "element.png" },
+        { name: "Anki",     icon: "anki.png" },
+        { name: "Zathura",  icon: "org.pwmt.zathura.png" },
+        { name: "Inkscape", icon: "org.inkscape.Inkscape.png" },
+        { name: "Telegram", icon: "org.telegram.desktop.png" },
+        { name: "Discord",  icon: "discord.png" },
+        { name: "Settings", icon: "org.gnome.Settings.png" },
+        { name: "Extensions", icon: "org.gnome.Extensions.png" },
+        { name: "Swappy",   icon: "swappy.png" },
+        { name: "DocViewer", icon: "document-viewer.png" },
+        { name: "Main",     icon: "main.png" },
+        { name: "GnomeExt", icon: "gnome-extensions.png" }
     ]
-    function glyphFor(item) {
-        return appGlyphs[item % appGlyphs.length] || "\uF111"
+
+    function iconName(item) {
+        var e = appIcons[item % appIcons.length]
+        return e ? e.icon : "main.png"
+    }
+    function appName(item) {
+        var e = appIcons[item % appIcons.length]
+        return e ? e.name : ""
+    }
+    function iconImg(item) {
+        if (item < 0) return null
+        var it = iconRepeater.itemAt(item)
+        return it ? it : null
     }
 
     // ── Flat orthogonal projection (no curvature, no sphere) ──────────────
@@ -195,30 +223,7 @@ PanelWindow {
             var ox = W / 2, oy = H / 2
             var t = root.animProgress   // 0..1
 
-            // 1) draw hexagon wireframe (static, all slots)
-            for (var hi = 0; hi < root.grid.length; hi++) {
-                var h = root.grid[hi]
-                var fc = root.hexCorners(h.q, h.r)
-                var pts = []
-                for (var i = 0; i < 6; i++) {
-                    var p = root.flatToScreen(fc[i].x, fc[i].y)
-                    pts.push({ x: ox + p.x, y: oy + p.y })
-                }
-                var alpha = root.ringOpacity(h.ring)
-                // fill + stroke
-                ctx.beginPath()
-                ctx.moveTo(pts[0].x, pts[0].y)
-                for (var j = 1; j < 6; j++) ctx.lineTo(pts[j].x, pts[j].y)
-                ctx.closePath()
-                ctx.globalAlpha = alpha
-                ctx.fillStyle = "#ff4400"
-                ctx.fill()
-                ctx.strokeStyle = "#ff4400"
-                ctx.lineWidth = 1.5
-                ctx.stroke()
-            }
-
-            // 2) draw each item's glyph at its interpolated position
+            // draw each item's icon at its interpolated position
             for (var item = 0; item < root.mruCount; item++) {
                 var oldS = root.oldSlotOfItem[item]
                 var newS = root.slotOfItem[item]
@@ -228,17 +233,14 @@ PanelWindow {
                 // lerp screen position
                 var lx = ox + oc.x + (nc.x - oc.x) * t
                 var ly = oy + oc.y + (nc.y - oc.y) * t
-                // glyph size from target slot
-                var gsz = root.hexPxSize(newS) * 0.42
-                var glyph = root.glyphFor(item)
                 var isFocus = (newS === 0)
 
-                ctx.globalAlpha = isFocus ? 1.0 : root.ringOpacity(root.grid[newS].ring)
-                ctx.font = "bold " + Math.round(gsz) + "px 'JetBrainsMono Nerd Font Mono'"
-                ctx.textAlign = "center"
-                ctx.textBaseline = "middle"
-                ctx.fillStyle = "#1a0a00"
-                ctx.fillText(glyph, lx, ly)
+                var img = root.iconImg(item)
+                if (img && img.status === Image.Ready) {
+                    var sz = root.hexPxSize(newS) * 1.1   // ~full hex flat-to-flat
+                    ctx.globalAlpha = isFocus ? 1.0 : root.ringOpacity(root.grid[newS].ring)
+                    ctx.drawImage(img, lx - sz / 2, ly - sz / 2, sz, sz)
+                }
 
                 // emissive glow on focused item (slot 0)
                 if (isFocus) {
@@ -265,12 +267,27 @@ PanelWindow {
         Component.onCompleted: { root.initAssignment(); requestPaint() }
     }
 
+    // ── Preloaded icon images (one per MRU item) ──────────────────────────
+    Repeater {
+        id: iconRepeater
+        model: root.mruCount
+        delegate: Image {
+            property int itemIdx: index
+            source: root.iconDir + root.iconName(index)
+            sourceSize.width: 256
+            sourceSize.height: 256
+            smooth: true
+            asynchronous: true
+            onStatusChanged: if (status === Image.Ready) scene.requestPaint()
+        }
+    }
+
     // ── HUD caption ────────────────────────────────────────────────────────
     Text {
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottom: parent.bottom
         anchors.bottomMargin: 20
-        text: "focus item " + (root.itemAtSlot[0] !== undefined ? root.itemAtSlot[0] : "0")
+        text: "focus: " + root.appName(root.itemAtSlot[0] !== undefined ? root.itemAtSlot[0] : 0)
               + " · press " + root.pressCount + " · Tab/Shift+Tab swap · Esc quit"
         color: "#ff4400"
         font.pixelSize: 13
