@@ -261,9 +261,9 @@ PanelWindow {
                 if (isFocus) {
                     var gr = root.hexPxSize(0) * 1.5
                     var grd = ctx.createRadialGradient(lx, ly, gr * 0.1, lx, ly, gr)
-                    grd.addColorStop(0, "rgba(255,120,20,0.55)")
-                    grd.addColorStop(0.5, "rgba(255,68,0,0.25)")
-                    grd.addColorStop(1, "rgba(255,68,0,0.0)")
+                    grd.addColorStop(0, "rgba(43,43,43,0.55)")
+                    grd.addColorStop(0.5, "rgba(43,43,43,0.25)")
+                    grd.addColorStop(1, "rgba(43,43,43,0.0)")
                     ctx.globalAlpha = 1.0
                     ctx.fillStyle = grd
                     ctx.beginPath()
