@@ -154,6 +154,17 @@ PanelWindow {
         return out
     }
 
+    // SVG path string for a flat-top hexagon centered at 0,0 with
+    // circumradius = hexScale. Used by the Shape's PathSvg.
+    function hexPath() {
+        var v = hexVerts(hexScale * 2)
+        var parts = []
+        for (var i = 0; i < 6; i++) {
+            parts.push((i === 0 ? "M " : "L ") + v[i].x.toFixed(2) + " " + v[i].y.toFixed(2))
+        }
+        return parts.join(" ") + " Z"
+    }
+
     // Screen position (logical px) of a slot's center, relative to screen center.
     function slotCenter(slot) {
         var h = grid[slot]
@@ -335,17 +346,8 @@ PanelWindow {
                         strokeColor: "transparent"
                         strokeWidth: 0
 
-                        PathPolyline {
-                            path: {
-                                var v = window.hexVerts(window.hexScale * 2)
-                                var pts = []
-                                for (var i = 0; i < v.length; i++)
-                                    pts.push(Qt.point(v[i].x, v[i].y))
-                                // close the polygon
-                                pts.push(Qt.point(v[0].x, v[0].y))
-                                return pts
-                            }
-                        }
+                        // Flat-top regular hexagon, actual px (R = hexScale).
+                        PathSvg { path: window.hexPath() }
                     }
                 }
 
