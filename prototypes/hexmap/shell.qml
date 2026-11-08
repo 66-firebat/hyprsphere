@@ -102,6 +102,12 @@ PanelWindow {
     ]
     function iconFor(mruIdx) { return iconNames[mruIdx % iconNames.length] }
 
+    function iconImg(mruIdx) {
+        if (mruIdx < 0) return null
+        var it = iconRepeater.itemAt(mruIdx)
+        return it ? it : null
+    }
+
     // ── Flat tangent-plane point → unit sphere (continuous, no seams) ──────
     function toSphere(px, py) {
         var x = px * hexScale, y = py * hexScale, R = sphereR
@@ -182,199 +188,142 @@ PanelWindow {
         spinTo(next)
     }
 
-    // ── Flat-space extent control ─────────────────────────────────────────
-    property real flatHalf: (rings + 2.2) * Math.sqrt(3)
-    property real texSize: 1024
-
-    // Offscreen FLAT hex grid canvas (icons baked in, unprojected).
-    // Kept off-screen; sampled by flatSource.
+    // ── Single full-scene canvas: draws every hexagon in one pass ──────────
     Canvas {
-        id: flatCanvas
-        x: -4096
-        y: -4096
-        width: root.texSize
-        height: root.texSize
+        id: scene
+        anchors.fill: parent
         renderStrategy: Canvas.Threaded
 
-        function flatToTex(px, py) {
-            var u = (px + root.flatHalf) / (2 * root.flatHalf)
-            var v = (py + root.flatHalf) / (2 * root.flatHalf)
-            return { x: u * width, y: v * height }
+        function ringOpacity(r) {
+            if (r === 0) return 1.0
+            return Math.max(0.12, 1.0 - r * 0.13)
         }
 
+        function isFocused(slot) { return slot === root.focusedIdx }
+
         onPaint: {
+            var W = width, H = height
             var ctx = getContext("2d")
-            ctx.clearRect(0, 0, width, height)
+            ctx.clearRect(0, 0, W, H)
+
             var g = root.grid
+            var ox = W / 2, oy = H / 2
+
             for (var hi = 0; hi < g.length; hi++) {
-                var it = root.slotItem(hi)
-                if (it < 0) continue
                 var h = g[hi]
-                var fc = root.flatCorners(h.q, h.r)
-                var p0 = flatToTex(fc[0].x, fc[0].y)
-                ctx.beginPath()
-                ctx.moveTo(p0.x, p0.y)
-                for (var i = 1; i < 6; i++) {
-                    var pi = flatToTex(fc[i].x, fc[i].y)
-                    ctx.lineTo(pi.x, pi.y)
+                var fc = root.hexCorners(h.q, h.r)
+
+                var pts = []
+                var zsum = 0
+                var anyNaN = false
+                for (var i = 0; i < 6; i++) {
+                    var p = root.flatToScreen(fc[i].x, fc[i].y)
+                    zsum += p.z
+                    pts.push({ x: ox + p.x, y: oy + p.y, z: p.z })
+                    if (!isFinite(p.x) || !isFinite(p.y)) anyNaN = true
                 }
+                if (anyNaN) continue
+                var zc = zsum / 6
+                if (zc <= 0.22) continue   // backface cull
+
+                var it = root.slotItem(hi)
+                if (it < 0) continue        // empty slot (no MRU item)
+
+                // opacity: ring-based (focused full, diminishing outward);
+                // additionally fade slightly by depth near the limb.
+                var ring = h.ring
+                var ro = ringOpacity(ring)
+                var depth = 1.0 - Math.max(0, 1.0 - zc) * 0.35
+                var alpha = ro * depth
+                if (alpha <= 0.02) continue
+
+                ctx.beginPath()
+                ctx.moveTo(pts[0].x, pts[0].y)
+                for (var j = 1; j < 6; j++) ctx.lineTo(pts[j].x, pts[j].y)
                 ctx.closePath()
-                // clip to flat hex and draw the icon
+
                 ctx.save()
                 ctx.clip()
-                var cx = flatToTex(Math.sqrt(3) * (h.q + h.r / 2), 1.5 * h.r)
-                var c1 = flatToTex(Math.sqrt(3) * (h.q + h.r / 2) + 1.0, 1.5 * h.r)
-                var sz = Math.abs(c1.x - cx.x) * 2.2
+                ctx.globalAlpha = alpha
+
+                // Draw the icon via an affine transform built from the hex's
+                // projected local frame — the icon is "placed on the flat
+                // grid" (unit flat coords) then warped through the projected
+                // basis, so it follows the hexagon's curvature/foreshortening.
+                var fcx = Math.sqrt(3) * (h.q + h.r / 2)
+                var fcy = 1.5 * h.r
+                var pC = root.flatToScreen(fcx, fcy)                       // screen center
+                var pX = root.flatToScreen(fcx + 1.0, fcy)                 // +flat X
+                var pY = root.flatToScreen(fcx, fcy + 1.0)                 // +flat Y
+                var ex = { x: pX.x - pC.x, y: pX.y - pC.y }
+                var ey = { x: pY.x - pC.x, y: pY.y - pC.y }
+
                 var img = root.iconImg(it)
-                if (img && img.status === Image.Ready)
-                    ctx.drawImage(img, cx.x - sz / 2, cx.y - sz / 2, sz, sz)
-                else
-                    { ctx.fillStyle = "#ff4400"; ctx.fill() }
-                ctx.restore()
-                // crisp #ff4400 edge
-                ctx.beginPath()
-                ctx.moveTo(p0.x, p0.y)
-                for (var j = 1; j < 6; j++) {
-                    var pj = flatToTex(fc[j].x, fc[j].y)
-                    ctx.lineTo(pj.x, pj.y)
+                if (img && img.status === Image.Ready) {
+                    // setTransform(a,b,c,d,e,f): maps flat (x,y) -> screen:
+                    //  sx = a*x + c*y + e ; sy = b*x + d*y + f
+                    // basis: flat X -> ex, flat Y -> ey, origin -> screen center
+                    ctx.setTransform(ex.x, ex.y, ey.x, ey.y, ox + pC.x, oy + pC.y)
+                    var span = 2.4   // icon spans ~[-1.2, +1.2] in flat units
+                    ctx.drawImage(img, -span/2, -span/2, span, span)
+                } else {
+                    ctx.fillStyle = "#ff4400"
+                    ctx.fill()
                 }
+                ctx.restore()
+
+                // crisp #ff4400 edge (visible where the icon hex leaves a rim)
+                ctx.globalAlpha = alpha
+                ctx.beginPath()
+                ctx.moveTo(pts[0].x, pts[0].y)
+                for (var k3 = 1; k3 < 6; k3++) ctx.lineTo(pts[k3].x, pts[k3].y)
                 ctx.closePath()
                 ctx.strokeStyle = "#ff4400"
-                ctx.lineWidth = 2.0
+                ctx.lineWidth = 1.5
                 ctx.stroke()
+
+                // Emissive glow for the focused hexagon (soft radial orange halo)
+                if (isFocused(hi)) {
+                    var fx = 0, fy = 0
+                    for (var k2 = 0; k2 < 6; k2++) { fx += pts[k2].x; fy += pts[k2].y }
+                    fx /= 6; fy /= 6
+                    var gsz = root.hexPxSize(hi) * 1.5
+                    var grd = ctx.createRadialGradient(fx, fy, gsz * 0.1, fx, fy, gsz)
+                    grd.addColorStop(0, "rgba(255,120,20,0.55)")
+                    grd.addColorStop(0.5, "rgba(255,68,0,0.25)")
+                    grd.addColorStop(1, "rgba(255,68,0,0.0)")
+                    ctx.globalAlpha = 1.0
+                    ctx.fillStyle = grd
+                    ctx.beginPath()
+                    ctx.arc(fx, fy, gsz, 0, 2 * Math.PI)
+                    ctx.fill()
+                }
             }
+            ctx.globalAlpha = 1.0
         }
 
         Connections {
             target: root
-            function onFocusedIdxChanged() { flatCanvas.requestPaint() }
+            function onRotXChanged() { scene.requestPaint() }
+            function onRotYChanged() { scene.requestPaint() }
+            function onFocusedIdxChanged() { scene.requestPaint() }
         }
         Component.onCompleted: requestPaint()
     }
 
-    // Texture source wrapping the flat canvas.
-    ShaderEffectSource {
-        id: flatSource
-        sourceItem: flatCanvas
-        hideSource: true
-        smooth: true
-    }
-
-    // Preloaded icon images (one per MRU item).
+    // ── Preloaded icon images (one per MRU item) ──────────────────────────
     Repeater {
         id: iconRepeater
         model: root.mruCount
         delegate: Image {
-            id: iconDelegate
             property int mruIdx: index
             source: root.iconDir + root.iconFor(index)
             sourceSize.width: 256
             sourceSize.height: 256
             smooth: true
             asynchronous: true
-            onStatusChanged: if (status === Image.Ready) flatCanvas.requestPaint()
+            onStatusChanged: if (status === Image.Ready) scene.requestPaint()
         }
-    }
-
-    function iconImg(mruIdx) {
-        if (mruIdx < 0) return null
-        var it = iconRepeater.itemAt(mruIdx)
-        return it ? it : null
-    }
-
-    // ── Full-screen shader: inverse-map each pixel to flat grid, sample ───
-    ShaderEffect {
-        id: sphereShader
-        anchors.fill: parent
-        property var src: flatSource
-        property real sphereR: root.sphereR
-        property real hexScale: root.hexScale
-        property real d: 1100.0
-        property real rotX: root.rotX
-        property real rotY: root.rotY
-        property real flatHalf: root.flatHalf
-        property real viewportX: width / 2
-        property real viewportY: height / 2
-
-        property real maxLat: (Math.PI / 2 - 0.18)
-
-        fragmentShader: "
-            varying highp vec2 qt_TexCoord0;
-            uniform sampler2D src;
-            uniform highp float sphereR;
-            uniform highp float hexScale;
-            uniform highp float d;
-            uniform highp float rotX;
-            uniform highp float rotY;
-            uniform highp float flatHalf;
-            uniform highp float viewportX;
-            uniform highp float viewportY;
-
-            void main() {
-                // screen offset in px (relative to center)
-                highp float X = (qt_TexCoord0.x - 0.5) * 2.0 * viewportX;
-                highp float Y = (qt_TexCoord0.y - 0.5) * 2.0 * viewportY;
-
-                highp float a = sphereR;
-                highp float D = d;
-                highp float R2 = X*X + Y*Y;
-
-                // solve for rotated-space unit direction (rx,ry,rz):
-                // forward: X = a*D*rx / (D - a*rz)
-                //         Y = a*D*ry / (D - a*rz)
-                // let t = D - a*rz  =>  rz = (D - t)/a
-                //   rx = X*t/(a*D), ry = Y*t/(a*D)
-                // unit sphere: rx^2+ry^2+rz^2 = 1
-                highp float Aq = R2/(D*D) + 1.0;
-                highp float Bq = -2.0*D;
-                highp float Cq = D*D - a*a;
-                highp float disc = Bq*Bq - 4.0*Aq*Cq;
-                if (disc < 0.0) { gl_FragColor = vec4(0.0); return; }
-                highp float sq = sqrt(disc);
-                highp float t1 = (-Bq - sq)/(2.0*Aq);
-                highp float t2 = (-Bq + sq)/(2.0*Aq);
-                // pick root with more-positive rz (front)
-                highp float t = ((D - t1)/a) > ((D - t2)/a) ? t1 : t2;
-                highp vec3 r = vec3(X*t/(a*D), Y*t/(a*D), (D - t)/a);
-
-                // cull back faces (rz <= ~0.22)
-                if (r.z <= 0.22) { gl_FragColor = vec4(0.0); return; }
-
-                // unrotate: yaw(-rotY) then pitch(-rotX)
-                highp float cb = cos(-rotY), sb = sin(-rotY);
-                highp float x1 = r.x*cb - r.z*sb;
-                highp float z1 = r.x*sb + r.z*cb;
-                highp float y1 = r.y;
-                highp float ca = cos(-rotX), sa = sin(-rotX);
-                highp float y2 = y1*ca - z1*sa;
-                highp float z2 = y1*sa + z1*ca;
-                highp float x2 = x1;
-                highp vec3 s = vec3(x2, y2, z2);
-
-                // sphere -> flat (inverse of toSphere)
-                highp float lat = asin(clamp(s.y, -1.0, 1.0));
-                highp float lon = atan(s.x, s.z);
-                highp float px = lon * sphereR / hexScale;
-                highp float py = lat * sphereR / hexScale;
-
-                // flat coords -> texture UV [0,1]
-                highp float u = (px + flatHalf) / (2.0 * flatHalf);
-                highp float v = (py + flatHalf) / (2.0 * flatHalf);
-                if (u < 0.0 || u > 1.0 || v < 0.0 || v > 1.0) {
-                    gl_FragColor = vec4(0.0); return;
-                }
-
-                highp vec4 col = texture2D(src, vec2(u, v));
-
-                // ring-based opacity falloff (based on flat distance)
-                highp float dist = length(vec2(px, py));
-                highp float ring = dist / (hexScale * 1.5);   // approx ring index
-                highp float op = 1.0 - ring * 0.13;
-                op = clamp(op, 0.12, 1.0);
-
-                gl_FragColor = vec4(col.rgb, col.a * op);
-            }
-        "
     }
 
     // Current on-screen pixel size of a hexagon slot (approx. diameter).
