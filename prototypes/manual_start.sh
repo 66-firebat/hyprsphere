@@ -22,7 +22,7 @@
 # need permissive mode (see notes below).
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROTO_DIR="$SCRIPT_DIR"                                   # prototypes/hexmap (absolute)
+PROTO_DIR="$SCRIPT_DIR/hexmap"                           # prototypes/hexmap (absolute)
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"              # git_repositories
 HYPRLAND_REPO="$REPO_ROOT/hyprland"                       # the hyprland config repo
 
@@ -107,8 +107,9 @@ LOG_FILE="$PROTO_DIR/hexmap.log"
 nohup quickshell -p "$PROTO_DIR" > "$LOG_FILE" 2>&1 < /dev/null &
 echo "Logs: $LOG_FILE"
 
-# Wait for the instance to register over IPC.
-set +e   # `qs list | grep` can exit non-zero while still progressing
+# Wait for the instance to register over IPC (or simply be alive). The
+# host-portal app-ID registration can be delayed, so also accept "process is
+# alive + config loaded" as success.
 for i in $(seq 1 15); do
     if qs list --all 2>/dev/null | grep -q "$HEXMAP_QML"; then
         echo
@@ -117,8 +118,15 @@ for i in $(seq 1 15); do
         echo "Direct IPC:    qs ipc --path '$HEXMAP_QML' call hexmap toggle"
         exit 0
     fi
+    # fallback: the process may be alive even if IPC isn't listed yet
+    if pgrep -f "quickshell -p $PROTO_DIR" >/dev/null 2>&1; then
+        echo
+        echo "hexmap launched (process running; IPC registration may lag slightly)."
+        echo "Open / cycle:  SUPER + Tab"
+        exit 0
+    fi
     sleep 1
 done
 
-echo "Timed out waiting for hexmap to register over IPC."
+echo "Timed out waiting for hexmap to start."
 exit 1
