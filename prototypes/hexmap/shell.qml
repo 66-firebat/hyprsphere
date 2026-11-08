@@ -1,5 +1,5 @@
 // ══════════════════════════════════════════════════════════════════════════════
-// HYPRSPHERE — Hexagonal grid on a sphere (UI prototype, v4 — interactive)
+// HYPRSPHERE — Hexagonal grid on a sphere (UI prototype, v5 — raw hexagons)
 //
 // A gap-free hexagonal mesh wrapped on a sphere, transparent background,
 // opaque #ff4400 hexagons. Static at rest (dead-on front). Alt+Tab / Shift+Tab
@@ -12,6 +12,7 @@
 //   then ring 2 (12 hexes), ring 3, ... continuing the clockwise spiral.
 //
 // Opacity: full at center, diminishing with ring distance.
+// Focus: the front-and-center hexagon gets an emissive orange glow.
 //
 // Run:  quickshell -p prototypes/hexmap/
 // Controls: Tab / Shift+Tab move · Esc quit.
@@ -47,42 +48,10 @@ PanelWindow {
 
     // ── Selection state ────────────────────────────────────────────────────
     property int focusedIdx: 0            // MRU index currently front-and-center
-    property int mruCount: 19             // number of MRU items (matches icons)
+    property int mruCount: 30             // number of MRU items (sample)
 
-    // ── Icon directory ─────────────────────────────────────────────────────
-    property string iconDir: "file:///home/fireshark/nixos-dotfiles/git_repositories/assets/icon_packs/fireshark/48/apps/"
-
-    // ── MRU apps (name + matching icon filename) ──────────────────────────
-    property var apps: [
-        { name: "Ghostty",        icon: "com.mitchellh.ghostty.svg" },
-        { name: "Firefox",        icon: "firefox.svg" },
-        { name: "Emacs",          icon: "emacs.svg" },
-        { name: "Blender",        icon: "blender.svg" },
-        { name: "KiCad",          icon: "kicad.svg" },
-        { name: "GIMP",           icon: "gimp.svg" },
-        { name: "Sioyek",         icon: "sioyek-icon-linux.svg" },
-        { name: "Element",        icon: "element.svg" },
-        { name: "Anki",           icon: "anki.svg" },
-        { name: "Zathura",        icon: "org.pwmt.zathura.svg" },
-        { name: "Inkscape",       icon: "org.inkscape.Inkscape.svg" },
-        { name: "Telegram",       icon: "org.telegram.desktop.svg" },
-        { name: "Discord",        icon: "discord.svg" },
-        { name: "Settings",       icon: "org.gnome.Settings.svg" },
-        { name: "Extensions",     icon: "org.gnome.Extensions.svg" },
-        { name: "Swappy",         icon: "swappy.svg" },
-        { name: "DocViewer",      icon: "document-viewer.svg" },
-        { name: "Main",           icon: "main.svg" },
-        { name: "GnomeExt",       icon: "gnome-extensions.svg" }
-    ]
-
-    function appName(slot) { var it = slotItem(slot); return (it >= 0) ? apps[it].name : "" }
-    function appIconName(slot) { var it = slotItem(slot); return (it >= 0) ? apps[it].icon : "" }
-
-    // ── Flat-top axial hex corners (unit hex, size = 1) ────────────────────
-    // ── Pointy-top axial hex corners (unit hex, size = 1) ────────────────
-    // Icon SVGs are pointy-top hexagons already; match their orientation so
-    // icons fill the cells exactly.
-    function flatCorners(q, r) {
+    // ── Hex corner helper (pointy-top, unit hex, size 1) ───────────────────
+    function hexCorners(q, r) {
         var cx = Math.sqrt(3) * (q + r / 2)
         var cy = 1.5 * r
         var out = []
@@ -116,37 +85,12 @@ PanelWindow {
     }
     property var grid: buildGrid()
 
-    // MRU item index → hex slot index (identity here: slot 0 = center = item 0,
-    // slot 1 = 12 o'clock = item 1, etc.). An MRU item is only shown if it has
-    // a hex slot; extra slots (more hexes than items) are left empty.
-    function itemSlot(mru) { return mru }            // identity mapping
+    // MRU item index → hex slot index (identity: slot 0 = center = item 0,
+    // slot 1 = 12 o'clock = item 1, etc.). An MRU item is shown only if it has
+    // a hex slot; extra slots (more hexes than items) stay empty.
     function slotItem(slot) { return slot < mruCount ? slot : -1 }
-    function slotLabel(slot) {
-        var it = slotItem(slot)
-        return (it >= 0) ? apps[it].name : ""
-    }
-    function slotRing(slot) { return grid[slot] ? grid[slot].ring : 99 }
 
-    // Icon image element for a given MRU item (null if not loaded yet).
-    function iconSource(mruIdx) {
-        if (mruIdx < 0 || mruIdx >= apps.length) return null
-        return iconImages.itemAt(mruIdx)
-    }
-
-    // Current on-screen pixel size of a hexagon slot (approx. inradius*2).
-    function hexPxSize(slot) {
-        var h = grid[slot]
-        if (!h) return 60
-        var fx = Math.sqrt(3) * (h.q + h.r / 2), fy = 1.5 * h.r
-        // project two points ~hexScale apart along the local x axis to gauge scale
-        var c1 = root.flatToScreen(fx, fy)
-        var c2 = root.flatToScreen(fx + 1.0, fy)
-        var dx = c2.x - c1.x, dy = c2.y - c1.y
-        var scale = Math.sqrt(dx * dx + dy * dy)   // px per flat-space unit
-        return scale * 2.0   // hex flat-to-flat ≈ 2 * unit-space
-    }
-
-    // ── Flat tangent-plane point → unit sphere (continuous) ────────────────
+    // ── Flat tangent-plane point → unit sphere (continuous, no seams) ──────
     function toSphere(px, py) {
         var x = px * hexScale, y = py * hexScale, R = sphereR
         var lon = x / R
@@ -158,7 +102,7 @@ PanelWindow {
         return { x: Math.sin(lon) * clat, y: Math.sin(lat), z: Math.cos(lon) * clat }
     }
 
-    // ── Rotate (yaw→pitch) then perspective-project ────────────────────────
+    // ── Rotate (pitch around X, then yaw around Y) + perspective ───────────
     function project(s) {
         var cx = Math.cos(rotX), sx = Math.sin(rotX)
         var cy = Math.cos(rotY), sy = Math.sin(rotY)
@@ -173,8 +117,7 @@ PanelWindow {
 
     function flatToScreen(px, py) { return project(toSphere(px, py)) }
 
-    // Center of a given hex slot, in *unrotated* sphere space (for target
-    // direction computation).
+    // Center of a given hex slot in *unrotated* sphere space.
     function slotCenterUnrotated(slot) {
         var h = grid[slot]
         if (!h) return null
@@ -184,8 +127,7 @@ PanelWindow {
     }
 
     // ── Spin to a target slot: rotate so that slot's hex face is front ─────
-    // Verified math (see /tmp/rotcheck.py): to bring unrotated point c to
-    // screen center (x=0, y=0):
+    // Verified math: to bring unrotated point c to screen center (x=0, y=0):
     //     rotX = atan2(c.y, c.z)
     //     z1   = c.y*sin(rotX) + c.z*cos(rotX)
     //     rotY = atan2(-c.x, z1)
@@ -202,7 +144,7 @@ PanelWindow {
         focusedIdx = slot
     }
 
-    // Animate rotY and rotX to targets over spinMs (shortest yaw path).
+    // Animate rotY/rotX to targets over spinMs (shortest yaw path).
     function animateRot(fromYaw, toYaw, fromPitch, toPitch) {
         var diff = toYaw - fromYaw
         while (diff >  Math.PI) diff -= 2 * Math.PI
@@ -228,14 +170,13 @@ PanelWindow {
         spinTo(next)
     }
 
-    // ── Single full-scene canvas ────────────────────────────────────────────
+    // ── Single full-scene canvas: draws every hexagon in one pass ──────────
     Canvas {
         id: scene
         anchors.fill: parent
         renderStrategy: Canvas.Threaded
 
         function ringOpacity(r) {
-            // full at center, diminishing outward
             if (r === 0) return 1.0
             return Math.max(0.12, 1.0 - r * 0.13)
         }
@@ -252,7 +193,7 @@ PanelWindow {
 
             for (var hi = 0; hi < g.length; hi++) {
                 var h = g[hi]
-                var fc = root.flatCorners(h.q, h.r)
+                var fc = root.hexCorners(h.q, h.r)
 
                 var pts = []
                 var zsum = 0
@@ -290,17 +231,6 @@ PanelWindow {
                 ctx.fill()
                 ctx.stroke()
 
-                // Draw the app icon (already a pointy-top hexagon) at full
-                // cell size — no clip, so it fills the hexagon edge-to-edge.
-                var iconImg = root.iconSource(it)
-                if (iconImg && iconImg.status === Image.Ready) {
-                    var avg = { x: 0, y: 0 }
-                    for (var k = 0; k < 6; k++) { avg.x += pts[k].x; avg.y += pts[k].y }
-                    avg.x /= 6; avg.y /= 6
-                    var sz = root.hexPxSize(hi)
-                    ctx.drawImage(iconImg, avg.x - sz / 2, avg.y - sz / 2, sz, sz)
-                }
-
                 // Emissive glow for the focused hexagon (soft radial orange halo)
                 if (isFocused(hi)) {
                     var fx = 0, fy = 0
@@ -330,23 +260,16 @@ PanelWindow {
         Component.onCompleted: requestPaint()
     }
 
-    // ── Hidden icon preloader: one Image per app icon (kept off-screen) ──
-    Item {
-        id: iconPreloader
-        visible: false
-        Repeater {
-            id: iconImages
-            model: root.apps
-            delegate: Image {
-                property string src: root.iconDir + (root.apps[index] ? root.apps[index].icon : "")
-                source: src
-                sourceSize.width: 512
-                sourceSize.height: 512
-                smooth: true
-                asynchronous: true
-                onStatusChanged: if (status === Image.Ready) scene.requestPaint()
-            }
-        }
+    // Current on-screen pixel size of a hexagon slot (approx. diameter).
+    function hexPxSize(slot) {
+        var h = grid[slot]
+        if (!h) return 60
+        var fx = Math.sqrt(3) * (h.q + h.r / 2), fy = 1.5 * h.r
+        var c1 = root.flatToScreen(fx, fy)
+        var c2 = root.flatToScreen(fx + 1.0, fy)
+        var dx = c2.x - c1.x, dy = c2.y - c1.y
+        var scale = Math.sqrt(dx * dx + dy * dy)
+        return scale * 2.0
     }
 
     // ── HUD caption ────────────────────────────────────────────────────────
@@ -354,7 +277,7 @@ PanelWindow {
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottom: parent.bottom
         anchors.bottomMargin: 20
-        text: root.appName(root.focusedIdx) + " · Tab/Shift+Tab spin · Esc quit"
+        text: "node " + root.focusedIdx + " · Tab/Shift+Tab spin · Esc quit"
         color: "#ff4400"
         font.pixelSize: 13
         font.family: "JetBrains Mono"
@@ -375,6 +298,4 @@ PanelWindow {
             }
         }
     }
-
-    // ── No auto-timeout during interactive prototyping (Esc to quit) ───────
 }
