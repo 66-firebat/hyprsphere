@@ -496,7 +496,7 @@ PanelWindow {
                     height: badgeText.height + window.hexScale * 0.16
                     radius: height / 2
                     color: window.cfg.colors?.badgeBg ?? "#ff4400"
-                    visible: window.hasBadge(item) && slot !== 0
+                    visible: window.hasBadge(item)
 
                     Text {
                         id: badgeText
