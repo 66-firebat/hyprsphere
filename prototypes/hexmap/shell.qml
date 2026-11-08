@@ -211,6 +211,7 @@ PanelWindow {
         itemAtSlot = []
         for (var i = 0; i < grid.length; i++) itemAtSlot.push(i < mruCount ? i : -1)
         window.visible = true
+        Qt.callLater(function() { focusGrabber.forceActiveFocus() })
         log("opened, " + mruCount + " nodes")
     }
 
@@ -230,6 +231,12 @@ PanelWindow {
                 window.openSwitcher()
             }
         }
+        function next(): void {
+            if (window.overlayActive) window.doAdvance(1)
+        }
+        function prev(): void {
+            if (window.overlayActive) window.doAdvance(-1)
+        }
         function commit(): void {
             window.closeSwitcher()
         }
@@ -243,6 +250,7 @@ PanelWindow {
         id: focusGrabber
         anchors.fill: parent
         focus: true
+        Keys.priority: Keys.BeforeItem
         Keys.onPressed: (event) => {
             if (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab) {
                 var dir = (event.modifiers & Qt.ShiftModifier || event.key === Qt.Key_Backtab) ? -1 : 1
