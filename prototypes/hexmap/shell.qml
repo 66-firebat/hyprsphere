@@ -1,18 +1,14 @@
 // ══════════════════════════════════════════════════════════════════════════════
-// HYPRSPHERE — Hexagonal grid on a sphere (UI prototype, v7 — swap-based focus)
+// HYPRSPHERE — Hexagonal grid on a FLAT plane (v8 — swap-based focus)
 //
-// A gap-free hexagonal mesh wrapped on a sphere, transparent background,
-// opaque #ff4400 hexagons with Nerd Font glyphs. The sphere is viewed DEAD-ON
-// (no spin): the focused item always sits in the CENTER hexagon, face-on and
-// undistorted.
+// A gap-free hexagonal mesh on a flat 2D plane, transparent background,
+// opaque #ff4400 hexagons with Nerd Font glyphs. No curvature/sphere: the
+// focused item always sits in the CENTER hexagon, face-on and undistorted.
 //
-// Alt+Tab drives a SWAP animation (not a rotation): the focused item and the
-// next MRU item literally swap hexagon cells. On the K-th press in a chain we
-// left-rotate the ordered "spine" [center, slot1(12o'clock), slot2(2o'clock),
-// slot3(4o'clock), ...] so the original center item walks clockwise around
-// ring 1, one slot per press, and each item it passes shifts one slot toward
-// 12 o'clock. The hexagon cells themselves never move; items glide between
-// cells over swapMs.
+// Alt+Tab drives a SWAP animation (not a rotation): on the K-th press in a
+// chain we right-rotate the ordered "spine" [center, slot1(12o'clock),
+// slot2(2o'clock), ...] so a fresh item enters center and the prior centers
+// walk outward (never returning). Items glide between cells over swapMs.
 //
 // Run:  quickshell -p prototypes/hexmap/
 // Controls: Tab / Shift+Tab swap · Esc quit.
@@ -38,10 +34,9 @@ PanelWindow {
     implicitWidth: Screen.width
     implicitHeight: Screen.height
 
-    // ── Sphere / grid parameters ───────────────────────────────────────────
-    property real sphereR: 280
+    // ── Flat plane grid parameters ─────────────────────────────────────────
+    property real hexScale: 34      // screen px per flat grid unit
     property int  rings: 6
-    property real hexScale: 34
     property real swapMs: 150
     property real animProgress: 1.0     // 1.0 = settled, 0..1 during a swap
 
@@ -95,43 +90,23 @@ PanelWindow {
         return appGlyphs[item % appGlyphs.length] || "\uF111"
     }
 
-    // ── Sphere mapping (dead-on, no rotation) → fixed screen positions ─────
-    function toSphere(px, py) {
-        var x = px * hexScale, y = py * hexScale, R = sphereR
-        var lon = x / R, lat = y / R
-        var maxLat = Math.PI / 2 - 0.18
-        if (lat >  maxLat) lat =  maxLat
-        if (lat < -maxLat) lat = -maxLat
-        var clat = Math.cos(lat)
-        return { x: Math.sin(lon) * clat, y: Math.sin(lat), z: Math.cos(lon) * clat }
+    // ── Flat orthogonal projection (no curvature, no sphere) ──────────────
+    // Flat hex coords (px, py) map directly to screen at a uniform scale.
+    function flatToScreen(px, py) {
+        return { x: px * hexScale, y: py * hexScale, z: 1.0, s: 1.0 }
     }
-
-    // Fixed perspective projection (rotX = rotY = 0 → face-on at center).
-    function project(s) {
-        var d = 1100
-        var persp = d / (d - s.z * sphereR)
-        return { x: s.x * sphereR * persp, y: s.y * sphereR * persp, z: s.z, s: persp }
-    }
-
-    function flatToScreen(px, py) { return project(toSphere(px, py)) }
 
     // Screen center of a given slot (relative to sphere center).
     function slotCenter(slot) {
         var h = grid[slot]
-        if (!h) return { x: 0, y: 0, z: -1, s: 1 }
+        if (!h) return { x: 0, y: 0, z: 1.0, s: 1.0 }
         var cx = 1.5 * h.q, cy = Math.sqrt(3) * (h.r + h.q / 2)
         return flatToScreen(cx, cy)
     }
 
-    // On-screen pixel size of a hexagon slot (approx. diameter).
+    // On-screen pixel size of a hexagon slot (constant on a flat plane).
     function hexPxSize(slot) {
-        var h = grid[slot]
-        if (!h) return 60
-        var fx = 1.5 * h.q, fy = Math.sqrt(3) * (h.r + h.q / 2)
-        var c1 = flatToScreen(fx, fy)
-        var c2 = flatToScreen(fx + 1.0, fy)
-        var dx = c2.x - c1.x, dy = c2.y - c1.y
-        return Math.sqrt(dx * dx + dy * dy) * 2.0
+        return hexScale * 2.0
     }
 
     function ringOpacity(r) {
@@ -225,15 +200,11 @@ PanelWindow {
                 var h = root.grid[hi]
                 var fc = root.hexCorners(h.q, h.r)
                 var pts = []
-                var zsum = 0
                 for (var i = 0; i < 6; i++) {
                     var p = root.flatToScreen(fc[i].x, fc[i].y)
-                    zsum += p.z
                     pts.push({ x: ox + p.x, y: oy + p.y })
                 }
-                var zc = zsum / 6
-                if (zc <= 0.22) continue
-                var alpha = root.ringOpacity(h.ring) * (1.0 - Math.max(0, 1.0 - zc) * 0.35)
+                var alpha = root.ringOpacity(h.ring)
                 // fill + stroke
                 ctx.beginPath()
                 ctx.moveTo(pts[0].x, pts[0].y)
