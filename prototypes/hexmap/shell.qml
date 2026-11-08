@@ -327,8 +327,8 @@ PanelWindow {
                     anchors.centerIn: parent
                     width: parent.width
                     height: parent.height
-                    asynchronous: true
                     opacity: slot === 0 ? 1.0 : window.ringOpacity(ring)
+                    z: 0
 
                     ShapePath {
                         fillColor: window.cfg.colors?.accent ?? "#ff4400"
@@ -353,6 +353,7 @@ PanelWindow {
                 Text {
                     id: glyphText
                     anchors.centerIn: parent
+                    z: 1
                     text: window.glyphFor(item)
                     color: "#2b2b2b"
                     font.family: window.cfg.appCard?.fontFamily ?? "JetBrainsMono Nerd Font Mono"
