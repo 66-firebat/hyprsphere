@@ -90,22 +90,33 @@ PanelWindow {
     // a hex slot; extra slots (more hexes than items) stay empty.
     function slotItem(slot) { return slot < mruCount ? slot : -1 }
 
-    // ── Icon pack (dummy repetition for hexes beyond the set) ─────────────
-    property string iconDir: "file:///home/fireshark/nixos-dotfiles/git_repositories/assets/icon_packs/fireshark/48/apps/"
-    property var iconNames: [
-        "com.mitchellh.ghostty.svg", "firefox.svg", "emacs.svg", "blender.svg",
-        "kicad.svg", "gimp.svg", "sioyek-icon-linux.svg", "element.svg",
-        "anki.svg", "org.pwmt.zathura.svg", "org.inkscape.Inkscape.svg",
-        "org.telegram.desktop.svg", "discord.svg", "org.gnome.Settings.svg",
-        "org.gnome.Extensions.svg", "swappy.svg", "document-viewer.svg",
-        "main.svg", "gnome-extensions.svg"
+    // ── Nerd Font glyph map: app index → glyph codepoint ─────────────────
+    // Uses JetBrains Mono Nerd Font (private-use-area codepoints).
+    property var appGlyphs: [
+        { name: "Ghostty",  icon: "\uE795" },   // terminal
+        { name: "Firefox",  icon: "\uF269" },   // firefox
+        { name: "Emacs",    icon: "\uE7C5" },   // code/editor
+        { name: "Blender",  icon: "\uF447" },   // cube/3d
+        { name: "KiCad",    icon: "\uF11B" },   // sitemap/circuit
+        { name: "GIMP",     icon: "\uF1FC" },   // paint-brush
+        { name: "Sioyek",   icon: "\uF02D" },   // book
+        { name: "Element",  icon: "\uF0E0" },   // envelope
+        { name: "Anki",     icon: "\uF005" },   // star
+        { name: "Zathura",  icon: "\uF518" },   // book-open
+        { name: "Inkscape", icon: "\uF1FC" },   // paint-brush
+        { name: "Telegram", icon: "\uF3FE" },   // telegram
+        { name: "Discord",  icon: "\uF392" },   // discord
+        { name: "Settings", icon: "\uF013" },   // gear
+        { name: "Extensions", icon: "\uF12E" }, // puzzle-piece
+        { name: "Swappy",   icon: "\uF03E" },   // image
+        { name: "DocViewer", icon: "\uF15B" },  // file
+        { name: "Main",     icon: "\uF111" },   // circle
+        { name: "GnomeExt", icon: "\uF12E" }    // puzzle-piece
     ]
-    function iconFor(mruIdx) { return iconNames[mruIdx % iconNames.length] }
 
-    function iconImg(mruIdx) {
-        if (mruIdx < 0) return null
-        var it = iconRepeater.itemAt(mruIdx)
-        return it ? it : null
+    function glyphFor(mruIdx) {
+        var entry = appGlyphs[mruIdx % appGlyphs.length]
+        return entry ? entry.icon : "\uF111"
     }
 
     // ── Flat tangent-plane point → unit sphere (continuous, no seams) ──────
@@ -246,30 +257,31 @@ PanelWindow {
                 ctx.clip()
                 ctx.globalAlpha = alpha
 
-                // Draw the icon via an affine transform built from the hex's
-                // projected local frame — the icon is "placed on the flat
-                // grid" (unit flat coords) then warped through the projected
-                // basis, so it follows the hexagon's curvature/foreshortening.
+                // opaque #ff4400 tile (the hexagon) — re-trace the path since
+                // clip() consumed it
+                ctx.beginPath()
+                ctx.moveTo(pts[0].x, pts[0].y)
+                for (var jj = 1; jj < 6; jj++) ctx.lineTo(pts[jj].x, pts[jj].y)
+                ctx.closePath()
+                ctx.fillStyle = "#ff4400"
+                ctx.fill()
+
+                // Draw a Nerd Font glyph centered in the hexagon. The glyph is
+                // a plain text character, drawn at the hexagon's screen center,
+                // scaled to the hex's projected size.
                 var fcx = Math.sqrt(3) * (h.q + h.r / 2)
                 var fcy = 1.5 * h.r
-                var pC = root.flatToScreen(fcx, fcy)                       // screen center
-                var pX = root.flatToScreen(fcx + 1.0, fcy)                 // +flat X
-                var pY = root.flatToScreen(fcx, fcy + 1.0)                 // +flat Y
-                var ex = { x: pX.x - pC.x, y: pX.y - pC.y }
-                var ey = { x: pY.x - pC.x, y: pY.y - pC.y }
+                var pC = root.flatToScreen(fcx, fcy)
+                var gx = ox + pC.x
+                var gy = oy + pC.y
+                var gsz = root.hexPxSize(hi) * 0.42   // glyph font size relative to hex
+                var glyph = root.glyphFor(it)
 
-                var img = root.iconImg(it)
-                if (img && img.status === Image.Ready) {
-                    // setTransform(a,b,c,d,e,f): maps flat (x,y) -> screen:
-                    //  sx = a*x + c*y + e ; sy = b*x + d*y + f
-                    // basis: flat X -> ex, flat Y -> ey, origin -> screen center
-                    ctx.setTransform(ex.x, ex.y, ey.x, ey.y, ox + pC.x, oy + pC.y)
-                    var span = 2.4   // icon spans ~[-1.2, +1.2] in flat units
-                    ctx.drawImage(img, -span/2, -span/2, span, span)
-                } else {
-                    ctx.fillStyle = "#ff4400"
-                    ctx.fill()
-                }
+                ctx.font = "bold " + Math.round(gsz) + "px 'JetBrainsMono Nerd Font'"
+                ctx.textAlign = "center"
+                ctx.textBaseline = "middle"
+                ctx.fillStyle = "#1a0a00"   // dark glyph on the orange tile
+                ctx.fillText(glyph, gx, gy)
                 ctx.restore()
 
                 // crisp #ff4400 edge (visible where the icon hex leaves a rim)
@@ -309,21 +321,6 @@ PanelWindow {
             function onFocusedIdxChanged() { scene.requestPaint() }
         }
         Component.onCompleted: requestPaint()
-    }
-
-    // ── Preloaded icon images (one per MRU item) ──────────────────────────
-    Repeater {
-        id: iconRepeater
-        model: root.mruCount
-        delegate: Image {
-            property int mruIdx: index
-            source: root.iconDir + root.iconFor(index)
-            sourceSize.width: 256
-            sourceSize.height: 256
-            smooth: true
-            asynchronous: true
-            onStatusChanged: if (status === Image.Ready) scene.requestPaint()
-        }
     }
 
     // Current on-screen pixel size of a hexagon slot (approx. diameter).
