@@ -12,7 +12,7 @@
     "glyph": "#1a0a00"
   },
   "hexmap": {
-    "hexScale": 30,
+    "hexScale": 55,
     "rings": 6,
     "swapMs": 80
   },
