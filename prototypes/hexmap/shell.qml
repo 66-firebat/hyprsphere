@@ -390,23 +390,18 @@ PanelWindow {
         var cx = Screen.width / 2
         var cy = Screen.height / 2
         var R = _curveRadius
-        // Arc end angles (degrees): 180 (left) .. 90 (top).
-        var startA = 180
-        var endA   = 90
-        var span   = startA - endA   // 90 degrees total
-        // Fraction along the arc for this character, centered.
+        // Fixed angular step between characters (degrees). Smaller = tighter
+        // spacing. The string is centered on the arc midpoint 135° (halfway
+        // between 180° left and 90° top).
+        var charStep = 14.0
+        var midAngle = 135
         var total = n
-        var t = total === 1 ? 0.0 : (i / (total - 1))   // 0..1
-        // Map t so the string is centered on the arc midpoint (45° span).
-        // We want the string centered, so distribute chars across a sub-span
-        // proportional to (n-1) * charAngleStep. Simpler: place char i at
-        // angle = midAngle + (t - 0.5) * span.
-        var angleDeg = startA - t * span
+        var off = (total === 1 ? 0.0 : (i - (total - 1) / 2.0))
+        var angleDeg = midAngle - off * charStep
         var rad = angleDeg * Math.PI / 180
         var x = cx + R * Math.cos(rad)
         var y = cy - R * Math.sin(rad)   // screen y down
         // Tangent rotation: the glyph's baseline is tangent to the circle.
-        // For arch (∩), the glyph rotates by -(angle from vertical).
         var rot = (90 - angleDeg)
         return { x: x, y: y, angle: rot }
     }
