@@ -11,7 +11,6 @@
 // ══════════════════════════════════════════════════════════════════════════════
 
 import QtQuick
-import Qt5Compat.GraphicalEffects
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
@@ -493,33 +492,6 @@ PanelWindow {
                     mipmap: true
                     asynchronous: true
                     fillMode: Image.PreserveAspectFit
-                }
-
-                // Capture the icon (incl. its transparent hexagon corners) so
-                // the sheen gradient can be masked to the hexagon shape.
-                ShaderEffectSource {
-                    id: iconSource
-                    sourceItem: iconImage
-                    anchors.fill: parent
-                    smooth: true
-                }
-
-                // Subtle diagonal specular highlight (metallic sheen), masked
-                // to the icon's alpha so it only shows on the hexagon, not the
-                // transparent corners.
-                LinearGradient {
-                    id: sheen
-                    anchors.fill: parent
-                    source: iconSource
-                    start: Qt.point(0, 0)
-                    end: Qt.point(parent.width, parent.height)
-                    gradient: Gradient {
-                        GradientStop { position: 0.0; color: "transparent" }
-                        GradientStop { position: 0.4; color: "transparent" }
-                        GradientStop { position: 0.5; color: "#33ffffff" }
-                        GradientStop { position: 0.6; color: "transparent" }
-                        GradientStop { position: 1.0; color: "transparent" }
-                    }
                 }
 
                 // Window-count badge centered on the bottom edge (6 o'clock).
