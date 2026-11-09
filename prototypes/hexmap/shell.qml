@@ -68,6 +68,12 @@ PanelWindow {
     readonly property real _badgeFontSize: hexScale * 0.18
     readonly property real _badgePad: hexScale * 0.10
 
+    // Curved-label metrics (proportional to the hex array size).
+    // Outer hex-center radius = rings * hexSize * 1.5 (flat-top spacing).
+    readonly property real _arrayOuterRadius: rings * 1.5 * hexScale
+    readonly property real _curveRadius: _arrayOuterRadius * 1.12
+    readonly property real _curveFontSize: hexScale * 0.42
+
     property var sphereModel: []       // current node list (per layer)
     property int layer: 0              // 0=apps, 1=windows, 2=search
     property string drilledAppId: ""   // which app is drilled into (layer 1)
@@ -369,6 +375,41 @@ PanelWindow {
     function appNameFor(item) { return sphereModel[item] ? sphereModel[item].name : "" }
     function iconFor(item) { return sphereModel[item] ? sphereModel[item].icon : "main.svg" }
     function hasBadge(item) { return sphereModel[item] ? sphereModel[item].windowCount > 0 : false }
+
+    // Curved-label (arc) geometry.
+    // The focused node's name is rendered as per-character glyphs along a
+    // circular arc in the array's top-left, arching upward (∩). The arc spans
+    // from 9 o'clock (left, 180°) to 12 o'clock (top, 90°), centered on 45°.
+    function curveLabel() { return itemAtSlot[0] !== undefined ? appNameFor(itemAtSlot[0]) : "" }
+    function curveCharCount() { return curveLabel().length }
+
+    // For a character at index i of n total, returns { x, y, angle } where
+    // (x,y) is the glyph position (absolute logical px) and angle is the
+    // tangent rotation (degrees) so the glyph sits on the arc.
+    function curveChar(i, n) {
+        var cx = Screen.width / 2
+        var cy = Screen.height / 2
+        var R = _curveRadius
+        // Arc end angles (degrees): 180 (left) .. 90 (top).
+        var startA = 180
+        var endA   = 90
+        var span   = startA - endA   // 90 degrees total
+        // Fraction along the arc for this character, centered.
+        var total = n
+        var t = total === 1 ? 0.0 : (i / (total - 1))   // 0..1
+        // Map t so the string is centered on the arc midpoint (45° span).
+        // We want the string centered, so distribute chars across a sub-span
+        // proportional to (n-1) * charAngleStep. Simpler: place char i at
+        // angle = midAngle + (t - 0.5) * span.
+        var angleDeg = startA - t * span
+        var rad = angleDeg * Math.PI / 180
+        var x = cx + R * Math.cos(rad)
+        var y = cy - R * Math.sin(rad)   // screen y down
+        // Tangent rotation: the glyph's baseline is tangent to the circle.
+        // For arch (∩), the glyph rotates by -(angle from vertical).
+        var rot = (90 - angleDeg)
+        return { x: x, y: y, angle: rot }
+    }
     function badgeText(item) {
         var n = sphereModel[item]
         if (!n) return ""
@@ -670,6 +711,31 @@ PanelWindow {
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
                     }
+                }
+            }
+        }
+
+        // ── Curved label: focused node name around the top-left arc ───────
+        Repeater {
+            id: curveRepeater
+            model: window.curveCharCount()
+
+            delegate: Text {
+                property var cc: window.curveChar(index, window.curveCharCount())
+                property int charIdx: index
+                text: window.curveLabel().charAt(index)
+                x: cc.x - width / 2
+                y: cc.y - height / 2
+                z: 20
+                visible: window.overlayActive
+                color: window.cfg.colors?.accent ?? "#ff4400"
+                font.family: "JetBrains Mono"
+                font.pixelSize: window._curveFontSize
+                font.bold: true
+                transform: Rotation {
+                    origin.x: width / 2
+                    origin.y: height / 2
+                    angle: cc.angle
                 }
             }
         }
