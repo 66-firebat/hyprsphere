@@ -34,7 +34,7 @@ PanelWindow {
 
     // ── Config ─────────────────────────────────────────────────────────────
     property string configPath: String(Qt.resolvedUrl("config.json")).replace(/^file:\/\//, "")
-    property var cfg: ({"hexmap":{"hexScale":68,"rings":6,"swapMs":80},"colors":{"accent":"#ff4400","badgeBg":"#ff4400","badgeFg":"#2b2b2b"}})
+    property var cfg: ({"hexmap":{"hexScale":30,"rings":6,"swapMs":80},"colors":{"accent":"#ff4400","badgeBg":"#ff4400","badgeFg":"#2b2b2b"}})
 
     property string logPrefix: "[hexmap] "
     function log(msg) { console.log(logPrefix + msg) }
@@ -69,9 +69,10 @@ PanelWindow {
     readonly property real _badgePad: hexScale * 0.10
 
     // Curved-label metrics (proportional to the hex array size).
-    // Outer hex-center radius = rings * hexSize * 1.5 (flat-top spacing).
-    readonly property real _arrayOuterRadius: rings * 1.5 * hexScale
-    readonly property real _curveRadius: _arrayOuterRadius * 1.12
+    // The array's outer edge (half-height, incl. icon overhang) =
+    // (rings * sqrt(3) + 1) * hexScale. The top-left arc hugs just outside it.
+    readonly property real _arrayOuterRadius: (rings * Math.sqrt(3) + 1) * hexScale
+    readonly property real _curveRadius: _arrayOuterRadius * 1.10
     readonly property real _curveFontSize: hexScale * 0.42
 
     property var sphereModel: []       // current node list (per layer)
