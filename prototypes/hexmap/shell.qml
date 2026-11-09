@@ -381,7 +381,13 @@ PanelWindow {
     // The focused node's name is rendered as per-character glyphs along a
     // circular arc in the array's top-left, arching upward (∩). The arc spans
     // from 9 o'clock (left, 180°) to 12 o'clock (top, 90°), centered on 45°.
-    function curveLabel() { advanceVersion; return itemAtSlot[0] !== undefined ? appNameFor(itemAtSlot[0]) : "" }
+    function curveLabel() {
+        advanceVersion
+        var n = itemAtSlot[0] !== undefined ? sphereModel[itemAtSlot[0]] : null
+        if (!n) return ""
+        // Layer 1 (window nodes) shows the window title; else the app name.
+        return n.isWindowNode && n.title ? n.title : n.name
+    }
     function curveCharCount() { advanceVersion; return curveLabel().length }
 
     // For a character at index i of n total, returns { x, y, angle } where
@@ -394,7 +400,7 @@ PanelWindow {
         // Fixed angular step between characters (degrees). Smaller = tighter
         // spacing. The string is centered on the arc midpoint 135° (halfway
         // between 180° left and 90° top).
-        var charStep = 8.0
+        var charStep = 4.0
         var midAngle = 135
         var total = n
         var off = (total === 1 ? 0.0 : (i - (total - 1) / 2.0))
