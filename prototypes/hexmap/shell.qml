@@ -78,6 +78,7 @@ PanelWindow {
     property int layer: 0              // 0=apps, 1=windows, 2=search
     property string drilledAppId: ""   // which app is drilled into (layer 1)
     property int selectedAppIndex: 0   // MRU index currently focused (center)
+    property int advanceVersion: 0     // bumps on every swap to notify bindings
 
     // ── Search (layer 2) state ────────────────────────────────────────────
     property string searchQuery: ""
@@ -380,8 +381,8 @@ PanelWindow {
     // The focused node's name is rendered as per-character glyphs along a
     // circular arc in the array's top-left, arching upward (∩). The arc spans
     // from 9 o'clock (left, 180°) to 12 o'clock (top, 90°), centered on 45°.
-    function curveLabel() { return itemAtSlot[0] !== undefined ? appNameFor(itemAtSlot[0]) : "" }
-    function curveCharCount() { return curveLabel().length }
+    function curveLabel() { advanceVersion; return itemAtSlot[0] !== undefined ? appNameFor(itemAtSlot[0]) : "" }
+    function curveCharCount() { advanceVersion; return curveLabel().length }
 
     // For a character at index i of n total, returns { x, y, angle } where
     // (x,y) is the glyph position (absolute logical px) and angle is the
@@ -393,7 +394,7 @@ PanelWindow {
         // Fixed angular step between characters (degrees). Smaller = tighter
         // spacing. The string is centered on the arc midpoint 135° (halfway
         // between 180° left and 90° top).
-        var charStep = 14.0
+        var charStep = 8.0
         var midAngle = 135
         var total = n
         var off = (total === 1 ? 0.0 : (i - (total - 1) / 2.0))
@@ -483,6 +484,7 @@ PanelWindow {
         if (dir >= 1) advanceForward()
         else advanceBackward()
         selectedAppIndex = itemAtSlot[0]     // center = focused item
+        advanceVersion++                     // notify bindings (curved label, HUD)
         window.log("doAdvance dir=" + dir + " -> focusItem=" + window.itemAtSlot[0] + " layer=" + window.layer)
     }
 
