@@ -397,14 +397,17 @@ PanelWindow {
         var cx = Screen.width / 2
         var cy = Screen.height / 2
         var R = _curveRadius
-        // Fixed angular step between characters (degrees). Smaller = tighter
-        // spacing. The string is centered on the arc midpoint 135° (halfway
-        // between 180° left and 90° top).
+        // Symmetric upward dome (∩) centered on 12 o'clock (90°), reading
+        // left-to-right: char 0 at the left end, apex at the middle.
         var charStep = 4.0
-        var midAngle = 135
+        var apex = 90              // 12 o'clock (top)
         var total = n
         var off = (total === 1 ? 0.0 : (i - (total - 1) / 2.0))
-        var angleDeg = midAngle - off * charStep
+        // angle: for a left-to-right reading top dome, char i angle runs from
+        // (apex + (n-1)/2*step) on the left down to apex at center and further
+        // to (apex - (n-1)/2*step) on the right. In screen terms, "left" is
+        // larger angle (toward 180°), "right" is smaller (toward 0°).
+        var angleDeg = apex + off * charStep
         var rad = angleDeg * Math.PI / 180
         var x = cx + R * Math.cos(rad)
         var y = cy - R * Math.sin(rad)   // screen y down
