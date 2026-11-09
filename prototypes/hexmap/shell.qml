@@ -14,6 +14,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
+import "lib/fuse.js" as FuseJs
 
 PanelWindow {
     id: window
@@ -68,9 +69,15 @@ PanelWindow {
     readonly property real _badgePad: hexScale * 0.10
 
     property var sphereModel: []       // current node list (per layer)
-    property int layer: 0              // 0=apps, 1=windows, 2=search(soon)
+    property int layer: 0              // 0=apps, 1=windows, 2=search
     property string drilledAppId: ""   // which app is drilled into (layer 1)
     property int selectedAppIndex: 0   // MRU index currently focused (center)
+
+    // ── Search (layer 2) state ────────────────────────────────────────────
+    property string searchQuery: ""
+    property var fuseIndex: null
+    property var searchDatabase: []
+    property var searchTimer: null
 
     // ── Sample data — focusHistory is the single source of truth ───────────
     // MRU-first ordered list of { address, appId, title }.
@@ -207,6 +214,112 @@ PanelWindow {
             })
         }
         return result
+    }
+
+    // ── SEARCH (Layer 2) — Fuse.js fuzzy search ───────────────────────────
+    function buildSearchDatabase() {
+        var db = []
+        // individual windows
+        for (var i = 0; i < focusHistory.length; i++) {
+            var entry = focusHistory[i]
+            if (!entry.appId) continue
+            db.push({
+                type: "window", appId: entry.appId,
+                label: resolveName(entry.appId),
+                icon: resolveIcon(entry.appId),
+                address: entry.address, title: entry.title
+            })
+        }
+        // whitelisted placeholders not in focusHistory
+        for (var e = 0; e < whitelist.length; e++) {
+            var wlEntry = whitelist[e]
+            var found = false
+            for (var j = 0; j < focusHistory.length; j++) {
+                if (focusHistory[j].appId === wlEntry.appId) { found = true; break }
+            }
+            if (!found) {
+                db.push({
+                    type: "whitelisted-app", appId: wlEntry.appId,
+                    label: resolveName(wlEntry.appId), icon: resolveIcon(wlEntry.appId),
+                    exec: wlEntry.exec, windows: [], windowCount: 0
+                })
+            }
+        }
+        return db
+    }
+
+    function initFuseIndex() {
+        var db = buildSearchDatabase()
+        searchDatabase = db
+        try {
+            fuseIndex = new FuseJs.Fuse(db, {
+                keys: [
+                    { name: "label", weight: 0.5 },
+                    { name: "title", weight: 0.4 },
+                    { name: "appId", weight: 0.1 }
+                ],
+                threshold: 0.4,
+                minMatchCharLength: 1,
+                ignoreLocation: true,
+                includeScore: true,
+                shouldSort: true
+            })
+        } catch (e) {
+            log("Fuse init error: " + e)
+            fuseIndex = null
+        }
+    }
+
+    function _handleSearchInput(text) {
+        searchQuery = text
+        if (searchQuery === "" && window.layer === 2) {
+            cancelSearch()
+            return
+        }
+        if (searchTimer) searchTimer.running = false
+        searchTimer = Qt.createQmlObject(
+            'import QtQuick; Timer { interval: 150; running: true; repeat: false; onTriggered: window._executeSearch(); }',
+            window
+        )
+    }
+
+    function _executeSearch() {
+        if (searchQuery === "") return
+        if (!fuseIndex) { initFuseIndex(); if (!fuseIndex) return }
+
+        var results = fuseIndex.search(searchQuery)
+        var top = results.slice(0, 30)
+        var layer2Model = []
+
+        for (var i = 0; i < top.length; i++) {
+            var item = top[i].item
+            if (item.type === "window") {
+                layer2Model.push({
+                    appId: item.appId, name: item.label, icon: item.icon,
+                    address: item.address, title: item.title,
+                    isWindowNode: true, isSearchResult: true,
+                    windowCount: 0,
+                })
+            } else if (item.type === "whitelisted-app") {
+                layer2Model.push({
+                    appId: item.appId, name: item.label, icon: item.icon,
+                    exec: item.exec, windows: [], windowCount: 0,
+                    isWhitelistPlaceholder: true, isSearchResult: true,
+                })
+            }
+        }
+
+        setLayer(layer2Model.length === 0
+            ? [{ name: "No results", icon: "", appId: "", isPlaceholder: true }]
+            : layer2Model, 2)
+        log("_executeSearch: " + layer2Model.length + " results for \"" + searchQuery + "\"")
+    }
+
+    function cancelSearch() {
+        searchQuery = ""
+        var m = buildLayer0()
+        setLayer(m, 0)
+        log("cancelSearch: returned to layer 0")
     }
 
     // ── Hex grid (ordered: center, then rings clockwise from 12 o'clock) ───
@@ -382,6 +495,27 @@ PanelWindow {
             var n = sphereModel[selectedAppIndex]
             if (!n || n.isWhitelistPlaceholder) return
             drillToLayer1(n.appId)
+        } else if (layer === 2) {
+            // Search result drill-down (mirrors hyprsphere 2→1):
+            // a search-result WINDOW drills into its app's windows (layer 1),
+            // discarding the search. Whitelist placeholders pop back to layer 0.
+            var s = sphereModel[selectedAppIndex]
+            if (!s || s.isPlaceholder) return
+            if (s.isWindowNode && !s.isWhitelistPlaceholder) {
+                searchQuery = ""
+                drillToLayer1(s.appId)
+                log("drillDown 2→1: " + s.appId + " windows=" + sphereModel.length)
+            } else {
+                // whitelist placeholder → pop back to layer 0
+                searchQuery = ""
+                var m = buildLayer0()
+                setLayer(m, 0)
+                // select by appId
+                for (var i = 0; i < m.length; i++) {
+                    if (m[i].appId === s.appId) { selectedAppIndex = i; break }
+                }
+                log("drillDown 2→0: " + s.appId)
+            }
         } else if (layer === 1) {
             drillToLayer0()
         }
@@ -393,11 +527,14 @@ PanelWindow {
 
     function openSwitcher() {
         overlayActive = true
+        searchQuery = ""
+        drilledAppId = ""
         var m = buildLayer0()
         setLayer(m, 0)
         pressCount = 0
         window.visible = true
         fadeProgress = 1.0
+        initFuseIndex()
         Qt.callLater(function() { focusGrabber.forceActiveFocus() })
         log("opened, " + sphereModel.length + " app groups")
     }
@@ -441,10 +578,23 @@ PanelWindow {
         Keys.priority: Keys.BeforeItem
         Keys.onPressed: (event) => {
             if (event.key === Qt.Key_Escape) {
-                window.closeSwitcher()
+                // Escape: if searching, cancel search; otherwise close overlay.
+                if (window.layer === 2 && window.searchQuery !== "") {
+                    window.cancelSearch()
+                } else {
+                    window.closeSwitcher()
+                }
                 event.accepted = true
             } else if (event.key === Qt.Key_Semicolon) {
                 window.drillDown()
+                event.accepted = true
+            } else if (event.key === Qt.Key_Backspace) {
+                if (window.searchQuery.length > 0)
+                    window._handleSearchInput(window.searchQuery.slice(0, -1))
+                event.accepted = true
+            } else if (!event.isAutoRepeat && event.text.length > 0
+                       && event.text.match(/[a-zA-Z0-9 _.-]/)) {
+                window._handleSearchInput(window.searchQuery + event.text)
                 event.accepted = true
             }
         }
@@ -528,13 +678,42 @@ PanelWindow {
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.bottom: parent.bottom
-            anchors.bottomMargin: 20
-            visible: window.overlayActive
+            anchors.bottomMargin: window.overlayActive && window.layer === 2 ? 90 : 20
+            visible: window.overlayActive && window.layer !== 2
             text: (window.layer === 0 ? "apps · " : "windows · ")
                   + (window.itemAtSlot[0] !== undefined ? window.appNameFor(window.itemAtSlot[0]) : "")
             color: window.cfg.colors?.accent ?? "#ff4400"
             font.family: "JetBrains Mono"
             font.pixelSize: 14
+        }
+
+        // ── Search bar (layer 2) — replica of hyprsphere's bar ────────────
+        Rectangle {
+            id: searchContainer
+            visible: window.overlayActive
+            width:  560
+            height: 56
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: 63
+            anchors.horizontalCenter: parent.horizontalCenter
+            radius: 28
+            color: Qt.rgba(1.0, 0.267, 0.0, 0.3)          // #ff4400 @ 30%
+            border.color: window.searchQuery.length > 0 ? "#ff4400" : "#2b2b2b"
+            border.width: 1.5
+
+            // Read-only search text (mirrors hyprsphere's read-only TextField).
+            Text {
+                anchors.fill: parent
+                anchors.leftMargin: 20
+                anchors.rightMargin: 20
+                text: window.searchQuery.length > 0 ? window.searchQuery : "Search apps and windows..."
+                color: window.searchQuery.length > 0 ? "#ff4400" : Qt.rgba(1.0, 0.267, 0.0, 0.6)
+                font.family: "JuliaMono"
+                font.pixelSize: 18
+                font.weight: Font.Medium
+                verticalAlignment: Text.AlignVCenter
+                elide: Text.ElideRight
+            }
         }
     }
 
