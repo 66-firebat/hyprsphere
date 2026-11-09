@@ -403,11 +403,9 @@ PanelWindow {
         var apex = 90              // 12 o'clock (top)
         var total = n
         var off = (total === 1 ? 0.0 : (i - (total - 1) / 2.0))
-        // angle: for a left-to-right reading top dome, char i angle runs from
-        // (apex + (n-1)/2*step) on the left down to apex at center and further
-        // to (apex - (n-1)/2*step) on the right. In screen terms, "left" is
-        // larger angle (toward 180°), "right" is smaller (toward 0°).
-        var angleDeg = apex + off * charStep
+        // angle: char 0 is on the LEFT (larger angle, toward 180°), and the
+        // string reads left-to-right toward the apex then down the right side.
+        var angleDeg = apex - off * charStep
         var rad = angleDeg * Math.PI / 180
         var x = cx + R * Math.cos(rad)
         var y = cy - R * Math.sin(rad)   // screen y down
