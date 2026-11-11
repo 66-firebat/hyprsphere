@@ -1432,7 +1432,7 @@ PanelWindow {
         }
 
         Keys.onReleased: (event) => {
-            if (event.key === Qt.Key_Alt) {
+            if (event.key === Qt.Key_Meta) {
                 Binds.commitSelection(window, closeSequence);
                 event.accepted = true;
             }
